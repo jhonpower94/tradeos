@@ -50,6 +50,8 @@ export const tradesApi = {
 
 export const positionsApi = {
   list: () => api.get('/positions').then((r) => r.data),
+  context: () => api.get('/positions/context').then((r) => r.data),
+  getContext: (id: string) => api.get(`/positions/${id}/context`).then((r) => r.data),
 };
 
 export const portfolioApi = {

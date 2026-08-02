@@ -14,7 +14,9 @@ import {
 } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
-import { portfolioApi, positionsApi } from '../api';
+import { portfolioApi, positionsApi, tradesApi } from '../api';
+import { RegimeChip } from '../components/RegimeChip';
+import { BiasChip } from '../components/BiasChip';
 
 function errMsg(err: unknown): string {
   if (axios.isAxiosError(err)) {
@@ -24,6 +26,17 @@ function errMsg(err: unknown): string {
   if (err instanceof Error) return err.message;
   return 'Request failed';
 }
+
+type PositionContext = {
+  positionId: string;
+  tradeId: string;
+  regime: string;
+  htfTrend: string | null;
+  htfTimeframe: string | null;
+  aligned: boolean;
+  suggestion: string;
+  message: string;
+};
 
 export function PortfolioPage() {
   const qc = useQueryClient();
@@ -37,6 +50,14 @@ export function PortfolioPage() {
     queryFn: positionsApi.list,
     refetchInterval: 5_000,
   });
+  const { data: contexts } = useQuery({
+    queryKey: ['positions-context'],
+    queryFn: positionsApi.context,
+    refetchInterval: 30_000,
+  });
+  const contextByPosition = new Map<string, PositionContext>(
+    ((contexts?.items ?? []) as PositionContext[]).map((c) => [c.positionId, c]),
+  );
   const { data: ledger } = useQuery({
     queryKey: ['paper-ledger'],
     queryFn: portfolioApi.ledger,
@@ -45,6 +66,16 @@ export function PortfolioPage() {
 
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+
+  const closeTrade = useMutation({
+    mutationFn: (tradeId: string) => tradesApi.close(tradeId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['positions'] });
+      qc.invalidateQueries({ queryKey: ['positions-context'] });
+      qc.invalidateQueries({ queryKey: ['trades'] });
+      qc.invalidateQueries({ queryKey: ['portfolio'] });
+    },
+  });
 
   const deposit = useMutation({
     mutationFn: () => portfolioApi.deposit(Number(amount), note || undefined),
@@ -228,6 +259,11 @@ export function PortfolioPage() {
       <Typography variant="h6" sx={{ mb: 1 }}>
         Open Positions
       </Typography>
+      {closeTrade.isError && (
+        <Alert severity="error" sx={{ mb: 1 }} onClose={() => closeTrade.reset()}>
+          {errMsg(closeTrade.error)}
+        </Alert>
+      )}
       <Paper>
         <Table size="small">
           <TableHead>
@@ -240,25 +276,61 @@ export function PortfolioPage() {
               <TableCell>uPnL</TableCell>
               <TableCell>SL</TableCell>
               <TableCell>TP</TableCell>
+              <TableCell>Regime</TableCell>
+              <TableCell>HTF</TableCell>
+              <TableCell>Bias</TableCell>
+              <TableCell />
             </TableRow>
           </TableHead>
           <TableBody>
             {(positions?.items ?? [])
               .filter((p: { status: string }) => p.status === 'open')
-              .map((p: Record<string, unknown>) => (
-                <TableRow key={String(p._id)}>
-                  <TableCell sx={{ fontFamily: 'IBM Plex Mono, monospace' }}>{String(p.symbol)}</TableCell>
-                  <TableCell>{String(p.side)}</TableCell>
-                  <TableCell>{Number(p.qty).toPrecision(6)}</TableCell>
-                  <TableCell>{Number(p.entryPrice).toPrecision(6)}</TableCell>
-                  <TableCell>{Number(p.currentPrice).toPrecision(6)}</TableCell>
-                  <TableCell sx={{ color: Number(p.unrealizedPnl) >= 0 ? 'long.main' : 'short.main' }}>
-                    {Number(p.unrealizedPnl).toFixed(2)}
-                  </TableCell>
-                  <TableCell>{p.stopLoss ? Number(p.stopLoss).toPrecision(6) : '—'}</TableCell>
-                  <TableCell>{p.takeProfit ? Number(p.takeProfit).toPrecision(6) : '—'}</TableCell>
-                </TableRow>
-              ))}
+              .map((p: Record<string, unknown>) => {
+                const ctx = contextByPosition.get(String(p._id));
+                return (
+                  <TableRow key={String(p._id)}>
+                    <TableCell sx={{ fontFamily: 'IBM Plex Mono, monospace' }}>{String(p.symbol)}</TableCell>
+                    <TableCell>{String(p.side)}</TableCell>
+                    <TableCell>{Number(p.qty).toPrecision(6)}</TableCell>
+                    <TableCell>{Number(p.entryPrice).toPrecision(6)}</TableCell>
+                    <TableCell>{Number(p.currentPrice).toPrecision(6)}</TableCell>
+                    <TableCell sx={{ color: Number(p.unrealizedPnl) >= 0 ? 'long.main' : 'short.main' }}>
+                      {Number(p.unrealizedPnl).toFixed(2)}
+                    </TableCell>
+                    <TableCell>{p.stopLoss ? Number(p.stopLoss).toPrecision(6) : '—'}</TableCell>
+                    <TableCell>{p.takeProfit ? Number(p.takeProfit).toPrecision(6) : '—'}</TableCell>
+                    <TableCell>
+                      {ctx ? <RegimeChip regime={ctx.regime} /> : '—'}
+                    </TableCell>
+                    <TableCell>
+                      {ctx?.htfTrend
+                        ? `${ctx.htfTrend}${ctx.htfTimeframe ? ` (${ctx.htfTimeframe})` : ''}`
+                        : '—'}
+                    </TableCell>
+                    <TableCell>
+                      {ctx ? (
+                        <BiasChip
+                          aligned={ctx.aligned}
+                          suggestion={ctx.suggestion}
+                          message={ctx.message}
+                        />
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="small"
+                        color="warning"
+                        disabled={closeTrade.isPending}
+                        onClick={() => closeTrade.mutate(String(p.tradeId))}
+                      >
+                        Close
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
           </TableBody>
         </Table>
       </Paper>

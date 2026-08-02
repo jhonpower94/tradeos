@@ -21,6 +21,10 @@ import {
   executeOpportunity,
 } from '../modules/trade/index.js';
 import { listPositions, updatePositionLevels } from '../modules/position/index.js';
+import {
+  getPositionMarketContext,
+  listOpenPositionsMarketContext,
+} from '../modules/position/context.js';
 import { getPortfolioSummary, depositPaper, withdrawPaper, listPaperLedger } from '../modules/portfolio/index.js';
 import { listJournal, getJournalEntry } from '../modules/journal/index.js';
 import { computeAnalytics } from '../modules/analytics/index.js';
@@ -242,6 +246,12 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get('/api/v1/positions', { preHandler: auth }, async (req) => ({
     items: await listPositions(getUserId(req)),
   }));
+  app.get('/api/v1/positions/context', { preHandler: auth }, async (req) => ({
+    items: await listOpenPositionsMarketContext(getUserId(req)),
+  }));
+  app.get('/api/v1/positions/:id/context', { preHandler: auth }, async (req) =>
+    getPositionMarketContext(getUserId(req), (req.params as { id: string }).id),
+  );
   app.patch('/api/v1/positions/:id', { preHandler: auth }, async (req) => {
     const body = req.body as {
       stopLoss?: number;
