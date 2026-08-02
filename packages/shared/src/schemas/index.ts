@@ -34,6 +34,13 @@ export const tradingSettingsSchema = z.object({
   useSoftwareExits: z.boolean().default(true),
   feeRate: z.number().min(0).max(0.01).default(0.001),
   paperStartingBalance: z.number().min(0).default(10_000),
+  partialTpEnabled: z.boolean().default(true),
+  partialTpFraction: z.number().min(0.05).max(0.95).default(0.5),
+  partialTpAtR: z.number().min(0.25).max(5).default(1),
+  breakevenOnPartial: z.boolean().default(true),
+  trailingEnabled: z.boolean().default(true),
+  trailingStopPct: z.number().min(0.1).max(20).default(1.5),
+  trailingActivateAtR: z.number().min(0.25).max(5).default(1),
 });
 
 export const scannerSettingsSchema = z.object({

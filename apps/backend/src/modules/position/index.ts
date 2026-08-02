@@ -1,7 +1,9 @@
 import { PositionStatus, Side } from '@trading-os/shared';
 import { Position } from '../../models/Position.js';
+import { Trade } from '../../models/Trade.js';
 import { getTickerPrice } from '../market-data/index.js';
-import { closePosition } from '../trade/index.js';
+import { closePosition, partialClosePosition } from '../trade/index.js';
+import { getRawSettings } from '../settings/index.js';
 import { AppError } from '../../utils/errors.js';
 
 export function calcUnrealizedPnl(
@@ -12,6 +14,132 @@ export function calcUnrealizedPnl(
 ): number {
   const dir = side === Side.BUY ? 1 : -1;
   return (current - entry) * qty * dir;
+}
+
+/** Signed R-multiple vs initial risk distance. */
+export function calcRMultiple(input: {
+  side: Side;
+  entry: number;
+  price: number;
+  initialStopLoss?: number | null;
+  stopLoss?: number | null;
+}): number | null {
+  const sl = input.initialStopLoss ?? input.stopLoss;
+  if (sl == null || !(input.entry > 0)) return null;
+  const riskDist = Math.abs(input.entry - sl);
+  if (!(riskDist > 0)) return null;
+  const dir = input.side === Side.BUY ? 1 : -1;
+  return (dir * (input.price - input.entry)) / riskDist;
+}
+
+export type ExitManageDecision =
+  | { action: 'none' }
+  | { action: 'partial'; fraction: number; armTrailing: boolean; trailingStopPct: number; breakeven: boolean }
+  | { action: 'arm_trailing'; trailingStopPct: number }
+  | { action: 'full_close'; reason: string };
+
+export type ExitManageSettings = {
+  partialTpEnabled: boolean;
+  partialTpFraction: number;
+  partialTpAtR: number;
+  breakevenOnPartial: boolean;
+  trailingEnabled: boolean;
+  trailingStopPct: number;
+  trailingActivateAtR: number;
+};
+
+export const DEFAULT_EXIT_MANAGE_SETTINGS: ExitManageSettings = {
+  partialTpEnabled: true,
+  partialTpFraction: 0.5,
+  partialTpAtR: 1,
+  breakevenOnPartial: true,
+  trailingEnabled: true,
+  trailingStopPct: 1.5,
+  trailingActivateAtR: 1,
+};
+
+/** Pure decision for manage-then-exit (excludes applying trailing price updates). */
+export function decideExitManagement(input: {
+  side: Side;
+  entry: number;
+  price: number;
+  stopLoss?: number | null;
+  takeProfit?: number | null;
+  trailingStopPrice?: number | null;
+  trailingStopPct?: number | null;
+  initialStopLoss?: number | null;
+  partialTpDone?: boolean;
+  settings: ExitManageSettings;
+}): ExitManageDecision {
+  const {
+    side,
+    entry,
+    price,
+    stopLoss,
+    takeProfit,
+    trailingStopPrice,
+    trailingStopPct,
+    initialStopLoss,
+    partialTpDone,
+    settings,
+  } = input;
+
+  // Full exits take priority when already past levels (e.g. gap through TP)
+  if (side === Side.BUY) {
+    if (stopLoss != null && price <= stopLoss) return { action: 'full_close', reason: 'Stop loss hit' };
+    if (takeProfit != null && price >= takeProfit) return { action: 'full_close', reason: 'Take profit hit' };
+    if (trailingStopPrice != null && price <= trailingStopPrice) {
+      return { action: 'full_close', reason: 'Trailing stop hit' };
+    }
+  } else {
+    if (stopLoss != null && price >= stopLoss) return { action: 'full_close', reason: 'Stop loss hit' };
+    if (takeProfit != null && price <= takeProfit) return { action: 'full_close', reason: 'Take profit hit' };
+    if (trailingStopPrice != null && price >= trailingStopPrice) {
+      return { action: 'full_close', reason: 'Trailing stop hit' };
+    }
+  }
+
+  const r = calcRMultiple({ side, entry, price, initialStopLoss, stopLoss });
+  if (r == null) return { action: 'none' };
+
+  if (
+    !partialTpDone &&
+    settings.partialTpEnabled &&
+    r >= settings.partialTpAtR
+  ) {
+    return {
+      action: 'partial',
+      fraction: settings.partialTpFraction,
+      armTrailing: settings.trailingEnabled,
+      trailingStopPct: settings.trailingStopPct,
+      breakeven: settings.breakevenOnPartial,
+    };
+  }
+
+  if (
+    settings.trailingEnabled &&
+    !(trailingStopPct != null && trailingStopPct > 0) &&
+    r >= settings.trailingActivateAtR
+  ) {
+    return { action: 'arm_trailing', trailingStopPct: settings.trailingStopPct };
+  }
+
+  return { action: 'none' };
+}
+
+function tradingToExitSettings(trading: Record<string, unknown> | undefined): ExitManageSettings {
+  const t = trading ?? {};
+  return {
+    partialTpEnabled: (t.partialTpEnabled as boolean | undefined) ?? DEFAULT_EXIT_MANAGE_SETTINGS.partialTpEnabled,
+    partialTpFraction: (t.partialTpFraction as number | undefined) ?? DEFAULT_EXIT_MANAGE_SETTINGS.partialTpFraction,
+    partialTpAtR: (t.partialTpAtR as number | undefined) ?? DEFAULT_EXIT_MANAGE_SETTINGS.partialTpAtR,
+    breakevenOnPartial:
+      (t.breakevenOnPartial as boolean | undefined) ?? DEFAULT_EXIT_MANAGE_SETTINGS.breakevenOnPartial,
+    trailingEnabled: (t.trailingEnabled as boolean | undefined) ?? DEFAULT_EXIT_MANAGE_SETTINGS.trailingEnabled,
+    trailingStopPct: (t.trailingStopPct as number | undefined) ?? DEFAULT_EXIT_MANAGE_SETTINGS.trailingStopPct,
+    trailingActivateAtR:
+      (t.trailingActivateAtR as number | undefined) ?? DEFAULT_EXIT_MANAGE_SETTINGS.trailingActivateAtR,
+  };
 }
 
 export async function markPositions(userId?: string) {
@@ -39,26 +167,81 @@ export async function markPositions(userId?: string) {
 
 export async function checkExits() {
   const positions = await Position.find({ status: PositionStatus.OPEN });
+  const settingsCache = new Map<string, ExitManageSettings>();
+
   for (const p of positions) {
     const price = getTickerPrice(p.symbol) ?? p.currentPrice;
-    let reason: string | null = null;
+    const userId = String(p.userId);
 
-    if (p.side === Side.BUY) {
-      if (p.stopLoss != null && price <= p.stopLoss) reason = 'Stop loss hit';
-      else if (p.takeProfit != null && price >= p.takeProfit) reason = 'Take profit hit';
-      else if (p.trailingStopPrice != null && price <= p.trailingStopPrice) reason = 'Trailing stop hit';
-    } else {
-      if (p.stopLoss != null && price >= p.stopLoss) reason = 'Stop loss hit';
-      else if (p.takeProfit != null && price <= p.takeProfit) reason = 'Take profit hit';
-      else if (p.trailingStopPrice != null && price >= p.trailingStopPrice) reason = 'Trailing stop hit';
+    let settings = settingsCache.get(userId);
+    if (!settings) {
+      try {
+        const raw = await getRawSettings(userId);
+        settings = tradingToExitSettings(raw.trading as Record<string, unknown> | undefined);
+      } catch {
+        settings = DEFAULT_EXIT_MANAGE_SETTINGS;
+      }
+      settingsCache.set(userId, settings);
     }
 
-    if (reason) {
-      try {
-        await closePosition(String(p.userId), String(p._id), reason, price);
-      } catch {
-        // continue
+    const decision = decideExitManagement({
+      side: p.side as Side,
+      entry: p.entryPrice,
+      price,
+      stopLoss: p.stopLoss,
+      takeProfit: p.takeProfit,
+      trailingStopPrice: p.trailingStopPrice,
+      trailingStopPct: p.trailingStopPct,
+      initialStopLoss: p.initialStopLoss,
+      partialTpDone: p.partialTpDone ?? false,
+      settings,
+    });
+
+    try {
+      if (decision.action === 'full_close') {
+        await closePosition(userId, String(p._id), decision.reason, price);
+        continue;
       }
+
+      if (decision.action === 'partial') {
+        const closeQty = p.qty * decision.fraction;
+        await partialClosePosition(userId, String(p._id), closeQty, 'Partial take profit', price);
+
+        const fresh = await Position.findById(p._id);
+        if (!fresh || fresh.status !== PositionStatus.OPEN) continue;
+
+        fresh.partialTpDone = true;
+        if (decision.breakeven) {
+          fresh.stopLoss = fresh.entryPrice;
+          await Trade.findByIdAndUpdate(fresh.tradeId, { stopLoss: fresh.entryPrice });
+        }
+        if (decision.armTrailing) {
+          fresh.trailingStopPct = decision.trailingStopPct;
+          if (fresh.side === Side.BUY) {
+            fresh.trailingStopPrice =
+              (fresh.highestPrice ?? price) * (1 - decision.trailingStopPct / 100);
+          } else {
+            fresh.trailingStopPrice =
+              (fresh.lowestPrice ?? price) * (1 + decision.trailingStopPct / 100);
+          }
+        }
+        await fresh.save();
+        continue;
+      }
+
+      if (decision.action === 'arm_trailing') {
+        p.trailingStopPct = decision.trailingStopPct;
+        if (p.side === Side.BUY) {
+          p.trailingStopPrice =
+            (p.highestPrice ?? price) * (1 - decision.trailingStopPct / 100);
+        } else {
+          p.trailingStopPrice =
+            (p.lowestPrice ?? price) * (1 + decision.trailingStopPct / 100);
+        }
+        await p.save();
+      }
+    } catch {
+      // continue
     }
   }
 }

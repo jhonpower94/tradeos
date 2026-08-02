@@ -153,6 +153,77 @@ export function SettingsPage() {
             }
             helperText="Baseline paper funding. Realized PnL and deposits/withdrawals stack on top."
           />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={data.trading?.partialTpEnabled ?? true}
+                onChange={(e) =>
+                  saveSettings.mutate({ trading: { partialTpEnabled: e.target.checked } })
+                }
+              />
+            }
+            label="Partial take profit"
+          />
+          <TextField
+            label="Partial TP fraction"
+            type="number"
+            inputProps={{ step: 0.05, min: 0.05, max: 0.95 }}
+            defaultValue={data.trading?.partialTpFraction ?? 0.5}
+            onBlur={(e) =>
+              saveSettings.mutate({ trading: { partialTpFraction: Number(e.target.value) } })
+            }
+            helperText="Fraction of size to close at the R trigger (e.g. 0.5 = 50%)."
+          />
+          <TextField
+            label="Partial TP at R"
+            type="number"
+            inputProps={{ step: 0.25, min: 0.25 }}
+            defaultValue={data.trading?.partialTpAtR ?? 1}
+            onBlur={(e) =>
+              saveSettings.mutate({ trading: { partialTpAtR: Number(e.target.value) } })
+            }
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={data.trading?.breakevenOnPartial ?? true}
+                onChange={(e) =>
+                  saveSettings.mutate({ trading: { breakevenOnPartial: e.target.checked } })
+                }
+              />
+            }
+            label="Move SL to breakeven after partial"
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={data.trading?.trailingEnabled ?? true}
+                onChange={(e) =>
+                  saveSettings.mutate({ trading: { trailingEnabled: e.target.checked } })
+                }
+              />
+            }
+            label="Trailing stop"
+          />
+          <TextField
+            label="Trailing stop %"
+            type="number"
+            inputProps={{ step: 0.1, min: 0.1 }}
+            defaultValue={data.trading?.trailingStopPct ?? 1.5}
+            onBlur={(e) =>
+              saveSettings.mutate({ trading: { trailingStopPct: Number(e.target.value) } })
+            }
+          />
+          <TextField
+            label="Trail activate at R"
+            type="number"
+            inputProps={{ step: 0.25, min: 0.25 }}
+            defaultValue={data.trading?.trailingActivateAtR ?? 1}
+            onBlur={(e) =>
+              saveSettings.mutate({ trading: { trailingActivateAtR: Number(e.target.value) } })
+            }
+            helperText="Arm trailing once price reaches this R-multiple (even if partial TP is off)."
+          />
         </Paper>
       )}
 

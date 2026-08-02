@@ -13,10 +13,12 @@ const positionSchema = new Schema(
     unrealizedPnl: { type: Number, default: 0 },
     stopLoss: Number,
     takeProfit: Number,
+    initialStopLoss: Number,
     trailingStopPct: Number,
     trailingStopPrice: Number,
     highestPrice: Number,
     lowestPrice: Number,
+    partialTpDone: { type: Boolean, default: false },
     status: {
       type: String,
       enum: Object.values(PositionStatus),

@@ -26,6 +26,13 @@ const settingsSchema = new Schema(
       useSoftwareExits: { type: Boolean, default: true },
       feeRate: { type: Number, default: 0.001 },
       paperStartingBalance: { type: Number, default: 10_000 },
+      partialTpEnabled: { type: Boolean, default: true },
+      partialTpFraction: { type: Number, default: 0.5 },
+      partialTpAtR: { type: Number, default: 1 },
+      breakevenOnPartial: { type: Boolean, default: true },
+      trailingEnabled: { type: Boolean, default: true },
+      trailingStopPct: { type: Number, default: 1.5 },
+      trailingActivateAtR: { type: Number, default: 1 },
     },
     scanner: {
       enabled: { type: Boolean, default: true },

@@ -8,12 +8,15 @@ export async function createJournalFromTrade(
   trade: TradeDoc,
   position: PositionDoc,
   exitReason: string,
+  opts?: { qty?: number; pnl?: number; exit?: number },
 ) {
   const signal = trade.signalId ? await Signal.findById(trade.signalId).lean() : null;
-  const pnl = trade.realizedPnl ?? 0;
+  const pnl = opts?.pnl ?? trade.realizedPnl ?? 0;
+  const qty = opts?.qty ?? trade.qty;
+  const exit = opts?.exit ?? trade.exitPrice;
   const durationMs =
-    trade.openedAt && trade.closedAt
-      ? new Date(trade.closedAt).getTime() - new Date(trade.openedAt).getTime()
+    trade.openedAt && (trade.closedAt || exitReason)
+      ? new Date(trade.closedAt ?? Date.now()).getTime() - new Date(trade.openedAt).getTime()
       : undefined;
 
   return JournalEntry.create({
@@ -27,14 +30,14 @@ export async function createJournalFromTrade(
     indicators: signal?.consensusSnapshot,
     patterns: signal?.evidence,
     entry: trade.entryPrice,
-    exit: trade.exitPrice,
-    qty: trade.qty,
+    exit,
+    qty,
     profit: pnl > 0 ? pnl : 0,
     loss: pnl < 0 ? Math.abs(pnl) : 0,
     pnl,
     durationMs,
     risk: trade.stopLoss && trade.entryPrice
-      ? Math.abs(trade.entryPrice - trade.stopLoss) * trade.qty
+      ? Math.abs(trade.entryPrice - trade.stopLoss) * qty
       : undefined,
     confidence: signal?.confidence,
     riskReward: signal?.riskReward,

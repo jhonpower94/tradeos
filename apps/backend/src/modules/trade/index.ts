@@ -184,8 +184,10 @@ export async function executeOpportunity(
     unrealizedPnl: 0,
     stopLoss: opportunity.stopLoss,
     takeProfit: opportunity.takeProfit,
+    initialStopLoss: opportunity.stopLoss,
     highestPrice: entryPrice,
     lowestPrice: entryPrice,
+    partialTpDone: false,
     status: PositionStatus.OPEN,
     openedAt: new Date(),
   });
@@ -272,6 +274,91 @@ export async function processAutoSignals(userId: string, opportunities: Opportun
   }
 }
 
+export async function partialClosePosition(
+  userId: string,
+  positionId: string,
+  closeQty: number,
+  reason: string,
+  exitPrice?: number,
+) {
+  const position = await Position.findOne({ _id: positionId, userId, status: PositionStatus.OPEN });
+  if (!position) throw new AppError('NOT_FOUND', 'Position not found', 404);
+
+  const qty = Math.min(Math.max(0, closeQty), position.qty);
+  const remaining = position.qty - qty;
+  // Dust remainder → full close instead
+  if (qty <= 0 || remaining <= position.qty * 1e-8) {
+    return closePosition(userId, positionId, reason, exitPrice);
+  }
+
+  const price =
+    exitPrice ??
+    getTickerPrice(position.symbol) ??
+    position.currentPrice;
+
+  const trade = await Trade.findById(position.tradeId);
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404);
+
+  const settings = await getRawSettings(userId);
+  const feeRate = settings.trading?.feeRate ?? config.feeRate;
+
+  if (trade.mode === TradingMode.LIVE) {
+    const creds = await getBinanceCredentials(userId);
+    if (creds) {
+      exchangeService.setCredentials(creds);
+      const closeSide = position.side === Side.BUY ? Side.SELL : Side.BUY;
+      try {
+        const order = await exchangeService.placeOrder({
+          symbol: position.symbol,
+          side: closeSide,
+          type: OrderType.MARKET,
+          quantity: qty,
+        });
+        trade.binanceOrderIds = [...(trade.binanceOrderIds ?? []), order.orderId];
+      } catch (e) {
+        void e;
+      }
+    }
+  }
+
+  const dir = position.side === Side.BUY ? 1 : -1;
+  const exitFee = price * qty * feeRate;
+  const slicePnl = (price - position.entryPrice) * qty * dir - exitFee;
+
+  trade.realizedPnl = (trade.realizedPnl ?? 0) + slicePnl;
+  trade.fees = (trade.fees ?? 0) + exitFee;
+  trade.qty = remaining;
+  await trade.save();
+
+  position.qty = remaining;
+  position.currentPrice = price;
+  position.unrealizedPnl = calcUnrealizedForPartial(
+    position.side as Side,
+    position.entryPrice,
+    price,
+    remaining,
+  );
+  await position.save();
+
+  await createJournalFromTrade(trade, position, reason, {
+    qty,
+    pnl: slicePnl,
+    exit: price,
+  });
+  await notify(userId, NotificationType.TRADE_CLOSED, {
+    title: 'Partial take profit',
+    body: `${position.symbol} closed ${qty} @ ${price} PnL ${slicePnl.toFixed(2)} — ${reason}`,
+    payload: { tradeId: trade._id, pnl: slicePnl, partial: true },
+  });
+
+  return trade;
+}
+
+function calcUnrealizedForPartial(side: Side, entry: number, current: number, qty: number): number {
+  const dir = side === Side.BUY ? 1 : -1;
+  return (current - entry) * qty * dir;
+}
+
 export async function closePosition(
   userId: string,
   positionId: string,
@@ -313,28 +400,33 @@ export async function closePosition(
   }
 
   const dir = position.side === Side.BUY ? 1 : -1;
-  const pnl = (price - position.entryPrice) * position.qty * dir;
-  const fees = price * position.qty * feeRate + (trade.fees ?? 0);
+  const exitFee = price * position.qty * feeRate;
+  const slicePnl = (price - position.entryPrice) * position.qty * dir - exitFee;
 
   trade.exitPrice = price;
-  trade.realizedPnl = pnl - price * position.qty * feeRate;
-  trade.fees = fees;
+  trade.realizedPnl = (trade.realizedPnl ?? 0) + slicePnl;
+  trade.fees = (trade.fees ?? 0) + exitFee;
   trade.status = TradeStatus.CLOSED;
   trade.exitReason = reason;
   trade.closedAt = new Date();
   await trade.save();
 
+  const closedQty = position.qty;
   position.status = PositionStatus.CLOSED;
   position.currentPrice = price;
   position.unrealizedPnl = 0;
   position.closedAt = new Date();
   await position.save();
 
-  await createJournalFromTrade(trade, position, reason);
+  await createJournalFromTrade(trade, position, reason, {
+    qty: closedQty,
+    pnl: slicePnl,
+    exit: price,
+  });
   await notify(userId, NotificationType.TRADE_CLOSED, {
     title: 'Trade closed',
-    body: `${position.symbol} PnL ${trade.realizedPnl?.toFixed(2)} — ${reason}`,
-    payload: { tradeId: trade._id, pnl: trade.realizedPnl },
+    body: `${position.symbol} PnL ${slicePnl.toFixed(2)} — ${reason}`,
+    payload: { tradeId: trade._id, pnl: slicePnl },
   });
 
   return trade;
