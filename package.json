@@ -1,0 +1,23 @@
+{
+  "name": "trading-os",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Crypto Spot Trading Operating System",
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter @trading-os/backend --filter @trading-os/frontend run dev",
+    "dev:backend": "pnpm --filter @trading-os/backend dev",
+    "dev:frontend": "pnpm --filter @trading-os/frontend dev",
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "devDependencies": {
+    "pnpm": "9.15.0",
+    "typescript": "^5.7.3"
+  }
+}
