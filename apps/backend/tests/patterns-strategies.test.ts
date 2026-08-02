@@ -45,7 +45,7 @@ describe('strategies', () => {
       indicators,
       patterns,
     });
-    expect(results.length).toBe(18);
+    expect(results.length).toBe(22);
     expect(results.every((r) => r.confidence >= 0 && r.confidence <= 100)).toBe(true);
   });
 });

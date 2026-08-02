@@ -206,6 +206,20 @@ export function SettingsPage() {
             When enabled, only strategies designed for the detected regime (trending / ranging / volatile) are
             evaluated. Unknown regime skips trading. Counter-trend sides are vetoed in strong trends.
           </Typography>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={data.scanner?.htfVetoEnabled !== false}
+                onChange={(e) =>
+                  saveSettings.mutate({ scanner: { htfVetoEnabled: e.target.checked } })
+                }
+              />
+            }
+            label="HTF trend hard veto"
+          />
+          <Typography variant="caption" color="text.secondary">
+            Block BUY when the parent timeframe EMA50/200 is bearish (and vice versa for SELL).
+          </Typography>
         </Paper>
       )}
 

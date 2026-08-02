@@ -11,11 +11,14 @@ export interface RegimeResult {
   evidence: Evidence[];
   adx: number;
   bbWidthPct: number;
+  plusDI: number;
+  minusDI: number;
 }
 
 const ADX_TREND = 25;
 const ADX_RANGE = 20;
 const BB_VOLATILE_WIDTH = 8;
+const BB_COMPRESSION_WIDTH = 2.5;
 
 /**
  * Classify market regime from indicator snapshot.
@@ -48,7 +51,24 @@ export function detectRegime(indicators: IndicatorSnapshot): RegimeResult {
   let regime: MarketRegime;
   let confidence: number;
 
-  if (bbWidthPct > BB_VOLATILE_WIDTH && adx < ADX_RANGE) {
+  if (bbWidthPct <= BB_COMPRESSION_WIDTH && adx < ADX_TREND) {
+    regime = MarketRegime.COMPRESSION;
+    confidence = Math.min(90, 55 + (BB_COMPRESSION_WIDTH - bbWidthPct) * 10);
+    evidence.push({
+      source: 'regime',
+      label: 'Narrow bands + moderate ADX → compression',
+    });
+  } else if (adx >= ADX_TREND && bbWidthPct > BB_VOLATILE_WIDTH) {
+    regime = MarketRegime.TRENDING_VOLATILE;
+    confidence = Math.min(95, 50 + (adx - ADX_TREND) * 2 + (bbWidthPct - BB_VOLATILE_WIDTH));
+    evidence.push({
+      source: 'regime',
+      label:
+        plus > minus
+          ? 'Strong ADX + wide bands → trending volatile (bullish DI)'
+          : 'Strong ADX + wide bands → trending volatile (bearish DI)',
+    });
+  } else if (bbWidthPct > BB_VOLATILE_WIDTH && adx < ADX_RANGE) {
     regime = MarketRegime.VOLATILE;
     confidence = Math.min(95, 55 + bbWidthPct * 2);
     evidence.push({ source: 'regime', label: 'Wide bands + weak ADX → volatile' });
@@ -79,6 +99,8 @@ export function detectRegime(indicators: IndicatorSnapshot): RegimeResult {
     evidence,
     adx,
     bbWidthPct,
+    plusDI: plus,
+    minusDI: minus,
   };
 }
 

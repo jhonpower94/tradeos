@@ -6,6 +6,8 @@ const REGIME_LABEL: Record<string, string> = {
   trending_bear: 'Trending Bear',
   ranging: 'Ranging',
   volatile: 'Volatile',
+  compression: 'Compression',
+  trending_volatile: 'Trending Volatile',
   unknown: 'Unknown',
 };
 
@@ -16,9 +18,11 @@ export function RegimeChip({ regime }: { regime: string }) {
       ? theme.palette.long.main
       : regime === 'trending_bear'
         ? theme.palette.short.main
-        : regime === 'volatile'
+        : regime === 'volatile' || regime === 'trending_volatile'
           ? theme.palette.warning.main
-          : theme.palette.neutral.main;
+          : regime === 'compression'
+            ? theme.palette.info.main
+            : theme.palette.neutral.main;
 
   return (
     <Chip

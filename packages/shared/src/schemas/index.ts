@@ -49,6 +49,7 @@ export const scannerSettingsSchema = z.object({
   symbolsDenyList: z.array(z.string()).default([]),
   hotSetSize: z.number().int().min(10).max(500).default(50),
   concurrency: z.number().int().min(1).max(20).default(5),
+  htfVetoEnabled: z.boolean().default(true),
 });
 
 export const notificationSettingsSchema = z.object({

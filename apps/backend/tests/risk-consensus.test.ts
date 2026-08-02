@@ -203,6 +203,8 @@ describe('consensus', () => {
       evidence: [],
       adx: 30,
       bbWidthPct: 2,
+      plusDI: 30,
+      minusDI: 10,
     };
     const c = buildConsensus({
       strategies,

@@ -44,15 +44,43 @@ function makeRangingCandles(n: number): Candle[] {
   return out;
 }
 
+function snapWith(
+  overrides: Partial<{
+    adx: number;
+    plusDI: number;
+    minusDI: number;
+    bbWidthPct: number;
+  }>,
+): IndicatorSnapshot {
+  const mid = 100;
+  const halfWidth = (((overrides.bbWidthPct ?? 3) / 100) * mid) / 2;
+  return {
+    adx14: {
+      adx: [overrides.adx ?? 15],
+      plusDI: [overrides.plusDI ?? 20],
+      minusDI: [overrides.minusDI ?? 10],
+    },
+    bollinger: {
+      upper: [mid + halfWidth],
+      middle: [mid],
+      lower: [mid - halfWidth],
+    },
+  };
+}
+
 describe('detectRegime', () => {
   it('detects trending_bull on strong uptrend', () => {
     const snap = computeAllIndicators(makeTrendingCandles(250, true));
     const r = detectRegime(snap);
-    expect([MarketRegime.TRENDING_BULL, MarketRegime.TRENDING_BEAR, MarketRegime.VOLATILE]).toContain(
-      r.regime,
-    );
+    expect([
+      MarketRegime.TRENDING_BULL,
+      MarketRegime.TRENDING_BEAR,
+      MarketRegime.VOLATILE,
+      MarketRegime.TRENDING_VOLATILE,
+    ]).toContain(r.regime);
     expect(r.confidence).toBeGreaterThan(0);
-    expect(r.evidence.length).toBeGreaterThan(0);
+    expect(r.plusDI).toBeDefined();
+    expect(r.minusDI).toBeDefined();
   });
 
   it('detects ranging or unknown on flat series', () => {
@@ -64,14 +92,32 @@ describe('detectRegime', () => {
       MarketRegime.UNKNOWN,
       MarketRegime.TRENDING_BULL,
       MarketRegime.TRENDING_BEAR,
+      MarketRegime.COMPRESSION,
+      MarketRegime.TRENDING_VOLATILE,
     ]).toContain(r.regime);
   });
 
-  it('returns unknown-friendly structure for empty-ish indicators', () => {
+  it('returns compression for empty-ish indicators (zero BB width)', () => {
     const empty: IndicatorSnapshot = {};
     const r = detectRegime(empty);
-    expect(r.regime).toBe(MarketRegime.RANGING);
+    expect(r.regime).toBe(MarketRegime.COMPRESSION);
     expect(r.adx).toBe(0);
+  });
+
+  it('detects compression on narrow bands and moderate ADX', () => {
+    const r = detectRegime(snapWith({ adx: 15, bbWidthPct: 2 }));
+    expect(r.regime).toBe(MarketRegime.COMPRESSION);
+  });
+
+  it('detects trending_volatile on strong ADX and wide bands', () => {
+    const r = detectRegime(snapWith({ adx: 30, plusDI: 35, minusDI: 10, bbWidthPct: 10 }));
+    expect(r.regime).toBe(MarketRegime.TRENDING_VOLATILE);
+    expect(r.plusDI).toBeGreaterThan(r.minusDI);
+  });
+
+  it('detects volatile on wide bands and weak ADX', () => {
+    const r = detectRegime(snapWith({ adx: 12, bbWidthPct: 10 }));
+    expect(r.regime).toBe(MarketRegime.VOLATILE);
   });
 });
 
@@ -83,15 +129,29 @@ describe('strategy regime filter', () => {
   it('includes trend strategies for trending_bull', () => {
     const ids = getCompatibleStrategyIds(MarketRegime.TRENDING_BULL);
     expect(ids).toContain('supertrend');
-    expect(ids).toContain('ema_cross');
+    expect(ids).toContain('ichimoku_trend');
     expect(ids).not.toContain('vwap_reversion');
   });
 
   it('includes mean-reversion for ranging', () => {
     const ids = getCompatibleStrategyIds(MarketRegime.RANGING);
-    expect(ids).toContain('bollinger_reversal');
-    expect(ids).toContain('support_bounce');
+    expect(ids).toContain('stoch_rsi_reversion');
+    expect(ids).toContain('pivot_bounce');
     expect(ids).not.toContain('supertrend');
+  });
+
+  it('includes squeeze/breakout for compression', () => {
+    const ids = getCompatibleStrategyIds(MarketRegime.COMPRESSION);
+    expect(ids).toContain('bb_squeeze_breakout');
+    expect(ids).toContain('breakout');
+    expect(ids).not.toContain('supertrend');
+  });
+
+  it('includes aggressive trend tools for trending_volatile', () => {
+    const ids = getCompatibleStrategyIds(MarketRegime.TRENDING_VOLATILE);
+    expect(ids).toContain('atr_trend');
+    expect(ids).toContain('ichimoku_trend');
+    expect(ids).not.toContain('pivot_bounce');
   });
 
   it('filters enabled map by regime', () => {
@@ -108,7 +168,9 @@ describe('strategy regime filter', () => {
 
   it('isStrategyCompatibleWithRegime matches map', () => {
     expect(isStrategyCompatibleWithRegime('supertrend', MarketRegime.TRENDING_BEAR)).toBe(true);
-    expect(isStrategyCompatibleWithRegime('supertrend', MarketRegime.RANGING)).toBe(false);
+    expect(isStrategyCompatibleWithRegime('bb_squeeze_breakout', MarketRegime.COMPRESSION)).toBe(
+      true,
+    );
     expect(isStrategyCompatibleWithRegime('ema_pullback', MarketRegime.UNKNOWN)).toBe(false);
   });
 });

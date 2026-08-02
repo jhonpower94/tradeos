@@ -39,6 +39,7 @@ const settingsSchema = new Schema(
       symbolsDenyList: { type: [String], default: [] },
       hotSetSize: { type: Number, default: 50 },
       concurrency: { type: Number, default: 5 },
+      htfVetoEnabled: { type: Boolean, default: true },
     },
     strategies: {
       type: Map,

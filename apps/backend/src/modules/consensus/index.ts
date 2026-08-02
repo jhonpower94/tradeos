@@ -11,9 +11,12 @@ import {
 } from '@trading-os/shared';
 import { lastValid } from '../indicators/index.js';
 import { detectRegime, type RegimeResult } from '../regime/index.js';
+import type { HtfTrend } from './htf.js';
 
 export type { RegimeResult };
 export { detectRegime } from '../regime/index.js';
+export { resolveParentTimeframe, detectHtfTrend } from './htf.js';
+export type { HtfTrend } from './htf.js';
 
 export interface ConsensusInput {
   strategies: StrategyResult[];
@@ -24,6 +27,9 @@ export interface ConsensusInput {
   regimeResult?: RegimeResult;
   minAlignedStrategies?: number;
   minAgreementRatio?: number;
+  /** Parent-TF trend for hard veto (`null` = unavailable / skip). */
+  htfTrend?: HtfTrend | null;
+  htfVetoEnabled?: boolean;
 }
 
 export function buildConsensus(input: ConsensusInput): ConsensusResult {
@@ -33,6 +39,7 @@ export function buildConsensus(input: ConsensusInput): ConsensusResult {
   const evidence: Evidence[] = [...regimeResult.evidence];
   const minAligned = input.minAlignedStrategies ?? 2;
   const minAgreementRatio = input.minAgreementRatio ?? 0.6;
+  const htfVetoEnabled = input.htfVetoEnabled !== false;
 
   const actionable = strategies.filter((s) => s.decision !== Decision.NO_TRADE);
   const buys = actionable.filter((s) => s.decision === Decision.BUY);
@@ -77,10 +84,10 @@ export function buildConsensus(input: ConsensusInput): ConsensusResult {
     const bullishTrend = ema50 > ema200;
     if ((side === Side.BUY && bullishTrend) || (side === Side.SELL && !bullishTrend)) {
       trendScore = 80 + Math.min(20, adx);
-      evidence.push({ source: 'trend', label: 'HTF trend aligned', weight: 0.2 });
+      evidence.push({ source: 'trend', label: 'Trend aligned', weight: 0.2 });
     } else {
       trendScore = 30;
-      evidence.push({ source: 'trend', label: 'HTF trend conflict', weight: 0.2 });
+      evidence.push({ source: 'trend', label: 'Trend conflict', weight: 0.2 });
     }
   }
 
@@ -152,10 +159,35 @@ export function buildConsensus(input: ConsensusInput): ConsensusResult {
     });
   } else if (
     (regime === MarketRegime.TRENDING_BEAR && side === Side.BUY) ||
-    (regime === MarketRegime.TRENDING_BULL && side === Side.SELL)
+    (regime === MarketRegime.TRENDING_BULL && side === Side.SELL) ||
+    (regime === MarketRegime.TRENDING_VOLATILE &&
+      side === Side.BUY &&
+      regimeResult.minusDI > regimeResult.plusDI) ||
+    (regime === MarketRegime.TRENDING_VOLATILE &&
+      side === Side.SELL &&
+      regimeResult.plusDI > regimeResult.minusDI)
   ) {
     veto = 'Strong opposing market regime';
     score = Math.min(score, 40);
+  } else if (
+    htfVetoEnabled &&
+    input.htfTrend != null &&
+    ((side === Side.BUY && input.htfTrend === 'bear') ||
+      (side === Side.SELL && input.htfTrend === 'bull'))
+  ) {
+    veto = 'HTF trend opposing';
+    score = Math.min(score, 40);
+    evidence.push({
+      source: 'htf',
+      label: `HTF trend ${input.htfTrend} opposes ${side}`,
+      weight: 0.3,
+    });
+  } else if (htfVetoEnabled && input.htfTrend != null) {
+    evidence.push({
+      source: 'htf',
+      label: `HTF trend ${input.htfTrend} aligned`,
+      weight: 0.2,
+    });
   }
 
   for (const s of aligned) {

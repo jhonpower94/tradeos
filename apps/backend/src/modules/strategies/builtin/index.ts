@@ -17,6 +17,10 @@ import { orderBlockStrategy } from './order-block.js';
 import { fairValueGapStrategy } from './fair-value-gap.js';
 import { liquiditySweepStrategy } from './liquidity-sweep.js';
 import { volumeBreakoutStrategy } from './volume-breakout.js';
+import { bbSqueezeBreakoutStrategy } from './bb-squeeze-breakout.js';
+import { stochRsiReversionStrategy } from './stoch-rsi-reversion.js';
+import { ichimokuTrendStrategy } from './ichimoku-trend.js';
+import { pivotBounceStrategy } from './pivot-bounce.js';
 
 export {
   emaPullbackStrategy,
@@ -37,6 +41,10 @@ export {
   fairValueGapStrategy,
   liquiditySweepStrategy,
   volumeBreakoutStrategy,
+  bbSqueezeBreakoutStrategy,
+  stochRsiReversionStrategy,
+  ichimokuTrendStrategy,
+  pivotBounceStrategy,
 };
 
 /** All built-in strategies, in the same order as `STRATEGY_IDS`. */
@@ -59,4 +67,8 @@ export const builtinStrategies: Strategy[] = [
   fairValueGapStrategy,
   liquiditySweepStrategy,
   volumeBreakoutStrategy,
+  bbSqueezeBreakoutStrategy,
+  stochRsiReversionStrategy,
+  ichimokuTrendStrategy,
+  pivotBounceStrategy,
 ];

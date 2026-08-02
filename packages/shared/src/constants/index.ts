@@ -58,6 +58,8 @@ export enum MarketRegime {
   TRENDING_BEAR = 'trending_bear',
   RANGING = 'ranging',
   VOLATILE = 'volatile',
+  COMPRESSION = 'compression',
+  TRENDING_VOLATILE = 'trending_volatile',
   UNKNOWN = 'unknown',
 }
 
@@ -102,6 +104,10 @@ export const STRATEGY_IDS = [
   'fair_value_gap',
   'liquidity_sweep',
   'volume_breakout',
+  'bb_squeeze_breakout',
+  'stoch_rsi_reversion',
+  'ichimoku_trend',
+  'pivot_bounce',
 ] as const;
 
 export type StrategyId = (typeof STRATEGY_IDS)[number];

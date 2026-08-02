@@ -6,7 +6,11 @@ import { NotificationType } from '@trading-os/shared';
 import { processAutoSignals } from '../trade/index.js';
 import { getRawSettings } from '../settings/index.js';
 import { consensusToOpportunity, persistOpportunities } from '../ranking/index.js';
-import { buildConsensus } from '../consensus/index.js';
+import {
+  buildConsensus,
+  detectHtfTrend,
+  resolveParentTimeframe,
+} from '../consensus/index.js';
 import { runAllStrategies } from '../strategies/index.js';
 import { detectPatterns } from '../patterns/index.js';
 import { computeAllIndicators, INDICATOR_MIN_PERIODS } from '../indicators/index.js';
@@ -213,6 +217,26 @@ class ScannerService {
       filteredMap,
     );
 
+    let htfTrend: 'bull' | 'bear' | null = null;
+    const htfVetoEnabled = settings.scanner?.htfVetoEnabled !== false;
+    if (htfVetoEnabled) {
+      const parentTf = resolveParentTimeframe(timeframe);
+      if (parentTf) {
+        try {
+          const htfCandles = await marketDataService.getCandles(
+            symbol,
+            parentTf,
+            Math.max(INDICATOR_MIN_PERIODS, 250),
+          );
+          if (htfCandles.length >= 50) {
+            htfTrend = detectHtfTrend(computeAllIndicators(htfCandles));
+          }
+        } catch {
+          htfTrend = null;
+        }
+      }
+    }
+
     const minConf = settings.scanner?.minConfidence ?? 75;
     const consensus = buildConsensus({
       strategies: strategyResults,
@@ -221,6 +245,8 @@ class ScannerService {
       regimeResult,
       minAlignedStrategies: settings.scanner?.minAlignedStrategies ?? 2,
       minAgreementRatio: settings.scanner?.minAgreementRatio ?? 0.6,
+      htfTrend,
+      htfVetoEnabled,
     });
     if (consensus.score < minConf) return null;
     return consensusToOpportunity(symbol, timeframe, consensus, minConf);
