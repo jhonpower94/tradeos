@@ -130,7 +130,7 @@ export function ScannerPage() {
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>Rank</TableCell>
+              <TableCell>#</TableCell>
               <TableCell>Pair</TableCell>
               <TableCell>Side</TableCell>
               <TableCell>Regime</TableCell>

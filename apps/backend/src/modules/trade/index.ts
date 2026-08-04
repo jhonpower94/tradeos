@@ -22,6 +22,12 @@ import { notify } from '../notifications/index.js';
 import { NotificationType } from '@trading-os/shared';
 import { config } from '../../config/index.js';
 import { getPaperEquity } from '../portfolio/paper-equity.js';
+import {
+  calcNetPnl,
+  estimateExitFee,
+  fillPriceFromOrder,
+  resolveMarkPrice,
+} from './pricing.js';
 
 async function estimateEquity(userId: string, mode: TradingMode): Promise<{ equity: number; freeQuote: number }> {
   if (mode === TradingMode.LIVE) {
@@ -291,16 +297,16 @@ export async function partialClosePosition(
     return closePosition(userId, positionId, reason, exitPrice);
   }
 
-  const price =
-    exitPrice ??
-    getTickerPrice(position.symbol) ??
-    position.currentPrice;
-
   const trade = await Trade.findById(position.tradeId);
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404);
 
   const settings = await getRawSettings(userId);
   const feeRate = settings.trading?.feeRate ?? config.feeRate;
+
+  let price =
+    exitPrice ??
+    (await resolveMarkPrice(position.symbol, position.currentPrice)) ??
+    position.currentPrice;
 
   if (trade.mode === TradingMode.LIVE) {
     const creds = await getBinanceCredentials(userId);
@@ -315,15 +321,19 @@ export async function partialClosePosition(
           quantity: qty,
         });
         trade.binanceOrderIds = [...(trade.binanceOrderIds ?? []), order.orderId];
+        const fill = fillPriceFromOrder(order);
+        if (fill != null) {
+          price = fill;
+          setTickerPrice(position.symbol, fill);
+        }
       } catch (e) {
         void e;
       }
     }
   }
 
-  const dir = position.side === Side.BUY ? 1 : -1;
-  const exitFee = price * qty * feeRate;
-  const slicePnl = (price - position.entryPrice) * qty * dir - exitFee;
+  const exitFee = estimateExitFee(price, qty, feeRate);
+  const slicePnl = calcNetPnl(position.side as Side, position.entryPrice, price, qty, feeRate);
 
   trade.realizedPnl = (trade.realizedPnl ?? 0) + slicePnl;
   trade.fees = (trade.fees ?? 0) + exitFee;
@@ -332,11 +342,12 @@ export async function partialClosePosition(
 
   position.qty = remaining;
   position.currentPrice = price;
-  position.unrealizedPnl = calcUnrealizedForPartial(
+  position.unrealizedPnl = calcNetPnl(
     position.side as Side,
     position.entryPrice,
     price,
     remaining,
+    feeRate,
   );
   await position.save();
 
@@ -354,11 +365,6 @@ export async function partialClosePosition(
   return trade;
 }
 
-function calcUnrealizedForPartial(side: Side, entry: number, current: number, qty: number): number {
-  const dir = side === Side.BUY ? 1 : -1;
-  return (current - entry) * qty * dir;
-}
-
 export async function closePosition(
   userId: string,
   positionId: string,
@@ -368,16 +374,16 @@ export async function closePosition(
   const position = await Position.findOne({ _id: positionId, userId, status: PositionStatus.OPEN });
   if (!position) throw new AppError('NOT_FOUND', 'Position not found', 404);
 
-  const price =
-    exitPrice ??
-    getTickerPrice(position.symbol) ??
-    position.currentPrice;
-
   const trade = await Trade.findById(position.tradeId);
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404);
 
   const settings = await getRawSettings(userId);
   const feeRate = settings.trading?.feeRate ?? config.feeRate;
+
+  let price =
+    exitPrice ??
+    (await resolveMarkPrice(position.symbol, position.currentPrice)) ??
+    position.currentPrice;
 
   if (trade.mode === TradingMode.LIVE) {
     const creds = await getBinanceCredentials(userId);
@@ -392,6 +398,11 @@ export async function closePosition(
           quantity: position.qty,
         });
         trade.binanceOrderIds = [...(trade.binanceOrderIds ?? []), order.orderId];
+        const fill = fillPriceFromOrder(order);
+        if (fill != null) {
+          price = fill;
+          setTickerPrice(position.symbol, fill);
+        }
       } catch (e) {
         // software close still recorded
         void e;
@@ -399,9 +410,14 @@ export async function closePosition(
     }
   }
 
-  const dir = position.side === Side.BUY ? 1 : -1;
-  const exitFee = price * position.qty * feeRate;
-  const slicePnl = (price - position.entryPrice) * position.qty * dir - exitFee;
+  const exitFee = estimateExitFee(price, position.qty, feeRate);
+  const slicePnl = calcNetPnl(
+    position.side as Side,
+    position.entryPrice,
+    price,
+    position.qty,
+    feeRate,
+  );
 
   trade.exitPrice = price;
   trade.realizedPnl = (trade.realizedPnl ?? 0) + slicePnl;

@@ -3,8 +3,10 @@ import { Position } from '../../models/Position.js';
 import { Trade } from '../../models/Trade.js';
 import { getTickerPrice } from '../market-data/index.js';
 import { closePosition, partialClosePosition } from '../trade/index.js';
+import { calcNetPnl } from '../trade/pricing.js';
 import { getRawSettings } from '../settings/index.js';
 import { AppError } from '../../utils/errors.js';
+import { config } from '../../config/index.js';
 
 export function calcUnrealizedPnl(
   side: Side,
@@ -146,10 +148,27 @@ export async function markPositions(userId?: string) {
   const q: Record<string, unknown> = { status: PositionStatus.OPEN };
   if (userId) q.userId = userId;
   const positions = await Position.find(q);
+  const feeCache = new Map<string, number>();
+
   for (const p of positions) {
+    // Cache-first mark (WS); avoid REST storms in the hot loop
     const price = getTickerPrice(p.symbol) ?? p.currentPrice;
     p.currentPrice = price;
-    p.unrealizedPnl = calcUnrealizedPnl(p.side as Side, p.entryPrice, price, p.qty);
+
+    const uid = String(p.userId);
+    let feeRate = feeCache.get(uid);
+    if (feeRate == null) {
+      try {
+        const raw = await getRawSettings(uid);
+        feeRate = raw.trading?.feeRate ?? config.feeRate;
+      } catch {
+        feeRate = config.feeRate;
+      }
+      feeCache.set(uid, feeRate);
+    }
+
+    // Net uPnL matches close PnL formula at this mark
+    p.unrealizedPnl = calcNetPnl(p.side as Side, p.entryPrice, price, p.qty, feeRate);
     p.highestPrice = Math.max(p.highestPrice ?? price, price);
     p.lowestPrice = Math.min(p.lowestPrice ?? price, price);
 

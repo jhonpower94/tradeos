@@ -23,7 +23,7 @@ export function startPositionWorker() {
     } catch (e) {
       console.error('Position worker error', e);
     }
-  }, 5_000);
+  }, 1_000);
 }
 
 export function stopPositionWorker() {

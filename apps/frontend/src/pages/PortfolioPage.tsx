@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import {
   Alert,
   Box,
@@ -10,6 +10,7 @@ import {
   TableHead,
   TableRow,
   TextField,
+  ToggleButton,
   Typography,
 } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -17,6 +18,7 @@ import axios from 'axios';
 import { portfolioApi, positionsApi, tradesApi } from '../api';
 import { RegimeChip } from '../components/RegimeChip';
 import { BiasChip } from '../components/BiasChip';
+import { CandleChart } from '../components/CandleChart';
 
 function errMsg(err: unknown): string {
   if (axios.isAxiosError(err)) {
@@ -30,6 +32,7 @@ function errMsg(err: unknown): string {
 type PositionContext = {
   positionId: string;
   tradeId: string;
+  timeframe: string;
   regime: string;
   htfTrend: string | null;
   htfTimeframe: string | null;
@@ -66,6 +69,7 @@ export function PortfolioPage() {
 
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  const [chartPositionId, setChartPositionId] = useState<string | null>(null);
 
   const closeTrade = useMutation({
     mutationFn: (tradeId: string) => tradesApi.close(tradeId),
@@ -286,49 +290,83 @@ export function PortfolioPage() {
             {(positions?.items ?? [])
               .filter((p: { status: string }) => p.status === 'open')
               .map((p: Record<string, unknown>) => {
-                const ctx = contextByPosition.get(String(p._id));
+                const id = String(p._id);
+                const ctx = contextByPosition.get(id);
+                const chartOpen = chartPositionId === id;
                 return (
-                  <TableRow key={String(p._id)}>
-                    <TableCell sx={{ fontFamily: 'IBM Plex Mono, monospace' }}>{String(p.symbol)}</TableCell>
-                    <TableCell>{String(p.side)}</TableCell>
-                    <TableCell>{Number(p.qty).toPrecision(6)}</TableCell>
-                    <TableCell>{Number(p.entryPrice).toPrecision(6)}</TableCell>
-                    <TableCell>{Number(p.currentPrice).toPrecision(6)}</TableCell>
-                    <TableCell sx={{ color: Number(p.unrealizedPnl) >= 0 ? 'long.main' : 'short.main' }}>
-                      {Number(p.unrealizedPnl).toFixed(2)}
-                    </TableCell>
-                    <TableCell>{p.stopLoss ? Number(p.stopLoss).toPrecision(6) : '—'}</TableCell>
-                    <TableCell>{p.takeProfit ? Number(p.takeProfit).toPrecision(6) : '—'}</TableCell>
-                    <TableCell>
-                      {ctx ? <RegimeChip regime={ctx.regime} /> : '—'}
-                    </TableCell>
-                    <TableCell>
-                      {ctx?.htfTrend
-                        ? `${ctx.htfTrend}${ctx.htfTimeframe ? ` (${ctx.htfTimeframe})` : ''}`
-                        : '—'}
-                    </TableCell>
-                    <TableCell>
-                      {ctx ? (
-                        <BiasChip
-                          aligned={ctx.aligned}
-                          suggestion={ctx.suggestion}
-                          message={ctx.message}
-                        />
-                      ) : (
-                        '—'
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        size="small"
-                        color="warning"
-                        disabled={closeTrade.isPending}
-                        onClick={() => closeTrade.mutate(String(p.tradeId))}
-                      >
-                        Close
-                      </Button>
-                    </TableCell>
-                  </TableRow>
+                  <Fragment key={id}>
+                    <TableRow>
+                      <TableCell sx={{ fontFamily: 'IBM Plex Mono, monospace' }}>{String(p.symbol)}</TableCell>
+                      <TableCell>{String(p.side)}</TableCell>
+                      <TableCell>{Number(p.qty).toPrecision(6)}</TableCell>
+                      <TableCell>{Number(p.entryPrice).toPrecision(6)}</TableCell>
+                      <TableCell>{Number(p.currentPrice).toPrecision(6)}</TableCell>
+                      <TableCell sx={{ color: Number(p.unrealizedPnl) >= 0 ? 'long.main' : 'short.main' }}>
+                        {Number(p.unrealizedPnl).toFixed(2)}
+                      </TableCell>
+                      <TableCell>{p.stopLoss ? Number(p.stopLoss).toPrecision(6) : '—'}</TableCell>
+                      <TableCell>{p.takeProfit ? Number(p.takeProfit).toPrecision(6) : '—'}</TableCell>
+                      <TableCell>
+                        {ctx ? <RegimeChip regime={ctx.regime} /> : '—'}
+                      </TableCell>
+                      <TableCell>
+                        {ctx?.htfTrend
+                          ? `${ctx.htfTrend}${ctx.htfTimeframe ? ` (${ctx.htfTimeframe})` : ''}`
+                          : '—'}
+                      </TableCell>
+                      <TableCell>
+                        {ctx ? (
+                          <BiasChip
+                            aligned={ctx.aligned}
+                            suggestion={ctx.suggestion}
+                            message={ctx.message}
+                          />
+                        ) : (
+                          '—'
+                        )}
+                      </TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                        <ToggleButton
+                          size="small"
+                          value="chart"
+                          selected={chartOpen}
+                          onChange={() => setChartPositionId(chartOpen ? null : id)}
+                          sx={{
+                            mr: 1,
+                            px: 1.25,
+                            py: 0.25,
+                            textTransform: 'none',
+                            fontSize: '0.8125rem',
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          Chart
+                        </ToggleButton>
+                        <Button
+                          size="small"
+                          color="warning"
+                          disabled={closeTrade.isPending}
+                          onClick={() => closeTrade.mutate(String(p.tradeId))}
+                        >
+                          Close
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                    {chartOpen && (
+                      <TableRow>
+                        <TableCell colSpan={12} sx={{ bgcolor: 'background.default', py: 2 }}>
+                          <CandleChart
+                            symbol={String(p.symbol)}
+                            interval={ctx?.timeframe ?? '1h'}
+                            height={280}
+                            entry={Number(p.entryPrice)}
+                            stopLoss={p.stopLoss != null ? Number(p.stopLoss) : undefined}
+                            takeProfit={p.takeProfit != null ? Number(p.takeProfit) : undefined}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
                 );
               })}
           </TableBody>

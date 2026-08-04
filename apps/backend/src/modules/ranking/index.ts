@@ -53,14 +53,9 @@ export function consensusToOpportunity(
   };
 }
 
+/** Assign display rank in scan-batch order (most recently listed via updatedAt on read). */
 export function rankOpportunities(opps: Opportunity[]): Opportunity[] {
-  return [...opps]
-    .sort((a, b) => {
-      if (b.confidence !== a.confidence) return b.confidence - a.confidence;
-      if (b.riskReward !== a.riskReward) return b.riskReward - a.riskReward;
-      return a.symbol.localeCompare(b.symbol);
-    })
-    .map((o, i) => ({ ...o, rank: i + 1 }));
+  return opps.map((o, i) => ({ ...o, rank: i + 1 }));
 }
 
 export async function persistOpportunities(userId: string, opps: Opportunity[]) {
@@ -121,5 +116,5 @@ export async function listOpportunities(userId: string, filters?: {
   if (filters?.timeframe) q.timeframe = filters.timeframe;
   if (filters?.side) q.side = filters.side;
   if (filters?.search) q.symbol = new RegExp(filters.search, 'i');
-  return Signal.find(q).sort({ confidence: -1, riskReward: -1 }).limit(100).lean();
+  return Signal.find(q).sort({ updatedAt: -1, createdAt: -1 }).limit(100).lean();
 }
