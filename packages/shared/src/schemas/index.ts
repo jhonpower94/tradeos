@@ -21,7 +21,7 @@ export const riskSettingsSchema = z.object({
   maxRiskPerTrade: z.number().min(0.001).max(0.1).default(0.01),
   maxDailyLoss: z.number().min(0.01).max(0.5).default(0.05),
   maxOpenPositions: z.number().int().min(1).max(50).default(5),
-  minRiskReward: z.number().min(0.5).max(10).default(2),
+  minRiskReward: z.number().min(0.5).max(10).default(1.2),
   maxSpreadBps: z.number().min(1).max(100).default(20),
   minLiquidityUsdt: z.number().min(0).default(1_000_000),
   atrSlMultiplierMin: z.number().default(0.5),

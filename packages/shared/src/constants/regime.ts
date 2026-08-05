@@ -76,6 +76,33 @@ export const STRATEGY_REGIME_COMPATIBILITY: Record<StrategyId, MarketRegime[]> =
     MarketRegime.TRENDING_VOLATILE,
   ],
   pivot_bounce: [MarketRegime.RANGING],
+  rsi_divergence: [
+    MarketRegime.RANGING,
+    MarketRegime.VOLATILE,
+    MarketRegime.COMPRESSION,
+  ],
+  donchian_volume: [
+    MarketRegime.TRENDING_BULL,
+    MarketRegime.TRENDING_BEAR,
+    MarketRegime.VOLATILE,
+    MarketRegime.COMPRESSION,
+    MarketRegime.TRENDING_VOLATILE,
+  ],
+  adx_ignition: [
+    MarketRegime.TRENDING_BULL,
+    MarketRegime.TRENDING_BEAR,
+    MarketRegime.TRENDING_VOLATILE,
+  ],
+  macd_divergence: [
+    MarketRegime.RANGING,
+    MarketRegime.VOLATILE,
+    MarketRegime.COMPRESSION,
+  ],
+  inside_bar_nr7: [
+    MarketRegime.COMPRESSION,
+    MarketRegime.RANGING,
+    MarketRegime.VOLATILE,
+  ],
 };
 
 export function getCompatibleStrategyIds(regime: MarketRegime): StrategyId[] {

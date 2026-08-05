@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { STRATEGY_IDS } from '@trading-os/shared';
 import { detectPatterns, findSwingPoints } from '../src/modules/patterns/index.js';
 import { computeAllIndicators } from '../src/modules/indicators/index.js';
 import { runAllStrategies } from '../src/modules/strategies/index.js';
@@ -45,7 +46,7 @@ describe('strategies', () => {
       indicators,
       patterns,
     });
-    expect(results.length).toBe(22);
+    expect(results.length).toBe(STRATEGY_IDS.length);
     expect(results.every((r) => r.confidence >= 0 && r.confidence <= 100)).toBe(true);
   });
 });

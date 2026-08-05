@@ -14,7 +14,7 @@ const settingsSchema = new Schema(
       maxRiskPerTrade: { type: Number, default: 0.01 },
       maxDailyLoss: { type: Number, default: 0.05 },
       maxOpenPositions: { type: Number, default: 5 },
-      minRiskReward: { type: Number, default: 2 },
+      minRiskReward: { type: Number, default: 1.2 },
       maxSpreadBps: { type: Number, default: 20 },
       minLiquidityUsdt: { type: Number, default: 1_000_000 },
       atrSlMultiplierMin: { type: Number, default: 0.5 },

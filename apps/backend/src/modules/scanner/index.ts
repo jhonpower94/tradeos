@@ -11,7 +11,7 @@ import {
   detectHtfTrend,
   resolveParentTimeframe,
 } from '../consensus/index.js';
-import { runAllStrategies } from '../strategies/index.js';
+import { runAllStrategies, rescaleStrategyRiskReward } from '../strategies/index.js';
 import { detectPatterns } from '../patterns/index.js';
 import { computeAllIndicators, INDICATOR_MIN_PERIODS } from '../indicators/index.js';
 import { marketDataService, setTickerPrice } from '../market-data/index.js';
@@ -212,10 +212,11 @@ class ScannerService {
       if (!anyEnabled) return null;
     }
 
+    const minRR = settings.risk?.minRiskReward ?? 1.2;
     const strategyResults = runAllStrategies(
       { symbol, timeframe, candles, indicators, patterns },
       filteredMap,
-    );
+    ).map((r) => rescaleStrategyRiskReward(r, minRR));
 
     let htfTrend: 'bull' | 'bear' | null = null;
     const htfVetoEnabled = settings.scanner?.htfVetoEnabled !== false;

@@ -56,13 +56,13 @@ export interface RiskLevels {
 
 /**
  * Build long-side entry/SL/TP off an ATR-based stop distance.
- * TP is placed at `minRR` multiples of the risk distance (>= 2R by default).
+ * TP is placed at `minRR` multiples of the risk distance (1.2R by default).
  */
 export function buildLongLevels(
   entry: number,
   atr: number,
   atrMultSl = 1.5,
-  minRR = 2,
+  minRR = 1.2,
 ): RiskLevels {
   const riskDistance = Math.max(atr * atrMultSl, entry * 0.002);
   const stopLoss = entry - riskDistance;
@@ -74,12 +74,34 @@ export function buildShortLevels(
   entry: number,
   atr: number,
   atrMultSl = 1.5,
-  minRR = 2,
+  minRR = 1.2,
 ): RiskLevels {
   const riskDistance = Math.max(atr * atrMultSl, entry * 0.002);
   const stopLoss = entry + riskDistance;
   const takeProfit = entry - riskDistance * minRR;
   return { entry, stopLoss, takeProfit, riskReward: minRR };
+}
+
+/** Recompute TP from entry/SL to match settings min RR (keeps SL). */
+export function rescaleStrategyRiskReward(
+  result: StrategyResult,
+  minRR: number,
+): StrategyResult {
+  if (
+    result.decision === Decision.NO_TRADE ||
+    result.entry == null ||
+    result.stopLoss == null ||
+    !(minRR > 0)
+  ) {
+    return result;
+  }
+  const risk = Math.abs(result.entry - result.stopLoss);
+  if (!(risk > 0)) return result;
+  const takeProfit =
+    result.decision === Decision.BUY
+      ? result.entry + risk * minRR
+      : result.entry - risk * minRR;
+  return { ...result, takeProfit, riskReward: minRR };
 }
 
 export function findPattern(

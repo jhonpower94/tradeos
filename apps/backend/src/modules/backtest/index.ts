@@ -10,7 +10,7 @@ import { BacktestRun } from '../../models/BacktestRun.js';
 import { exchangeService } from '../exchange/index.js';
 import { computeAllIndicators } from '../indicators/index.js';
 import { detectPatterns } from '../patterns/index.js';
-import { strategyRegistry } from '../strategies/index.js';
+import { strategyRegistry, rescaleStrategyRiskReward } from '../strategies/index.js';
 import { detectRegime } from '../regime/index.js';
 import { AppError } from '../../utils/errors.js';
 
@@ -102,14 +102,17 @@ export async function runBacktest(params: {
           equityCurve.push({ t: candles[i]!.openTime, equity });
           continue;
         }
-        const result = strategy.evaluate({
-          symbol: params.symbol,
-          timeframe: params.interval,
-          candles: window,
-          indicators,
-          patterns,
-          params: params.strategyParams,
-        });
+        const result = rescaleStrategyRiskReward(
+          strategy.evaluate({
+            symbol: params.symbol,
+            timeframe: params.interval,
+            candles: window,
+            indicators,
+            patterns,
+            params: params.strategyParams,
+          }),
+          1.2,
+        );
         if (
           result.decision !== Decision.NO_TRADE &&
           result.entry &&

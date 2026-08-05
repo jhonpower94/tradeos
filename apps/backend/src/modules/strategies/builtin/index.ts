@@ -21,6 +21,11 @@ import { bbSqueezeBreakoutStrategy } from './bb-squeeze-breakout.js';
 import { stochRsiReversionStrategy } from './stoch-rsi-reversion.js';
 import { ichimokuTrendStrategy } from './ichimoku-trend.js';
 import { pivotBounceStrategy } from './pivot-bounce.js';
+import { rsiDivergenceStrategy } from './rsi-divergence.js';
+import { donchianVolumeStrategy } from './donchian-volume.js';
+import { adxIgnitionStrategy } from './adx-ignition.js';
+import { macdDivergenceStrategy } from './macd-divergence.js';
+import { insideBarNr7Strategy } from './inside-bar-nr7.js';
 
 export {
   emaPullbackStrategy,
@@ -45,6 +50,11 @@ export {
   stochRsiReversionStrategy,
   ichimokuTrendStrategy,
   pivotBounceStrategy,
+  rsiDivergenceStrategy,
+  donchianVolumeStrategy,
+  adxIgnitionStrategy,
+  macdDivergenceStrategy,
+  insideBarNr7Strategy,
 };
 
 /** All built-in strategies, in the same order as `STRATEGY_IDS`. */
@@ -71,4 +81,9 @@ export const builtinStrategies: Strategy[] = [
   stochRsiReversionStrategy,
   ichimokuTrendStrategy,
   pivotBounceStrategy,
+  rsiDivergenceStrategy,
+  donchianVolumeStrategy,
+  adxIgnitionStrategy,
+  macdDivergenceStrategy,
+  insideBarNr7Strategy,
 ];

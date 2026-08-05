@@ -108,6 +108,11 @@ export const STRATEGY_IDS = [
   'stoch_rsi_reversion',
   'ichimoku_trend',
   'pivot_bounce',
+  'rsi_divergence',
+  'donchian_volume',
+  'adx_ignition',
+  'macd_divergence',
+  'inside_bar_nr7',
 ] as const;
 
 export type StrategyId = (typeof STRATEGY_IDS)[number];
