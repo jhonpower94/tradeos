@@ -55,3 +55,23 @@ export async function resolveMarkPrice(
   if (fallback != null && fallback > 0) return fallback;
   return undefined;
 }
+
+/**
+ * Exit settlement price for closes: REST ticker first, then WS cache.
+ * Never falls back to a stale position.currentPrice.
+ */
+export async function resolveLiveExitPrice(symbol: string): Promise<number | undefined> {
+  try {
+    const ticker = await exchangeService.getTicker(symbol);
+    if (ticker.price > 0) {
+      setTickerPrice(symbol, ticker.price);
+      return ticker.price;
+    }
+  } catch {
+    // fall through to cache
+  }
+
+  const cached = getTickerPrice(symbol);
+  if (cached != null && cached > 0) return cached;
+  return undefined;
+}

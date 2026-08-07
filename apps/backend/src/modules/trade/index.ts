@@ -26,9 +26,80 @@ import {
   calcNetPnl,
   estimateExitFee,
   fillPriceFromOrder,
-  resolveMarkPrice,
+  resolveLiveExitPrice,
 } from './pricing.js';
 import { entryDriftExceeded, reanchorRiskLevels } from './levels.js';
+
+/**
+ * Resolve settlement price for a close.
+ * - Caller-supplied exitPrice (auto exits): soft-close on that tick if live order fails.
+ * - No exitPrice (manual close): require live mark; LIVE requires a successful fill.
+ */
+async function settleClosePrice(input: {
+  userId: string;
+  symbol: string;
+  side: Side;
+  qty: number;
+  mode: TradingMode;
+  exitPrice?: number;
+}): Promise<{ price: number; orderId?: string }> {
+  const requireLiveSettlement = input.exitPrice == null;
+
+  let price: number;
+  if (input.exitPrice != null && input.exitPrice > 0) {
+    price = input.exitPrice;
+  } else {
+    const live = await resolveLiveExitPrice(input.symbol);
+    if (live == null) {
+      throw new AppError('NO_MARK_PRICE', 'Live market price unavailable', 503);
+    }
+    price = live;
+  }
+
+  if (input.mode !== TradingMode.LIVE) {
+    return { price };
+  }
+
+  const creds = await getBinanceCredentials(input.userId);
+  if (!creds) {
+    if (requireLiveSettlement) {
+      throw new AppError('NO_KEYS', 'Binance keys required for live close', 400);
+    }
+    return { price };
+  }
+
+  exchangeService.setCredentials(creds);
+  const closeSide = input.side === Side.BUY ? Side.SELL : Side.BUY;
+
+  try {
+    const order = await exchangeService.placeOrder({
+      symbol: input.symbol,
+      side: closeSide,
+      type: OrderType.MARKET,
+      quantity: input.qty,
+    });
+    const fill = fillPriceFromOrder(order);
+    if (fill != null) {
+      setTickerPrice(input.symbol, fill);
+      return { price: fill, orderId: order.orderId };
+    }
+    if (requireLiveSettlement) {
+      throw new AppError('NO_FILL_PRICE', 'Close order returned no fill price', 502);
+    }
+    return { price, orderId: order.orderId };
+  } catch (e) {
+    if (requireLiveSettlement) {
+      if (e instanceof AppError) throw e;
+      throw new AppError(
+        'CLOSE_ORDER_FAILED',
+        e instanceof Error ? e.message : 'Live close order failed',
+        502,
+      );
+    }
+    // Auto exit with explicit tick price: keep software close on that mark.
+    return { price };
+  }
+}
 
 async function estimateEquity(userId: string, mode: TradingMode): Promise<{ equity: number; freeQuote: number }> {
   if (mode === TradingMode.LIVE) {
@@ -353,33 +424,17 @@ export async function partialClosePosition(
   const settings = await getRawSettings(userId);
   const feeRate = settings.trading?.feeRate ?? config.feeRate;
 
-  let price =
-    exitPrice ??
-    (await resolveMarkPrice(position.symbol, position.currentPrice)) ??
-    position.currentPrice;
-
-  if (trade.mode === TradingMode.LIVE) {
-    const creds = await getBinanceCredentials(userId);
-    if (creds) {
-      exchangeService.setCredentials(creds);
-      const closeSide = position.side === Side.BUY ? Side.SELL : Side.BUY;
-      try {
-        const order = await exchangeService.placeOrder({
-          symbol: position.symbol,
-          side: closeSide,
-          type: OrderType.MARKET,
-          quantity: qty,
-        });
-        trade.binanceOrderIds = [...(trade.binanceOrderIds ?? []), order.orderId];
-        const fill = fillPriceFromOrder(order);
-        if (fill != null) {
-          price = fill;
-          setTickerPrice(position.symbol, fill);
-        }
-      } catch (e) {
-        void e;
-      }
-    }
+  const settled = await settleClosePrice({
+    userId,
+    symbol: position.symbol,
+    side: position.side as Side,
+    qty,
+    mode: trade.mode as TradingMode,
+    exitPrice,
+  });
+  const price = settled.price;
+  if (settled.orderId) {
+    trade.binanceOrderIds = [...(trade.binanceOrderIds ?? []), settled.orderId];
   }
 
   const exitFee = estimateExitFee(price, qty, feeRate);
@@ -430,34 +485,17 @@ export async function closePosition(
   const settings = await getRawSettings(userId);
   const feeRate = settings.trading?.feeRate ?? config.feeRate;
 
-  let price =
-    exitPrice ??
-    (await resolveMarkPrice(position.symbol, position.currentPrice)) ??
-    position.currentPrice;
-
-  if (trade.mode === TradingMode.LIVE) {
-    const creds = await getBinanceCredentials(userId);
-    if (creds) {
-      exchangeService.setCredentials(creds);
-      const closeSide = position.side === Side.BUY ? Side.SELL : Side.BUY;
-      try {
-        const order = await exchangeService.placeOrder({
-          symbol: position.symbol,
-          side: closeSide,
-          type: OrderType.MARKET,
-          quantity: position.qty,
-        });
-        trade.binanceOrderIds = [...(trade.binanceOrderIds ?? []), order.orderId];
-        const fill = fillPriceFromOrder(order);
-        if (fill != null) {
-          price = fill;
-          setTickerPrice(position.symbol, fill);
-        }
-      } catch (e) {
-        // software close still recorded
-        void e;
-      }
-    }
+  const settled = await settleClosePrice({
+    userId,
+    symbol: position.symbol,
+    side: position.side as Side,
+    qty: position.qty,
+    mode: trade.mode as TradingMode,
+    exitPrice,
+  });
+  const price = settled.price;
+  if (settled.orderId) {
+    trade.binanceOrderIds = [...(trade.binanceOrderIds ?? []), settled.orderId];
   }
 
   const exitFee = estimateExitFee(price, position.qty, feeRate);
