@@ -28,6 +28,7 @@ import {
   fillPriceFromOrder,
   resolveMarkPrice,
 } from './pricing.js';
+import { entryDriftExceeded, reanchorRiskLevels } from './levels.js';
 
 async function estimateEquity(userId: string, mode: TradingMode): Promise<{ equity: number; freeQuote: number }> {
   if (mode === TradingMode.LIVE) {
@@ -97,12 +98,45 @@ export async function executeOpportunity(
     // ATR optional when market data unavailable
   }
 
+  // Size off expected fill so notional cap uses live price; SL/TP distances preserved.
+  let expectedEntry = opportunity.entry;
+  const cachedTicker = getTickerPrice(opportunity.symbol);
+  if (cachedTicker != null) {
+    expectedEntry = cachedTicker;
+  } else {
+    try {
+      const candles = await marketDataService.getCandles(
+        opportunity.symbol,
+        opportunity.timeframe,
+        1,
+      );
+      expectedEntry = candles[candles.length - 1]?.close ?? opportunity.entry;
+    } catch {
+      // keep signal.entry
+    }
+  }
+
+  const expectedLevels = reanchorRiskLevels(
+    opportunity.side,
+    expectedEntry,
+    opportunity.entry,
+    opportunity.stopLoss,
+    opportunity.takeProfit,
+  );
+  const sizedOpportunity: Opportunity = {
+    ...opportunity,
+    entry: expectedEntry,
+    stopLoss: expectedLevels.stopLoss,
+    takeProfit: expectedLevels.takeProfit,
+    riskReward: expectedLevels.riskReward > 0 ? expectedLevels.riskReward : opportunity.riskReward,
+  };
+
   const riskResult = await validateRisk({
     userId,
     equity,
     freeQuote,
     risk: settings.risk as never,
-    opportunity,
+    opportunity: sizedOpportunity,
     atr,
     spreadBps,
     volume24h,
@@ -121,26 +155,11 @@ export async function executeOpportunity(
   const qty = riskResult.qty;
   const feeRate = settings.trading?.feeRate ?? config.feeRate;
 
-  let entryPrice = opportunity.entry;
+  let entryPrice = expectedEntry;
   let binanceOrderIds: string[] = [];
   let fees = 0;
 
   if (mode === TradingMode.PAPER) {
-    const ticker = getTickerPrice(opportunity.symbol);
-    if (ticker != null) {
-      entryPrice = ticker;
-    } else {
-      try {
-        const candles = await marketDataService.getCandles(
-          opportunity.symbol,
-          opportunity.timeframe,
-          1,
-        );
-        entryPrice = candles[candles.length - 1]?.close ?? opportunity.entry;
-      } catch {
-        // Offline / Binance unreachable: keep signal.entry
-      }
-    }
     fees = entryPrice * qty * feeRate;
   } else {
     const creds = await getBinanceCredentials(userId);
@@ -157,9 +176,40 @@ export async function executeOpportunity(
     entryPrice =
       order.executedQty > 0
         ? order.cummulativeQuoteQty / order.executedQty
-        : opts?.limitPrice ?? opportunity.entry;
+        : opts?.limitPrice ?? expectedEntry;
     fees = entryPrice * qty * feeRate;
   }
+
+  if (entryDriftExceeded(opportunity.entry, entryPrice)) {
+    if (signalId) {
+      await Signal.findByIdAndUpdate(signalId, {
+        status: SignalStatus.REJECTED,
+        rejectReason: 'Entry drifted more than 2% from signal price',
+      });
+    }
+    // Live fill already happened — flatten immediately so oversized risk is not held.
+    if (mode === TradingMode.LIVE && binanceOrderIds.length > 0) {
+      try {
+        await exchangeService.placeOrder({
+          symbol: opportunity.symbol,
+          side: opportunity.side === Side.BUY ? Side.SELL : Side.BUY,
+          type: OrderType.MARKET,
+          quantity: qty,
+        });
+      } catch {
+        // best-effort flatten; still reject the open
+      }
+    }
+    throw new AppError('ENTRY_DRIFT', 'Entry drifted more than 2% from signal price', 400);
+  }
+
+  const levels = reanchorRiskLevels(
+    opportunity.side,
+    entryPrice,
+    opportunity.entry,
+    opportunity.stopLoss,
+    opportunity.takeProfit,
+  );
 
   const trade = await Trade.create({
     userId,
@@ -170,8 +220,8 @@ export async function executeOpportunity(
     orderType: opts?.orderType ?? OrderType.MARKET,
     qty,
     entryPrice,
-    stopLoss: opportunity.stopLoss,
-    takeProfit: opportunity.takeProfit,
+    stopLoss: levels.stopLoss,
+    takeProfit: levels.takeProfit,
     status: TradeStatus.OPEN,
     binanceOrderIds,
     fees,
@@ -188,9 +238,9 @@ export async function executeOpportunity(
     entryPrice,
     currentPrice: entryPrice,
     unrealizedPnl: 0,
-    stopLoss: opportunity.stopLoss,
-    takeProfit: opportunity.takeProfit,
-    initialStopLoss: opportunity.stopLoss,
+    stopLoss: levels.stopLoss,
+    takeProfit: levels.takeProfit,
+    initialStopLoss: levels.initialStopLoss,
     highestPrice: entryPrice,
     lowestPrice: entryPrice,
     partialTpDone: false,

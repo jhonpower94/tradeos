@@ -212,7 +212,7 @@ class ScannerService {
       if (!anyEnabled) return null;
     }
 
-    const minRR = settings.risk?.minRiskReward ?? 1.2;
+    const minRR = settings.risk?.minRiskReward ?? 2;
     const strategyResults = runAllStrategies(
       { symbol, timeframe, candles, indicators, patterns },
       filteredMap,

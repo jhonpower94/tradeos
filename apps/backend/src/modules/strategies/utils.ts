@@ -56,13 +56,13 @@ export interface RiskLevels {
 
 /**
  * Build long-side entry/SL/TP off an ATR-based stop distance.
- * TP is placed at `minRR` multiples of the risk distance (1.2R by default).
+ * TP is placed at `minRR` multiples of the risk distance (2R by default).
  */
 export function buildLongLevels(
   entry: number,
   atr: number,
   atrMultSl = 1.5,
-  minRR = 1.2,
+  minRR = 2,
 ): RiskLevels {
   const riskDistance = Math.max(atr * atrMultSl, entry * 0.002);
   const stopLoss = entry - riskDistance;
@@ -74,7 +74,7 @@ export function buildShortLevels(
   entry: number,
   atr: number,
   atrMultSl = 1.5,
-  minRR = 1.2,
+  minRR = 2,
 ): RiskLevels {
   const riskDistance = Math.max(atr * atrMultSl, entry * 0.002);
   const stopLoss = entry + riskDistance;

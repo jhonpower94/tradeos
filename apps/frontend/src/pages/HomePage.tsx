@@ -62,9 +62,9 @@ export function HomePage() {
               color={status?.running ? 'success' : 'default'}
             />
           </Box>
-          {opportunities.slice(0, 5).map((o: Record<string, unknown>) => (
+          {opportunities.slice(0, 5).map((o: Record<string, unknown>, i: number) => (
             <Box
-              key={String(o._id ?? o.symbol)}
+              key={String(o._id ?? `${o.symbol}-${o.timeframe ?? ''}-${o.side ?? ''}-${i}`)}
               sx={{
                 display: 'flex',
                 justifyContent: 'space-between',

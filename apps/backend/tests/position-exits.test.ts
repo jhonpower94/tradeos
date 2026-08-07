@@ -56,15 +56,21 @@ describe('calcRMultiple', () => {
 });
 
 describe('decideExitManagement', () => {
-  it('at +1R with defaults: partial 50%, breakeven, arm trailing 1.5%', () => {
-    const d = decideExitManagement({ ...base, price: 102 });
+  it('at +1.5R with defaults: partial 33%, breakeven, arm trailing 1.5%', () => {
+    // risk dist = 2; +1.5R → price 103
+    const d = decideExitManagement({ ...base, price: 103 });
     expect(d).toEqual({
       action: 'partial',
-      fraction: 0.5,
+      fraction: 0.33,
       armTrailing: true,
       trailingStopPct: 1.5,
       breakeven: true,
     });
+  });
+
+  it('at +1R with defaults: no partial yet (waits for 1.5R)', () => {
+    const d = decideExitManagement({ ...base, price: 102 });
+    expect(d).toEqual({ action: 'none' });
   });
 
   it('gap through full TP before partial: full close, no partial', () => {
@@ -77,13 +83,22 @@ describe('decideExitManagement', () => {
     expect(d).toEqual({ action: 'full_close', reason: 'Stop loss hit' });
   });
 
-  it('partial disabled, trailing on: at +1R arms trail without reducing qty', () => {
+  it('partial disabled, trailing on: at +1.5R arms trail without reducing qty', () => {
+    const settings: ExitManageSettings = {
+      ...DEFAULT_EXIT_MANAGE_SETTINGS,
+      partialTpEnabled: false,
+    };
+    const d = decideExitManagement({ ...base, price: 103, settings });
+    expect(d).toEqual({ action: 'arm_trailing', trailingStopPct: 1.5 });
+  });
+
+  it('partial disabled: at +1R does not arm trail yet', () => {
     const settings: ExitManageSettings = {
       ...DEFAULT_EXIT_MANAGE_SETTINGS,
       partialTpEnabled: false,
     };
     const d = decideExitManagement({ ...base, price: 102, settings });
-    expect(d).toEqual({ action: 'arm_trailing', trailingStopPct: 1.5 });
+    expect(d).toEqual({ action: 'none' });
   });
 
   it('after partial done, pullback to trail closes fully', () => {
@@ -113,11 +128,44 @@ describe('decideExitManagement', () => {
   it('does not re-partial when already done', () => {
     const d = decideExitManagement({
       ...base,
-      price: 102,
+      price: 103,
       partialTpDone: true,
       trailingStopPct: 1.5,
       trailingStopPrice: 100.4,
     });
     expect(d.action).toBe('none');
+  });
+
+  it('closes at −0.75R with Adverse R limit (before hard SL)', () => {
+    // risk dist = 2; −0.75R → price 98.5 (still above SL 98)
+    const d = decideExitManagement({ ...base, price: 98.5 });
+    expect(d).toEqual({ action: 'full_close', reason: 'Adverse R limit' });
+  });
+
+  it('hard SL still beats adverse R when through stop', () => {
+    const d = decideExitManagement({ ...base, price: 97.5 });
+    expect(d).toEqual({ action: 'full_close', reason: 'Stop loss hit' });
+  });
+
+  it('time stop when hold exceeded and R below minProgressR', () => {
+    const openedAt = Date.now() - 7 * 60 * 60 * 1000;
+    const d = decideExitManagement({ ...base, price: 100, openedAt });
+    expect(d).toEqual({ action: 'full_close', reason: 'Time stop' });
+  });
+
+  it('young trade at R=0 does not time-stop', () => {
+    const d = decideExitManagement({
+      ...base,
+      price: 100,
+      openedAt: Date.now() - 60_000,
+    });
+    expect(d).toEqual({ action: 'none' });
+  });
+
+  it('time stop skipped when R already at minProgressR', () => {
+    // +0.5R = price 101 — clearly above minProgressR 0.3
+    const openedAt = Date.now() - 7 * 60 * 60 * 1000;
+    const d = decideExitManagement({ ...base, price: 101, openedAt });
+    expect(d.action).not.toBe('full_close');
   });
 });

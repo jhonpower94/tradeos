@@ -93,9 +93,11 @@ export async function validateRisk(ctx: RiskContext): Promise<RiskValidationResu
   qty = exchangeService.roundQty(o.symbol, qty);
 
   const { stepSize, minNotional } = exchangeService.getLotSize(o.symbol);
-  if (o.entry > 0 && qty * o.entry > ctx.freeQuote) {
-    qty = exchangeService.roundQty(o.symbol, ctx.freeQuote / o.entry);
-    if (qty * o.entry > ctx.freeQuote && stepSize > 0) {
+  const maxFreePct = risk.maxFreeNotionalPct ?? 0.25;
+  const capNotional = Math.min(ctx.freeQuote, ctx.freeQuote * maxFreePct);
+  if (o.entry > 0 && qty * o.entry > capNotional) {
+    qty = exchangeService.roundQty(o.symbol, capNotional / o.entry);
+    if (qty * o.entry > capNotional && stepSize > 0) {
       qty = exchangeService.roundQty(o.symbol, Math.max(0, qty - stepSize));
     }
   }

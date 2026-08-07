@@ -120,6 +120,16 @@ export function SettingsPage() {
             defaultValue={data.risk?.minRiskReward}
             onBlur={(e) => saveSettings.mutate({ risk: { minRiskReward: Number(e.target.value) } })}
           />
+          <TextField
+            label="Max % of free balance per trade"
+            type="number"
+            inputProps={{ step: 0.05, min: 0.05, max: 1 }}
+            defaultValue={data.risk?.maxFreeNotionalPct ?? 0.25}
+            onBlur={(e) =>
+              saveSettings.mutate({ risk: { maxFreeNotionalPct: Number(e.target.value) } })
+            }
+            helperText="Caps entry notional to this fraction of free USDT (e.g. 0.25 = 25%)."
+          />
         </Paper>
       )}
 
@@ -168,17 +178,17 @@ export function SettingsPage() {
             label="Partial TP fraction"
             type="number"
             inputProps={{ step: 0.05, min: 0.05, max: 0.95 }}
-            defaultValue={data.trading?.partialTpFraction ?? 0.5}
+            defaultValue={data.trading?.partialTpFraction ?? 0.33}
             onBlur={(e) =>
               saveSettings.mutate({ trading: { partialTpFraction: Number(e.target.value) } })
             }
-            helperText="Fraction of size to close at the R trigger (e.g. 0.5 = 50%)."
+            helperText="Fraction of size to close at the R trigger (e.g. 0.33 = 33%)."
           />
           <TextField
             label="Partial TP at R"
             type="number"
             inputProps={{ step: 0.25, min: 0.25 }}
-            defaultValue={data.trading?.partialTpAtR ?? 1}
+            defaultValue={data.trading?.partialTpAtR ?? 1.5}
             onBlur={(e) =>
               saveSettings.mutate({ trading: { partialTpAtR: Number(e.target.value) } })
             }
@@ -218,11 +228,68 @@ export function SettingsPage() {
             label="Trail activate at R"
             type="number"
             inputProps={{ step: 0.25, min: 0.25 }}
-            defaultValue={data.trading?.trailingActivateAtR ?? 1}
+            defaultValue={data.trading?.trailingActivateAtR ?? 1.5}
             onBlur={(e) =>
               saveSettings.mutate({ trading: { trailingActivateAtR: Number(e.target.value) } })
             }
             helperText="Arm trailing once price reaches this R-multiple (even if partial TP is off)."
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={data.trading?.adverseREnabled ?? true}
+                onChange={(e) =>
+                  saveSettings.mutate({ trading: { adverseREnabled: e.target.checked } })
+                }
+              />
+            }
+            label="Adverse R early exit"
+          />
+          <TextField
+            label="Max adverse R"
+            type="number"
+            inputProps={{ step: 0.05, min: 0.1, max: 2 }}
+            defaultValue={data.trading?.maxAdverseR ?? 0.75}
+            onBlur={(e) =>
+              saveSettings.mutate({ trading: { maxAdverseR: Number(e.target.value) } })
+            }
+            helperText="Close when R falls to −this value (before full stop)."
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={data.trading?.timeStopEnabled ?? true}
+                onChange={(e) =>
+                  saveSettings.mutate({ trading: { timeStopEnabled: e.target.checked } })
+                }
+              />
+            }
+            label="Time stop"
+          />
+          <TextField
+            label="Max hold (hours)"
+            type="number"
+            inputProps={{ step: 0.5, min: 1 / 60, max: 168 }}
+            defaultValue={
+              data.trading?.maxHoldMs != null
+                ? data.trading.maxHoldMs / (60 * 60 * 1000)
+                : 6
+            }
+            onBlur={(e) =>
+              saveSettings.mutate({
+                trading: { maxHoldMs: Number(e.target.value) * 60 * 60 * 1000 },
+              })
+            }
+            helperText="Close if still below min progress R after this many hours."
+          />
+          <TextField
+            label="Min progress R (time stop)"
+            type="number"
+            inputProps={{ step: 0.05, min: 0, max: 1 }}
+            defaultValue={data.trading?.minProgressR ?? 0.3}
+            onBlur={(e) =>
+              saveSettings.mutate({ trading: { minProgressR: Number(e.target.value) } })
+            }
           />
         </Paper>
       )}

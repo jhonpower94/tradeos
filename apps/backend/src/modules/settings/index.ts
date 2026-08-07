@@ -4,10 +4,69 @@ import { encrypt, decrypt } from '../../utils/crypto.js';
 import { AppError } from '../../utils/errors.js';
 import { exchangeService } from '../exchange/index.js';
 
+/** Legacy factory defaults that made typical wins smaller than losses. */
+const LEGACY_ASYMMETRY = {
+  minRiskReward: 1.2,
+  partialTpFraction: 0.5,
+  partialTpAtR: 1,
+  trailingActivateAtR: 1,
+} as const;
+
+const ASYMMETRY_V2 = {
+  minRiskReward: 2,
+  partialTpFraction: 0.33,
+  partialTpAtR: 1.5,
+  trailingActivateAtR: 1.5,
+} as const;
+
+/**
+ * Upgrade docs still on the old default package so live bots pick up
+ * 2R / later partials without a manual Settings save.
+ * Skips if the user customized any of these four fields.
+ */
+async function upgradeLegacyAsymmetryDefaults(
+  doc: InstanceType<typeof Settings>,
+): Promise<InstanceType<typeof Settings>> {
+  const risk = doc.risk as { minRiskReward?: number } | undefined;
+  const trading = doc.trading as
+    | {
+        partialTpFraction?: number;
+        partialTpAtR?: number;
+        trailingActivateAtR?: number;
+      }
+    | undefined;
+
+  const stillLegacy =
+    (risk?.minRiskReward ?? LEGACY_ASYMMETRY.minRiskReward) === LEGACY_ASYMMETRY.minRiskReward &&
+    (trading?.partialTpFraction ?? LEGACY_ASYMMETRY.partialTpFraction) ===
+      LEGACY_ASYMMETRY.partialTpFraction &&
+    (trading?.partialTpAtR ?? LEGACY_ASYMMETRY.partialTpAtR) === LEGACY_ASYMMETRY.partialTpAtR &&
+    (trading?.trailingActivateAtR ?? LEGACY_ASYMMETRY.trailingActivateAtR) ===
+      LEGACY_ASYMMETRY.trailingActivateAtR;
+
+  if (!stillLegacy) return doc;
+
+  const updated = await Settings.findOneAndUpdate(
+    { _id: doc._id },
+    {
+      $set: {
+        'risk.minRiskReward': ASYMMETRY_V2.minRiskReward,
+        'trading.partialTpFraction': ASYMMETRY_V2.partialTpFraction,
+        'trading.partialTpAtR': ASYMMETRY_V2.partialTpAtR,
+        'trading.trailingActivateAtR': ASYMMETRY_V2.trailingActivateAtR,
+      },
+    },
+    { new: true },
+  );
+  return updated ?? doc;
+}
+
 export async function getSettings(userId: string) {
   let doc = await Settings.findOne({ userId });
   if (!doc) {
     doc = await Settings.create({ userId });
+  } else {
+    doc = await upgradeLegacyAsymmetryDefaults(doc);
   }
   return sanitizeSettings(doc);
 }
@@ -113,5 +172,6 @@ export async function testBinanceConnection(userId: string) {
 export async function getRawSettings(userId: string) {
   let doc = await Settings.findOne({ userId });
   if (!doc) doc = await Settings.create({ userId });
+  else doc = await upgradeLegacyAsymmetryDefaults(doc);
   return doc;
 }

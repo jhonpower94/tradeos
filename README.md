@@ -46,6 +46,19 @@ docs/          — Architecture, API, schemas, phases
 - **Live** — Binance signed orders (configure API keys in Settings)
 - **Approval:** manual | semi | auto
 
+## Production (Docker)
+
+```bash
+cp .env.production.example .env.production
+# fill JWT_SECRET, ENCRYPTION_KEY, CORS_ORIGIN, …
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+- UI + proxied API: http://localhost/
+- Health: `GET /api/v1/health`
+
+Full steps: [`docs/deploy.md`](docs/deploy.md).
+
 ## Documentation
 
-See [`docs/architecture.md`](docs/architecture.md), [`docs/api.md`](docs/api.md), [`docs/schemas.md`](docs/schemas.md), [`docs/phases.md`](docs/phases.md).
+See [`docs/architecture.md`](docs/architecture.md), [`docs/api.md`](docs/api.md), [`docs/schemas.md`](docs/schemas.md), [`docs/phases.md`](docs/phases.md), [`docs/deploy.md`](docs/deploy.md).

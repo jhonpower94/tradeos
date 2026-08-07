@@ -1,0 +1,61 @@
+# Production stack: MongoDB + Redis + API + nginx UI on :80
+# Usage:
+#   cp .env.production.example .env.production   # fill secrets
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - internal
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3001"
+      MONGODB_URI: mongodb://mongo:27017/trading-os
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - mongo
+      - redis
+    expose:
+      - "3001"
+    restart: unless-stopped
+    networks:
+      - internal
+
+  ui:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - internal
+
+volumes:
+  mongo_data:
+  redis_data:
+
+networks:
+  internal:

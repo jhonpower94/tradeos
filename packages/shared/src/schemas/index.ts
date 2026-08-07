@@ -21,11 +21,13 @@ export const riskSettingsSchema = z.object({
   maxRiskPerTrade: z.number().min(0.001).max(0.1).default(0.01),
   maxDailyLoss: z.number().min(0.01).max(0.5).default(0.05),
   maxOpenPositions: z.number().int().min(1).max(50).default(5),
-  minRiskReward: z.number().min(0.5).max(10).default(1.2),
+  minRiskReward: z.number().min(0.5).max(10).default(2),
   maxSpreadBps: z.number().min(1).max(100).default(20),
   minLiquidityUsdt: z.number().min(0).default(1_000_000),
   atrSlMultiplierMin: z.number().default(0.5),
   atrSlMultiplierMax: z.number().default(5),
+  /** Cap entry notional to this fraction of free quote (default 25%). */
+  maxFreeNotionalPct: z.number().min(0.05).max(1).default(0.25),
 });
 
 export const tradingSettingsSchema = z.object({
@@ -35,12 +37,21 @@ export const tradingSettingsSchema = z.object({
   feeRate: z.number().min(0).max(0.01).default(0.001),
   paperStartingBalance: z.number().min(0).default(10_000),
   partialTpEnabled: z.boolean().default(true),
-  partialTpFraction: z.number().min(0.05).max(0.95).default(0.5),
-  partialTpAtR: z.number().min(0.25).max(5).default(1),
+  partialTpFraction: z.number().min(0.05).max(0.95).default(0.33),
+  partialTpAtR: z.number().min(0.25).max(5).default(1.5),
   breakevenOnPartial: z.boolean().default(true),
   trailingEnabled: z.boolean().default(true),
   trailingStopPct: z.number().min(0.1).max(20).default(1.5),
-  trailingActivateAtR: z.number().min(0.25).max(5).default(1),
+  trailingActivateAtR: z.number().min(0.25).max(5).default(1.5),
+  adverseREnabled: z.boolean().default(true),
+  maxAdverseR: z.number().min(0.1).max(2).default(0.75),
+  timeStopEnabled: z.boolean().default(true),
+  maxHoldMs: z
+    .number()
+    .min(60_000)
+    .max(7 * 24 * 60 * 60 * 1000)
+    .default(6 * 60 * 60 * 1000),
+  minProgressR: z.number().min(0).max(1).default(0.3),
 });
 
 export const scannerSettingsSchema = z.object({

@@ -48,16 +48,26 @@ export type ExitManageSettings = {
   trailingEnabled: boolean;
   trailingStopPct: number;
   trailingActivateAtR: number;
+  adverseREnabled: boolean;
+  maxAdverseR: number;
+  timeStopEnabled: boolean;
+  maxHoldMs: number;
+  minProgressR: number;
 };
 
 export const DEFAULT_EXIT_MANAGE_SETTINGS: ExitManageSettings = {
   partialTpEnabled: true,
-  partialTpFraction: 0.5,
-  partialTpAtR: 1,
+  partialTpFraction: 0.33,
+  partialTpAtR: 1.5,
   breakevenOnPartial: true,
   trailingEnabled: true,
   trailingStopPct: 1.5,
-  trailingActivateAtR: 1,
+  trailingActivateAtR: 1.5,
+  adverseREnabled: true,
+  maxAdverseR: 0.75,
+  timeStopEnabled: true,
+  maxHoldMs: 6 * 60 * 60 * 1000,
+  minProgressR: 0.3,
 };
 
 /** Pure decision for manage-then-exit (excludes applying trailing price updates). */
@@ -71,6 +81,7 @@ export function decideExitManagement(input: {
   trailingStopPct?: number | null;
   initialStopLoss?: number | null;
   partialTpDone?: boolean;
+  openedAt?: Date | number | null;
   settings: ExitManageSettings;
 }): ExitManageDecision {
   const {
@@ -83,6 +94,7 @@ export function decideExitManagement(input: {
     trailingStopPct,
     initialStopLoss,
     partialTpDone,
+    openedAt,
     settings,
   } = input;
 
@@ -103,6 +115,21 @@ export function decideExitManagement(input: {
 
   const r = calcRMultiple({ side, entry, price, initialStopLoss, stopLoss });
   if (r == null) return { action: 'none' };
+
+  if (settings.adverseREnabled && r <= -settings.maxAdverseR) {
+    return { action: 'full_close', reason: 'Adverse R limit' };
+  }
+
+  if (settings.timeStopEnabled && openedAt != null) {
+    const openedMs = openedAt instanceof Date ? openedAt.getTime() : Number(openedAt);
+    if (
+      Number.isFinite(openedMs) &&
+      Date.now() - openedMs >= settings.maxHoldMs &&
+      r < settings.minProgressR
+    ) {
+      return { action: 'full_close', reason: 'Time stop' };
+    }
+  }
 
   if (
     !partialTpDone &&
@@ -141,6 +168,11 @@ function tradingToExitSettings(trading: Record<string, unknown> | undefined): Ex
     trailingStopPct: (t.trailingStopPct as number | undefined) ?? DEFAULT_EXIT_MANAGE_SETTINGS.trailingStopPct,
     trailingActivateAtR:
       (t.trailingActivateAtR as number | undefined) ?? DEFAULT_EXIT_MANAGE_SETTINGS.trailingActivateAtR,
+    adverseREnabled: (t.adverseREnabled as boolean | undefined) ?? DEFAULT_EXIT_MANAGE_SETTINGS.adverseREnabled,
+    maxAdverseR: (t.maxAdverseR as number | undefined) ?? DEFAULT_EXIT_MANAGE_SETTINGS.maxAdverseR,
+    timeStopEnabled: (t.timeStopEnabled as boolean | undefined) ?? DEFAULT_EXIT_MANAGE_SETTINGS.timeStopEnabled,
+    maxHoldMs: (t.maxHoldMs as number | undefined) ?? DEFAULT_EXIT_MANAGE_SETTINGS.maxHoldMs,
+    minProgressR: (t.minProgressR as number | undefined) ?? DEFAULT_EXIT_MANAGE_SETTINGS.minProgressR,
   };
 }
 
@@ -213,6 +245,7 @@ export async function checkExits() {
       trailingStopPct: p.trailingStopPct,
       initialStopLoss: p.initialStopLoss,
       partialTpDone: p.partialTpDone ?? false,
+      openedAt: p.openedAt,
       settings,
     });
 

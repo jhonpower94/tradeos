@@ -111,7 +111,7 @@ export async function runBacktest(params: {
             patterns,
             params: params.strategyParams,
           }),
-          1.2,
+          2,
         );
         if (
           result.decision !== Decision.NO_TRADE &&

@@ -15,6 +15,7 @@ const baseRisk = {
   minLiquidityUsdt: 0,
   atrSlMultiplierMin: 0.5,
   atrSlMultiplierMax: 5,
+  maxFreeNotionalPct: 0.25,
 };
 
 function bullishCandles(): Candle[] {
@@ -157,6 +158,37 @@ describe('risk', () => {
     expect(result.ok).toBe(true);
     expect(result.qty).toBeDefined();
     expect((result.qty ?? 0) * 95_000).toBeLessThanOrEqual(freeQuote);
+  });
+
+  it('caps notional to maxFreeNotionalPct of freeQuote', async () => {
+    const freeQuote = 10_000;
+    const result = await validateRisk({
+      userId: '000000000000000000000001',
+      equity: 10_000,
+      freeQuote,
+      risk: {
+        ...baseRisk,
+        maxFreeNotionalPct: 0.25,
+        atrSlMultiplierMin: 0.01,
+        atrSlMultiplierMax: 100,
+      },
+      opportunity: {
+        symbol: 'BTCUSDT',
+        timeframe: '1h' as never,
+        side: Side.BUY,
+        confidence: 80,
+        entry: 95_000,
+        stopLoss: 94_800,
+        takeProfit: 95_400,
+        riskReward: 2,
+        strategyIds: ['breakout'],
+        primaryStrategy: 'breakout',
+        evidence: [],
+        regime: MarketRegime.TRENDING_BULL,
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect((result.qty ?? 0) * 95_000).toBeLessThanOrEqual(freeQuote * 0.25 + 1e-6);
   });
 });
 
