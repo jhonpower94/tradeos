@@ -28,7 +28,15 @@ import {
 import { getPortfolioSummary, depositPaper, withdrawPaper, listPaperLedger } from '../modules/portfolio/index.js';
 import { listJournal, getJournalEntry } from '../modules/journal/index.js';
 import { computeAnalytics } from '../modules/analytics/index.js';
-import { listNotifications, markRead, notify } from '../modules/notifications/index.js';
+import {
+  listNotifications,
+  markRead,
+  notify,
+  savePushSubscription,
+  deletePushSubscription,
+  getVapidPublicKey,
+  isWebPushConfigured,
+} from '../modules/notifications/index.js';
 import { NotificationType, Side, OrderType, type Opportunity } from '@trading-os/shared';
 import { runBacktest, listBacktests, getBacktest } from '../modules/backtest/index.js';
 import { strategyRegistry } from '../modules/strategies/index.js';
@@ -343,12 +351,43 @@ export async function registerRoutes(app: FastifyInstance) {
   app.patch('/api/v1/notifications/:id/read', { preHandler: auth }, async (req) =>
     markRead(getUserId(req), (req.params as { id: string }).id),
   );
+  app.get('/api/v1/notifications/push/vapid-public-key', { preHandler: auth }, async () => {
+    const publicKey = getVapidPublicKey();
+    if (!publicKey) {
+      throw new AppError(
+        'VAPID_NOT_CONFIGURED',
+        'Web Push not configured — run: node scripts/ensure-vapid.mjs',
+        503,
+      );
+    }
+    return { publicKey, configured: isWebPushConfigured() };
+  });
+  app.post('/api/v1/notifications/push/subscribe', { preHandler: auth }, async (req) => {
+    const body = req.body as {
+      endpoint?: string;
+      keys?: { p256dh?: string; auth?: string };
+    };
+    if (!body?.endpoint || !body.keys?.p256dh || !body.keys?.auth) {
+      throw new AppError('INVALID_SUB', 'endpoint and keys.p256dh/auth required', 400);
+    }
+    const doc = await savePushSubscription(getUserId(req), {
+      endpoint: body.endpoint,
+      keys: { p256dh: body.keys.p256dh, auth: body.keys.auth },
+    });
+    return { ok: true, endpoint: doc.endpoint };
+  });
+  app.delete('/api/v1/notifications/push/subscribe', { preHandler: auth }, async (req) => {
+    const body = req.body as { endpoint?: string };
+    if (!body?.endpoint) throw new AppError('INVALID_SUB', 'endpoint required', 400);
+    await deletePushSubscription(getUserId(req), body.endpoint);
+    return { ok: true };
+  });
   app.post('/api/v1/notifications/test', { preHandler: auth }, async (req) => {
     await notify(getUserId(req), NotificationType.TRADE_SIGNAL, {
       title: 'Test notification',
       body: 'Trading OS notification test',
     });
-    return { ok: true };
+    return { ok: true, webPushConfigured: isWebPushConfigured() };
   });
 
   // Strategies metadata

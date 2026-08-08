@@ -7,6 +7,7 @@ import { Notification } from '../../models/Notification.js';
 import { getRawSettings } from '../settings/index.js';
 import { decrypt } from '../../utils/crypto.js';
 import { config } from '../../config/index.js';
+import { isWebPushConfigured, sendWebPushToUser } from './web-push.js';
 
 type BroadcastFn = (userId: string, channel: string, data: unknown) => void;
 
@@ -42,6 +43,14 @@ export async function notify(
       body: content.body,
       payload: content.payload,
     });
+
+    if (isWebPushConfigured()) {
+      try {
+        await sendWebPushToUser(userId, content);
+      } catch (e) {
+        console.error('Web Push send failed', e);
+      }
+    }
   }
 
   if (n?.telegram?.enabled && n.telegram.chatId) {
@@ -167,3 +176,11 @@ export async function markRead(userId: string, id: string) {
     { new: true },
   );
 }
+
+export {
+  savePushSubscription,
+  deletePushSubscription,
+  getVapidPublicKey,
+  isWebPushConfigured,
+  sendWebPushToUser,
+} from './web-push.js';

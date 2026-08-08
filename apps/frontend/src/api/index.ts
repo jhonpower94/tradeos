@@ -79,4 +79,10 @@ export const backtestApi = {
 export const notificationsApi = {
   list: () => api.get('/notifications').then((r) => r.data),
   test: () => api.post('/notifications/test').then((r) => r.data),
+  vapidPublicKey: () =>
+    api.get('/notifications/push/vapid-public-key').then((r) => r.data as { publicKey: string }),
+  pushSubscribe: (body: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+    api.post('/notifications/push/subscribe', body).then((r) => r.data),
+  pushUnsubscribe: (endpoint: string) =>
+    api.delete('/notifications/push/subscribe', { data: { endpoint } }).then((r) => r.data),
 };

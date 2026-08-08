@@ -1,4 +1,4 @@
-import { PositionStatus, Side } from '@trading-os/shared';
+import { PositionStatus, Side, NotificationType } from '@trading-os/shared';
 import { Position } from '../../models/Position.js';
 import { Trade } from '../../models/Trade.js';
 import { getTickerPrice } from '../market-data/index.js';
@@ -7,6 +7,8 @@ import { calcNetPnl } from '../trade/pricing.js';
 import { getRawSettings } from '../settings/index.js';
 import { AppError } from '../../utils/errors.js';
 import { config } from '../../config/index.js';
+import { notify } from '../notifications/index.js';
+import { shouldNotifyProfitHigh } from './profit-high.js';
 
 export function calcUnrealizedPnl(
   side: Side,
@@ -203,6 +205,27 @@ export async function markPositions(userId?: string) {
     p.unrealizedPnl = calcNetPnl(p.side as Side, p.entryPrice, price, p.qty, feeRate);
     p.highestPrice = Math.max(p.highestPrice ?? price, price);
     p.lowestPrice = Math.min(p.lowestPrice ?? price, price);
+
+    const upnl = p.unrealizedPnl ?? 0;
+    const peak = p.peakUnrealizedPnl ?? 0;
+    const high = shouldNotifyProfitHigh(upnl, peak);
+    if (high.notify) {
+      p.peakUnrealizedPnl = high.newPeak;
+      try {
+        await notify(uid, NotificationType.PROFIT_HIGH, {
+          title: `${p.symbol} new profit high`,
+          body: `uPnL ${upnl.toFixed(2)} (was ${peak.toFixed(2)})`,
+          payload: {
+            positionId: String(p._id),
+            tradeId: String(p.tradeId),
+            upnl,
+            peak,
+          },
+        });
+      } catch {
+        // don't block marking
+      }
+    }
 
     if (p.trailingStopPct && p.trailingStopPct > 0) {
       if (p.side === Side.BUY) {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Box,
@@ -14,14 +14,20 @@ import {
 } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { notificationsApi, settingsApi } from '../api';
+import { disableWebPush, enableWebPush, getActivePushEndpoint } from '../lib/webPush';
 
 export function SettingsPage() {
   const [tab, setTab] = useState(0);
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
   const [msg, setMsg] = useState('');
+  const [pushEnabled, setPushEnabled] = useState(false);
   const qc = useQueryClient();
   const { data } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
+
+  useEffect(() => {
+    void getActivePushEndpoint().then((ep) => setPushEnabled(Boolean(ep)));
+  }, [tab]);
 
   const saveBinance = useMutation({
     mutationFn: () => settingsApi.setBinance({ apiKey, apiSecret, testnet: data?.binance?.testnet ?? false }),
@@ -45,7 +51,44 @@ export function SettingsPage() {
   });
   const testNotify = useMutation({
     mutationFn: notificationsApi.test,
-    onSuccess: () => setMsg('Test notification sent'),
+    onSuccess: (r) =>
+      setMsg(
+        r?.webPushConfigured
+          ? 'Test notification sent (Web Push + in-app)'
+          : 'Test notification sent (in-app only — run setup:vapid for Web Push)',
+      ),
+  });
+  const enablePush = useMutation({
+    mutationFn: () =>
+      enableWebPush({
+        getPublicKey: async () => {
+          const r = await notificationsApi.vapidPublicKey();
+          return r.publicKey;
+        },
+        subscribe: (sub) => notificationsApi.pushSubscribe(sub),
+      }),
+    onSuccess: () => {
+      setPushEnabled(true);
+      setMsg('Web Push enabled — alerts work with the tab closed');
+    },
+    onError: (e: unknown) =>
+      setMsg(
+        (e as { response?: { data?: { message?: string } }; message?: string })?.response?.data
+          ?.message ??
+          (e as Error)?.message ??
+          'Failed to enable Web Push',
+      ),
+  });
+  const disablePush = useMutation({
+    mutationFn: () =>
+      disableWebPush({
+        unsubscribe: (endpoint) => notificationsApi.pushUnsubscribe(endpoint),
+      }),
+    onSuccess: () => {
+      setPushEnabled(false);
+      setMsg('Web Push disabled');
+    },
+    onError: (e: unknown) => setMsg((e as Error)?.message ?? 'Failed to disable Web Push'),
   });
 
   return (
@@ -364,11 +407,43 @@ export function SettingsPage() {
       {tab === 4 && (
         <Paper sx={{ p: 2, display: 'grid', gap: 2, maxWidth: 480 }}>
           <Typography variant="body2">
-            Configure Telegram / Discord / Email via environment and settings API. Browser notifications are enabled by default.
+            Configure Telegram / Discord / Email via environment and settings API. Browser notifications
+            are enabled by default.
           </Typography>
-          <Button variant="contained" onClick={() => testNotify.mutate()}>
-            Send test notification
-          </Button>
+          <Typography variant="subtitle2">Web Push (per-trade profit highs)</Typography>
+          <Typography variant="caption" color="text.secondary">
+            Works with the tab closed. Requires HTTPS or localhost, and VAPID keys (
+            <code>npm run setup:vapid</code> once). Alerts fire when an open trade&apos;s uPnL sets a new
+            high at least $1 above its previous peak.
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {!pushEnabled ? (
+              <Button
+                variant="contained"
+                disabled={enablePush.isPending}
+                onClick={() => enablePush.mutate()}
+              >
+                Enable Web Push
+              </Button>
+            ) : (
+              <Button
+                variant="outlined"
+                color="warning"
+                disabled={disablePush.isPending}
+                onClick={() => disablePush.mutate()}
+              >
+                Disable Web Push
+              </Button>
+            )}
+            <Button variant="outlined" onClick={() => testNotify.mutate()}>
+              Send test notification
+            </Button>
+          </Box>
+          {pushEnabled && (
+            <Typography variant="caption" color="success.main">
+              Web Push is active on this device.
+            </Typography>
+          )}
         </Paper>
       )}
     </Box>

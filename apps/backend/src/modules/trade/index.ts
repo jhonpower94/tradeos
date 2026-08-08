@@ -314,6 +314,7 @@ export async function executeOpportunity(
     initialStopLoss: levels.initialStopLoss,
     highestPrice: entryPrice,
     lowestPrice: entryPrice,
+    peakUnrealizedPnl: 0,
     partialTpDone: false,
     status: PositionStatus.OPEN,
     openedAt: new Date(),

@@ -21,6 +21,7 @@ docker compose up -d
 
 # Env
 cp .env.example .env
+node scripts/ensure-vapid.mjs   # or: npm run setup:vapid
 
 # Dev
 ./node_modules/.bin/pnpm --filter @trading-os/shared build
@@ -30,6 +31,7 @@ cp .env.example .env
 - API: http://localhost:3001
 - UI: http://localhost:5173
 - Health: `GET /api/v1/health`
+- Web Push: after VAPID setup, open Settings → Notifications → Enable Web Push (HTTPS or localhost)
 
 ## Workspace
 

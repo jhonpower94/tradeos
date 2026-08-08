@@ -80,6 +80,7 @@ export enum NotificationType {
   TRADE_EXECUTED = 'trade_executed',
   TRADE_CLOSED = 'trade_closed',
   RISK_ALERT = 'risk_alert',
+  PROFIT_HIGH = 'profit_high',
   ERROR = 'error',
 }
 

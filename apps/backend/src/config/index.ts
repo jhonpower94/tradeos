@@ -69,4 +69,7 @@ export const config = {
   },
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
   discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL,
+  vapidPublicKey: process.env.VAPID_PUBLIC_KEY || undefined,
+  vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || undefined,
+  vapidSubject: process.env.VAPID_SUBJECT || 'mailto:trading-os@localhost',
 };
