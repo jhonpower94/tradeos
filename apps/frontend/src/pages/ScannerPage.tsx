@@ -1,21 +1,23 @@
 import { useState } from 'react';
-import {
-  Box,
-  Button,
-  MenuItem,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  TextField,
-  Typography,
-} from '@mui/material';
+import Box from '@mui/joy/Box';
+import Button from '@mui/joy/Button';
+import FormControl from '@mui/joy/FormControl';
+import FormLabel from '@mui/joy/FormLabel';
+import Input from '@mui/joy/Input';
+import Option from '@mui/joy/Option';
+import Select from '@mui/joy/Select';
+import Sheet from '@mui/joy/Sheet';
+import Typography from '@mui/joy/Typography';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { scannerApi } from '../api';
 import { useLiveStore } from '../stores/liveStore';
 import { RegimeChip } from '../components/RegimeChip';
+import { SideChip } from '../components/SideChip';
+import { ConfidenceBar } from '../components/ConfidenceBar';
+import { PageHeader } from '../components/PageHeader';
+import { ResponsiveRecordList } from '../components/ResponsiveRecordList';
+import { formatPrice } from '../utils/format';
+import { monoSx } from '../theme/theme';
 
 export function ScannerPage() {
   const [minConfidence, setMinConfidence] = useState(70);
@@ -50,7 +52,7 @@ export function ScannerPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['scanner-status'] }),
   });
 
-  const items = ((live.length ? live : data?.items ?? []) as Array<Record<string, unknown>>).filter(
+  const items = ((live.length ? live : (data?.items ?? [])) as Array<Record<string, unknown>>).filter(
     (o: Record<string, unknown>) => {
       if (Number(o.confidence) < minConfidence) return false;
       if (timeframe && o.timeframe !== timeframe) return false;
@@ -62,110 +64,112 @@ export function ScannerPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2, alignItems: 'center' }}>
-        <Box>
-          <Typography variant="h4">Scanner</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Scanner runs on the server and continues even if you close the browser.
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button variant="outlined" onClick={() => start.mutate()} disabled={status?.running}>
-            Start
-          </Button>
-          <Button
-            variant="outlined"
-            color="warning"
-            onClick={() => stop.mutate()}
-            disabled={!status?.running}
-          >
-            Stop
-          </Button>
-        </Box>
-      </Box>
-      <Paper sx={{ p: 2, mb: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-        <TextField
-          label="Min confidence"
-          type="number"
-          value={minConfidence}
-          onChange={(e) => setMinConfidence(Number(e.target.value))}
-          sx={{ width: 140 }}
-        />
-        <TextField
-          select
-          label="Timeframe"
-          value={timeframe}
-          onChange={(e) => setTimeframe(e.target.value)}
-          sx={{ width: 120 }}
-        >
-          <MenuItem value="">All</MenuItem>
-          {['1m', '5m', '15m', '30m', '1h', '4h', '1d'].map((t) => (
-            <MenuItem key={t} value={t}>
-              {t}
-            </MenuItem>
-          ))}
-        </TextField>
-        <TextField
-          select
-          label="Side"
-          value={side}
-          onChange={(e) => setSide(e.target.value)}
-          sx={{ width: 120 }}
-        >
-          <MenuItem value="">All</MenuItem>
-          <MenuItem value="BUY">BUY</MenuItem>
-          <MenuItem value="SELL">SELL</MenuItem>
-        </TextField>
-        <TextField
-          label="Search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          sx={{ width: 160 }}
-        />
-        <Typography variant="body2" sx={{ alignSelf: 'center' }}>
+      <PageHeader
+        title="Scanner"
+        subtitle="Runs on the server and continues even if you close the browser."
+        actions={
+          <>
+            <Button variant="outlined" onClick={() => start.mutate()} disabled={status?.running}>
+              Start
+            </Button>
+            <Button
+              variant="outlined"
+              color="warning"
+              onClick={() => stop.mutate()}
+              disabled={!status?.running}
+            >
+              Stop
+            </Button>
+          </>
+        }
+      />
+      <Sheet
+        variant="outlined"
+        sx={{
+          p: 1.5,
+          mb: 2,
+          display: 'grid',
+          gap: 1.5,
+          gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, minmax(0, 160px)) auto' },
+          alignItems: 'end',
+          borderRadius: 'md',
+        }}
+      >
+        <FormControl>
+          <FormLabel>Min confidence</FormLabel>
+          <Input
+            type="number"
+            value={minConfidence}
+            onChange={(e) => setMinConfidence(Number(e.target.value))}
+          />
+        </FormControl>
+        <FormControl>
+          <FormLabel>Timeframe</FormLabel>
+          <Select value={timeframe} onChange={(_, v) => setTimeframe(v ?? '')}>
+            <Option value="">All</Option>
+            {['1m', '5m', '15m', '30m', '1h', '4h', '1d'].map((t) => (
+              <Option key={t} value={t}>
+                {t}
+              </Option>
+            ))}
+          </Select>
+        </FormControl>
+        <FormControl>
+          <FormLabel>Side</FormLabel>
+          <Select value={side} onChange={(_, v) => setSide(v ?? '')}>
+            <Option value="">All</Option>
+            <Option value="BUY">BUY</Option>
+            <Option value="SELL">SELL</Option>
+          </Select>
+        </FormControl>
+        <FormControl>
+          <FormLabel>Search</FormLabel>
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pair" />
+        </FormControl>
+        <Typography level="body-sm" sx={{ color: 'text.secondary', gridColumn: { xs: '1 / -1', md: 'auto' } }}>
           Scanned: {status?.pairsScanned ?? 0} · Found: {status?.opportunitiesFound ?? 0}
         </Typography>
-      </Paper>
-      <Paper>
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>#</TableCell>
-              <TableCell>Pair</TableCell>
-              <TableCell>Side</TableCell>
-              <TableCell>Regime</TableCell>
-              <TableCell>Confidence</TableCell>
-              <TableCell>Entry</TableCell>
-              <TableCell>SL</TableCell>
-              <TableCell>TP</TableCell>
-              <TableCell>RR</TableCell>
-              <TableCell>Strategy</TableCell>
-              <TableCell>TF</TableCell>
-              <TableCell>Duration</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {items.map((o: Record<string, unknown>, i: number) => (
-              <TableRow key={String(o._id ?? `${o.symbol}-${o.timeframe}-${i}`)}>
-                <TableCell>{Number(o.rank ?? i + 1)}</TableCell>
-                <TableCell sx={{ fontFamily: 'IBM Plex Mono, monospace' }}>{String(o.symbol)}</TableCell>
-                <TableCell sx={{ color: o.side === 'BUY' ? 'long.main' : 'short.main' }}>
-                  {String(o.side)}
-                </TableCell>
-                <TableCell>{o.regime ? <RegimeChip regime={String(o.regime)} /> : '—'}</TableCell>
-                <TableCell>{Number(o.confidence).toFixed(1)}%</TableCell>
-                <TableCell>{Number(o.entry).toPrecision(6)}</TableCell>
-                <TableCell>{Number(o.stopLoss).toPrecision(6)}</TableCell>
-                <TableCell>{Number(o.takeProfit).toPrecision(6)}</TableCell>
-                <TableCell>{Number(o.riskReward).toFixed(2)}</TableCell>
-                <TableCell>{String(o.primaryStrategy)}</TableCell>
-                <TableCell>{String(o.timeframe)}</TableCell>
-                <TableCell>{String(o.estimatedDuration ?? '—')}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Paper>
+      </Sheet>
+      <ResponsiveRecordList
+        rows={items}
+        getRowKey={(o) => String(o._id ?? `${o.symbol}-${o.timeframe}`)}
+        emptyTitle="No opportunities match filters"
+        cardTitle={(o) => (
+          <Typography level="title-md" sx={monoSx}>
+            {String(o.symbol)}
+          </Typography>
+        )}
+        cardMeta={(o) => (
+          <>
+            <SideChip side={String(o.side)} />
+            {o.regime ? <RegimeChip regime={String(o.regime)} /> : null}
+          </>
+        )}
+        cardFields={[
+          { label: 'Confidence', render: (o) => <ConfidenceBar value={Number(o.confidence)} /> },
+          { label: 'RR', render: (o) => <Typography sx={monoSx}>{Number(o.riskReward).toFixed(2)}</Typography> },
+          { label: 'Entry', render: (o) => <Typography sx={monoSx}>{formatPrice(Number(o.entry))}</Typography> },
+          { label: 'SL', render: (o) => <Typography sx={monoSx}>{formatPrice(Number(o.stopLoss))}</Typography> },
+          { label: 'TP', render: (o) => <Typography sx={monoSx}>{formatPrice(Number(o.takeProfit))}</Typography> },
+          { label: 'TF', render: (o) => String(o.timeframe) },
+          { label: 'Strategy', render: (o) => String(o.primaryStrategy) },
+          { label: 'Duration', render: (o) => String(o.estimatedDuration ?? '—') },
+        ]}
+        columns={[
+          { key: 'rank', header: '#', render: (o) => String(o.rank ?? '—') },
+          { key: 'pair', header: 'Pair', render: (o) => <Typography sx={monoSx}>{String(o.symbol)}</Typography> },
+          { key: 'side', header: 'Side', render: (o) => <SideChip side={String(o.side)} /> },
+          { key: 'regime', header: 'Regime', render: (o) => (o.regime ? <RegimeChip regime={String(o.regime)} /> : '—') },
+          { key: 'conf', header: 'Confidence', numeric: true, render: (o) => `${Number(o.confidence).toFixed(1)}%` },
+          { key: 'entry', header: 'Entry', numeric: true, render: (o) => formatPrice(Number(o.entry)) },
+          { key: 'sl', header: 'SL', numeric: true, render: (o) => formatPrice(Number(o.stopLoss)) },
+          { key: 'tp', header: 'TP', numeric: true, render: (o) => formatPrice(Number(o.takeProfit)) },
+          { key: 'rr', header: 'RR', numeric: true, render: (o) => Number(o.riskReward).toFixed(2) },
+          { key: 'strategy', header: 'Strategy', render: (o) => String(o.primaryStrategy) },
+          { key: 'tf', header: 'TF', render: (o) => String(o.timeframe) },
+          { key: 'dur', header: 'Duration', render: (o) => String(o.estimatedDuration ?? '—') },
+        ]}
+      />
     </Box>
   );
 }

@@ -1,25 +1,24 @@
-import Box from '@mui/material/Box';
-import LinearProgress from '@mui/material/LinearProgress';
-import Typography from '@mui/material/Typography';
-import { useTheme } from '@mui/material/styles';
+import Box from '@mui/joy/Box';
+import LinearProgress from '@mui/joy/LinearProgress';
+import Typography from '@mui/joy/Typography';
+import { monoSx } from '../theme/theme';
 
 export function ConfidenceBar({ value }: { value: number }) {
-  const theme = useTheme();
-  const color =
-    value >= 80 ? theme.palette.long.main : value >= 60 ? theme.palette.warning.main : theme.palette.short.main;
+  const color = value >= 80 ? 'success' : value >= 60 ? 'warning' : 'danger';
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 90 }}>
       <LinearProgress
-        variant="determinate"
+        determinate
         value={Math.min(value, 100)}
-        sx={{
-          flex: 1,
-          backgroundColor: 'rgba(148, 168, 190, 0.12)',
-          '& .MuiLinearProgress-bar': { backgroundColor: color },
-        }}
+        color={color}
+        sx={{ flex: 1 }}
       />
-      <Typography variant="mono" component="span" sx={{ fontSize: '0.75rem', color, minWidth: 32 }}>
+      <Typography
+        level="body-xs"
+        component="span"
+        sx={{ ...monoSx, color: `${color}.plainColor`, minWidth: 32 }}
+      >
         {value.toFixed(0)}
       </Typography>
     </Box>

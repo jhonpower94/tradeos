@@ -1,6 +1,6 @@
-import Box from '@mui/material/Box';
-import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
+import Box from '@mui/joy/Box';
+import Stack from '@mui/joy/Stack';
+import Typography from '@mui/joy/Typography';
 import type { ReactNode } from 'react';
 
 interface PageHeaderProps {
@@ -12,21 +12,32 @@ interface PageHeaderProps {
 export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
   return (
     <Stack
-      direction="row"
-      alignItems="flex-start"
+      direction={{ xs: 'column', sm: 'row' }}
+      alignItems={{ xs: 'stretch', sm: 'flex-start' }}
       justifyContent="space-between"
-      sx={{ mb: 3 }}
-      spacing={2}
+      sx={{ mb: 2 }}
+      spacing={1.5}
     >
       <Box>
-        <Typography variant="h4">{title}</Typography>
+        <Typography level="h3">{title}</Typography>
         {subtitle && (
-          <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>
+          <Typography level="body-sm" sx={{ color: 'text.secondary', mt: 0.5 }}>
             {subtitle}
           </Typography>
         )}
       </Box>
-      {actions && <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>{actions}</Box>}
+      {actions && (
+        <Box
+          sx={{
+            display: 'flex',
+            gap: 1,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          {actions}
+        </Box>
+      )}
     </Stack>
   );
 }

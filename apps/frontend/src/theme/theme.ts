@@ -1,206 +1,187 @@
-import { createTheme, alpha } from '@mui/material/styles';
+import { extendTheme } from '@mui/joy/styles';
 
 const fontSans = '"IBM Plex Sans", "Inter", -apple-system, BlinkMacSystemFont, sans-serif';
 const fontMono = '"IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace';
 
-const surface = {
-  base: '#080B10',
-  raised: '#0E141C',
-  overlay: '#141C27',
-  border: 'rgba(148, 168, 190, 0.12)',
+const teal = {
+  50: '#E8FBF5',
+  100: '#C5F5E6',
+  200: '#9EECD4',
+  300: '#5FE6C4',
+  400: '#3DDCB4',
+  500: '#2DD4A7',
+  600: '#17A883',
+  700: '#12856A',
+  800: '#0C5C49',
+  900: '#04120D',
 };
 
-export const theme = createTheme({
-  palette: {
-    mode: 'dark',
-    background: {
-      default: surface.base,
-      paper: surface.raised,
-    },
-    primary: {
-      main: '#2DD4A7',
-      light: '#5FE6C4',
-      dark: '#17A883',
-      contrastText: '#04120D',
-    },
-    secondary: {
-      main: '#4FA3E3',
-      light: '#7CC0EE',
-      dark: '#2D77B0',
-      contrastText: '#04121D',
-    },
-    long: {
-      main: '#2DD4A7',
-      light: '#5FE6C4',
-      dark: '#17A883',
-      contrastText: '#04120D',
-    },
-    short: {
-      main: '#FF6B5E',
-      light: '#FF9186',
-      dark: '#D6473B',
-      contrastText: '#1A0704',
-    },
-    neutral: {
-      main: '#94A8BE',
-      light: '#B7C6D6',
-      dark: '#66788B',
-      contrastText: '#04090D',
-    },
-    success: {
-      main: '#2DD4A7',
-    },
-    error: {
-      main: '#FF6B5E',
-    },
-    warning: {
-      main: '#F0B54D',
-    },
-    info: {
-      main: '#4FA3E3',
-    },
-    text: {
-      primary: '#E7EEF5',
-      secondary: '#8598AC',
-      disabled: '#4E5C6E',
-    },
-    divider: surface.border,
-    surface,
+const coral = {
+  50: '#FFF1EF',
+  100: '#FFD8D4',
+  200: '#FFB3AB',
+  300: '#FF9186',
+  400: '#FF7A6E',
+  500: '#FF6B5E',
+  600: '#D6473B',
+  700: '#B3352B',
+  800: '#7A221C',
+  900: '#1A0704',
+};
+
+const amber = {
+  50: '#FDF6E8',
+  100: '#FAE6C0',
+  200: '#F6D394',
+  300: '#F3C56E',
+  400: '#F1BC5A',
+  500: '#F0B54D',
+  600: '#C9922E',
+  700: '#9A6E1F',
+  800: '#684812',
+  900: '#2A1C06',
+};
+
+export const theme = extendTheme({
+  cssVarPrefix: 'joy',
+  fontFamily: {
+    display: fontSans,
+    body: fontSans,
+    code: fontMono,
   },
-  typography: {
-    fontFamily: fontSans,
-    fontSize: 13,
-    h1: { fontFamily: fontSans, fontWeight: 600, fontSize: '2.2rem', letterSpacing: -0.5 },
-    h2: { fontFamily: fontSans, fontWeight: 600, fontSize: '1.8rem', letterSpacing: -0.4 },
-    h3: { fontFamily: fontSans, fontWeight: 600, fontSize: '1.4rem', letterSpacing: -0.2 },
-    h4: { fontFamily: fontSans, fontWeight: 600, fontSize: '1.15rem' },
-    h5: { fontFamily: fontSans, fontWeight: 600, fontSize: '1rem' },
-    h6: { fontFamily: fontSans, fontWeight: 600, fontSize: '0.9rem' },
-    subtitle1: { fontSize: '0.85rem', fontWeight: 500, color: '#8598AC' },
-    subtitle2: { fontSize: '0.75rem', fontWeight: 500, color: '#8598AC', textTransform: 'uppercase', letterSpacing: 0.6 },
-    body1: { fontSize: '0.875rem' },
-    body2: { fontSize: '0.8125rem' },
-    caption: { fontSize: '0.7rem', color: '#66788B' },
-    button: { textTransform: 'none', fontWeight: 600 },
-    mono: { fontFamily: fontMono, fontFeatureSettings: '"tnum"' },
+  fontSize: {
+    xs: '0.7rem',
+    sm: '0.8125rem',
+    md: '0.875rem',
+    lg: '1rem',
+    xl: '1.15rem',
+    xl2: '1.4rem',
+    xl3: '1.8rem',
+    xl4: '2.2rem',
   },
-  shape: {
-    borderRadius: 8,
+  radius: {
+    xs: '4px',
+    sm: '6px',
+    md: '10px',
+    lg: '14px',
+    xl: '18px',
   },
-  spacing: 8,
+  colorSchemes: {
+    dark: {
+      palette: {
+        primary: teal,
+        success: teal,
+        danger: coral,
+        warning: amber,
+        background: {
+          body: '#080B10',
+          surface: '#0E141C',
+          popup: '#141C27',
+          level1: '#0E141C',
+          level2: '#141C27',
+          level3: '#1A2433',
+        },
+        text: {
+          primary: '#E7EEF5',
+          secondary: '#8598AC',
+          tertiary: '#66788B',
+        },
+        divider: 'rgba(148, 168, 190, 0.12)',
+        neutral: {
+          50: '#F4F7FA',
+          100: '#E7EEF5',
+          200: '#B7C6D6',
+          300: '#94A8BE',
+          400: '#8598AC',
+          500: '#66788B',
+          600: '#4E5C6E',
+          700: '#354150',
+          800: '#1A2433',
+          900: '#080B10',
+          outlinedBorder: 'rgba(148, 168, 190, 0.18)',
+        },
+      },
+    },
+  },
   components: {
-    MuiCssBaseline: {
-      styleOverrides: {
-        body: {
-          backgroundColor: surface.base,
-          backgroundImage:
-            'radial-gradient(circle at 15% 0%, rgba(45, 212, 167, 0.05), transparent 40%), radial-gradient(circle at 85% 0%, rgba(79, 163, 227, 0.05), transparent 40%)',
-          scrollbarColor: `${alpha('#8598AC', 0.35)} transparent`,
-        },
-        '*::-webkit-scrollbar': { width: 8, height: 8 },
-        '*::-webkit-scrollbar-thumb': {
-          backgroundColor: alpha('#8598AC', 0.25),
-          borderRadius: 8,
-        },
-        '*::-webkit-scrollbar-track': { backgroundColor: 'transparent' },
-      },
-    },
-    MuiPaper: {
+    JoyButton: {
+      defaultProps: { size: 'sm' },
       styleOverrides: {
         root: {
-          backgroundImage: 'none',
-          border: `1px solid ${surface.border}`,
-        },
-        rounded: { borderRadius: 10 },
-      },
-    },
-    MuiAppBar: {
-      styleOverrides: {
-        root: {
-          backgroundColor: alpha(surface.raised, 0.9),
-          backgroundImage: 'none',
-          borderBottom: `1px solid ${surface.border}`,
-          boxShadow: 'none',
-        },
-      },
-    },
-    MuiDrawer: {
-      styleOverrides: {
-        paper: {
-          backgroundColor: surface.raised,
-          backgroundImage: 'none',
-          borderRight: `1px solid ${surface.border}`,
-        },
-      },
-    },
-    MuiTableCell: {
-      styleOverrides: {
-        root: {
-          borderBottom: `1px solid ${surface.border}`,
-          padding: '8px 12px',
-          fontSize: '0.8125rem',
-        },
-        head: {
-          fontSize: '0.7rem',
           fontWeight: 600,
-          textTransform: 'uppercase',
-          letterSpacing: 0.5,
-          color: '#8598AC',
-          backgroundColor: surface.raised,
+          '--Button-radius': '8px',
         },
       },
     },
-    MuiTableRow: {
+    JoyIconButton: {
+      defaultProps: { size: 'sm' },
+    },
+    JoyInput: {
+      defaultProps: { size: 'sm' },
+    },
+    JoySelect: {
+      defaultProps: { size: 'sm' },
+    },
+    JoyTextarea: {
+      defaultProps: { size: 'sm' },
+    },
+    JoyChip: {
+      defaultProps: { size: 'sm' },
+      styleOverrides: {
+        root: { fontWeight: 600 },
+      },
+    },
+    JoyCard: {
+      defaultProps: { variant: 'outlined' },
       styleOverrides: {
         root: {
-          '&:hover': {
-            backgroundColor: alpha('#94A8BE', 0.05),
+          '--Card-radius': '12px',
+          backgroundColor: 'var(--joy-palette-background-surface)',
+        },
+      },
+    },
+    JoySheet: {
+      styleOverrides: {
+        root: {
+          backgroundImage: 'none',
+        },
+      },
+    },
+    JoyTable: {
+      defaultProps: { size: 'sm', hoverRow: true },
+      styleOverrides: {
+        root: {
+          '--TableCell-headBackground': 'var(--joy-palette-background-surface)',
+          '--TableCell-paddingX': '12px',
+          '--TableCell-paddingY': '8px',
+          '& thead th': {
+            fontSize: '0.7rem',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            color: 'var(--joy-palette-text-secondary)',
+          },
+          '& tbody td': {
+            fontSize: '0.8125rem',
           },
         },
       },
     },
-    MuiButton: {
-      defaultProps: { disableElevation: true },
-      styleOverrides: {
-        root: { borderRadius: 6, fontWeight: 600 },
-        containedPrimary: {
-          '&:hover': { backgroundColor: '#26B893' },
-        },
-      },
+    JoyTabs: {
+      defaultProps: { size: 'sm' },
     },
-    MuiChip: {
-      styleOverrides: {
-        root: { fontWeight: 600, borderRadius: 5 },
-        label: { paddingLeft: 8, paddingRight: 8 },
-      },
-    },
-    MuiTextField: {
-      defaultProps: { size: 'small' },
-    },
-    MuiSelect: {
-      defaultProps: { size: 'small' },
-    },
-    MuiFormControl: {
-      defaultProps: { size: 'small' },
-    },
-    MuiCard: {
+    JoyLinearProgress: {
       styleOverrides: {
         root: {
-          backgroundColor: surface.raised,
-          backgroundImage: 'none',
-          border: `1px solid ${surface.border}`,
+          '--LinearProgress-radius': '4px',
+          '--LinearProgress-thickness': '6px',
         },
-      },
-    },
-    MuiTabs: {
-      styleOverrides: {
-        indicator: { height: 2, borderRadius: 1 },
-      },
-    },
-    MuiLinearProgress: {
-      styleOverrides: {
-        root: { borderRadius: 4, height: 6 },
       },
     },
   },
 });
+
+export const monoSx = {
+  fontFamily: 'var(--joy-fontFamily-code)',
+  fontFeatureSettings: '"tnum"',
+} as const;

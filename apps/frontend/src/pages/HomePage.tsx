@@ -1,18 +1,17 @@
-import { Box, Paper, Typography, Chip } from '@mui/material';
+import Box from '@mui/joy/Box';
+import Chip from '@mui/joy/Chip';
+import Typography from '@mui/joy/Typography';
 import { useQuery } from '@tanstack/react-query';
 import { analyticsApi, portfolioApi, scannerApi, tradesApi } from '../api';
 import { useLiveStore } from '../stores/liveStore';
-
-function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <Paper sx={{ p: 2, height: '100%' }}>
-      <Typography variant="subtitle2">{label}</Typography>
-      <Typography variant="h4" sx={{ color: color ?? 'text.primary', fontFamily: 'IBM Plex Mono, monospace' }}>
-        {value}
-      </Typography>
-    </Paper>
-  );
-}
+import { PageHeader } from '../components/PageHeader';
+import { StatCard } from '../components/StatCard';
+import { SideChip } from '../components/SideChip';
+import { StatusChip } from '../components/StatusChip';
+import { PnlText } from '../components/PnlText';
+import { KeyValueList } from '../components/ResponsiveRecordList';
+import { formatNumber } from '../utils/format';
+import { monoSx } from '../theme/theme';
 
 export function HomePage() {
   const liveOpps = useLiveStore((s) => s.opportunities) as unknown as Array<Record<string, unknown>>;
@@ -28,82 +27,73 @@ export function HomePage() {
 
   const opportunities = liveOpps.length ? liveOpps : ((oppsData?.items ?? []) as Array<Record<string, unknown>>);
   const trades = (tradesData?.items ?? []) as Array<Record<string, unknown>>;
+  const todayPnl = Number(portfolio?.todayPnl ?? 0);
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ mb: 2 }}>
-        Home
-      </Typography>
+      <PageHeader title="Home" subtitle="Spot terminal overview" />
       <Box
         sx={{
           display: 'grid',
-          gap: 2,
-          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: 'repeat(4, 1fr)' },
+          gap: 1.5,
+          gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' },
           mb: 2,
         }}
       >
-        <Stat
+        <StatCard
           label="Today's PnL"
-          value={(portfolio?.todayPnl ?? 0).toFixed(2)}
-          color={portfolio?.todayPnl >= 0 ? 'long.main' : 'short.main'}
+          value={formatNumber(todayPnl)}
+          tone={todayPnl > 0 ? 'positive' : todayPnl < 0 ? 'negative' : 'neutral'}
         />
-        <Stat label="Win Rate" value={`${((analytics?.winRate ?? 0) * 100).toFixed(1)}%`} />
-        <Stat label="Open Positions" value={String(portfolio?.openPositions ?? 0)} />
-        <Stat label="Equity" value={(portfolio?.equity ?? 0).toFixed(2)} />
+        <StatCard label="Win Rate" value={`${((analytics?.winRate ?? 0) * 100).toFixed(1)}%`} />
+        <StatCard label="Open Positions" value={String(portfolio?.openPositions ?? 0)} />
+        <StatCard label="Equity" value={formatNumber(portfolio?.equity ?? 0)} />
       </Box>
 
       <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
-        <Paper sx={{ p: 2 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-            <Typography variant="h6">Top Opportunities</Typography>
-            <Chip
-              size="small"
-              label={status?.running ? 'Scanner on' : 'Scanner off'}
-              color={status?.running ? 'success' : 'default'}
-            />
+        <Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+            <Typography level="title-md">Top Opportunities</Typography>
+            <Chip size="sm" variant="soft" color={status?.running ? 'success' : 'neutral'}>
+              {status?.running ? 'Scanner on' : 'Scanner off'}
+            </Chip>
           </Box>
-          {opportunities.slice(0, 5).map((o: Record<string, unknown>, i: number) => (
-            <Box
-              key={String(o._id ?? `${o.symbol}-${o.timeframe ?? ''}-${o.side ?? ''}-${i}`)}
-              sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                py: 0.75,
-                borderBottom: '1px solid',
-                borderColor: 'divider',
-              }}
-            >
-              <Typography sx={{ fontFamily: 'IBM Plex Mono, monospace' }}>{String(o.symbol)}</Typography>
-              <Typography color={o.side === 'BUY' ? 'long.main' : 'short.main'}>{String(o.side)}</Typography>
-              <Typography>{Number(o.confidence).toFixed(1)}%</Typography>
-            </Box>
-          ))}
-          {!opportunities.length && <Typography color="text.secondary">No opportunities yet</Typography>}
-        </Paper>
-        <Paper sx={{ p: 2 }}>
-          <Typography variant="h6" sx={{ mb: 1 }}>
+          <KeyValueList
+            emptyTitle="No opportunities yet"
+            items={opportunities.slice(0, 5).map((o, i) => ({
+              key: String(o._id ?? `${o.symbol}-${o.timeframe ?? ''}-${o.side ?? ''}-${i}`),
+              primary: String(o.symbol),
+              secondary: String(o.timeframe ?? ''),
+              trailing: (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <SideChip side={String(o.side)} />
+                  <Typography level="body-sm" sx={monoSx}>
+                    {Number(o.confidence).toFixed(1)}%
+                  </Typography>
+                </Box>
+              ),
+            }))}
+          />
+        </Box>
+        <Box>
+          <Typography level="title-md" sx={{ mb: 1 }}>
             Recent Trades
           </Typography>
-          {trades.slice(0, 5).map((t: Record<string, unknown>) => (
-            <Box
-              key={String(t._id)}
-              sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                py: 0.75,
-                borderBottom: '1px solid',
-                borderColor: 'divider',
-              }}
-            >
-              <Typography sx={{ fontFamily: 'IBM Plex Mono, monospace' }}>{String(t.symbol)}</Typography>
-              <Typography>{String(t.status)}</Typography>
-              <Typography color={Number(t.realizedPnl) >= 0 ? 'long.main' : 'short.main'}>
-                {Number(t.realizedPnl ?? 0).toFixed(2)}
-              </Typography>
-            </Box>
-          ))}
-          {!trades.length && <Typography color="text.secondary">No trades yet</Typography>}
-        </Paper>
+          <KeyValueList
+            emptyTitle="No trades yet"
+            items={trades.slice(0, 5).map((t) => ({
+              key: String(t._id),
+              primary: String(t.symbol),
+              secondary: String(t.side),
+              trailing: (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <StatusChip status={String(t.status)} />
+                  <PnlText value={Number(t.realizedPnl ?? 0)} />
+                </Box>
+              ),
+            }))}
+          />
+        </Box>
       </Box>
     </Box>
   );

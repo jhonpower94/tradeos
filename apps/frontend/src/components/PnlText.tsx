@@ -1,28 +1,24 @@
-import Typography, { type TypographyProps } from '@mui/material/Typography';
-import { useTheme } from '@mui/material/styles';
+import Typography from '@mui/joy/Typography';
+import type { TypographyProps } from '@mui/joy/Typography';
 import { formatCurrency, formatPercent } from '../utils/format';
+import { monoSx } from '../theme/theme';
 
-interface PnlTextProps extends Omit<TypographyProps, 'color'> {
+interface PnlTextProps {
   value: number | null | undefined;
   percent?: number | null;
-  variant?: TypographyProps['variant'];
+  level?: TypographyProps['level'];
 }
 
-export function PnlText({ value, percent, variant = 'body2', ...props }: PnlTextProps) {
-  const theme = useTheme();
+export function PnlText({ value, percent, level = 'body-sm' }: PnlTextProps) {
   const color =
     value === null || value === undefined || value === 0
-      ? theme.palette.text.secondary
+      ? 'text.secondary'
       : value > 0
-        ? theme.palette.long.light
-        : theme.palette.short.light;
+        ? 'success.plainColor'
+        : 'danger.plainColor';
 
   return (
-    <Typography
-      variant={variant}
-      sx={{ color, fontFamily: theme.typography.mono.fontFamily, fontWeight: 600 }}
-      {...props}
-    >
+    <Typography level={level} sx={{ color, ...monoSx, fontWeight: 600 }}>
       {formatCurrency(value)}
       {percent !== undefined && percent !== null ? ` (${formatPercent(percent)})` : ''}
     </Typography>

@@ -1,5 +1,5 @@
-import Chip from '@mui/material/Chip';
-import { alpha, useTheme } from '@mui/material/styles';
+import Chip from '@mui/joy/Chip';
+import type { ColorPaletteProp } from '@mui/joy/styles';
 
 const REGIME_LABEL: Record<string, string> = {
   trending_bull: 'Trending Bull',
@@ -11,29 +11,18 @@ const REGIME_LABEL: Record<string, string> = {
   unknown: 'Unknown',
 };
 
-export function RegimeChip({ regime }: { regime: string }) {
-  const theme = useTheme();
-  const color =
-    regime === 'trending_bull'
-      ? theme.palette.long.main
-      : regime === 'trending_bear'
-        ? theme.palette.short.main
-        : regime === 'volatile' || regime === 'trending_volatile'
-          ? theme.palette.warning.main
-          : regime === 'compression'
-            ? theme.palette.info.main
-            : theme.palette.neutral.main;
+function regimeColor(regime: string): ColorPaletteProp {
+  if (regime === 'trending_bull') return 'success';
+  if (regime === 'trending_bear') return 'danger';
+  if (regime === 'volatile' || regime === 'trending_volatile') return 'warning';
+  if (regime === 'compression') return 'primary';
+  return 'neutral';
+}
 
+export function RegimeChip({ regime }: { regime: string }) {
   return (
-    <Chip
-      size="small"
-      label={REGIME_LABEL[regime] ?? regime}
-      sx={{
-        color,
-        backgroundColor: alpha(color, 0.14),
-        border: `1px solid ${alpha(color, 0.35)}`,
-        fontWeight: 600,
-      }}
-    />
+    <Chip size="sm" variant="soft" color={regimeColor(regime)}>
+      {REGIME_LABEL[regime] ?? regime}
+    </Chip>
   );
 }

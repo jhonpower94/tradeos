@@ -1,28 +1,37 @@
-import Box from '@mui/material/Box';
-import Paper from '@mui/material/Paper';
-import Typography from '@mui/material/Typography';
+import Box from '@mui/joy/Box';
+import Card from '@mui/joy/Card';
+import Typography from '@mui/joy/Typography';
 import type { ReactNode } from 'react';
-import { useTheme } from '@mui/material/styles';
+import { monoSx } from '../theme/theme';
 
 interface StatCardProps {
   label: string;
   value: ReactNode;
   delta?: ReactNode;
   deltaTone?: 'positive' | 'negative' | 'neutral';
+  tone?: 'positive' | 'negative' | 'neutral';
   icon?: ReactNode;
 }
 
-export function StatCard({ label, value, delta, deltaTone = 'neutral', icon }: StatCardProps) {
-  const theme = useTheme();
+export function StatCard({
+  label,
+  value,
+  delta,
+  deltaTone = 'neutral',
+  tone = 'neutral',
+  icon,
+}: StatCardProps) {
+  const toneColor =
+    tone === 'positive' ? 'success.plainColor' : tone === 'negative' ? 'danger.plainColor' : 'text.primary';
   const deltaColor =
     deltaTone === 'positive'
-      ? theme.palette.long.light
+      ? 'success.plainColor'
       : deltaTone === 'negative'
-        ? theme.palette.short.light
-        : theme.palette.text.secondary;
+        ? 'danger.plainColor'
+        : 'text.secondary';
 
   return (
-    <Paper
+    <Card
       variant="outlined"
       sx={{
         p: 2,
@@ -31,22 +40,23 @@ export function StatCard({ label, value, delta, deltaTone = 'neutral', icon }: S
         flexDirection: 'column',
         justifyContent: 'space-between',
         gap: 1,
+        boxShadow: 'none',
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Typography variant="subtitle2">{label}</Typography>
-        {icon && (
-          <Box sx={{ color: theme.palette.text.secondary, display: 'flex' }}>{icon}</Box>
-        )}
+        <Typography level="body-xs" sx={{ textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>
+          {label}
+        </Typography>
+        {icon && <Box sx={{ color: 'text.tertiary', display: 'flex' }}>{icon}</Box>}
       </Box>
-      <Typography variant="h4" sx={{ fontFamily: theme.typography.mono.fontFamily }}>
+      <Typography level="h3" sx={{ ...monoSx, color: toneColor }}>
         {value}
       </Typography>
       {delta && (
-        <Typography variant="caption" sx={{ color: deltaColor, fontWeight: 600 }}>
+        <Typography level="body-xs" sx={{ color: deltaColor, fontWeight: 600 }}>
           {delta}
         </Typography>
       )}
-    </Paper>
+    </Card>
   );
 }

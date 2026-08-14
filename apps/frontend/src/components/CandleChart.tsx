@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { Box, Typography } from '@mui/material';
+import Box from '@mui/joy/Box';
+import Typography from '@mui/joy/Typography';
 import {
   createChart,
   CrosshairMode,
@@ -10,6 +11,7 @@ import {
 } from 'lightweight-charts';
 import { useQuery } from '@tanstack/react-query';
 import { marketApi } from '../api';
+import { monoSx } from '../theme/theme';
 
 export type CandleChartProps = {
   symbol: string;
@@ -110,7 +112,6 @@ export function CandleChart({
       applyWidth();
     });
     ro.observe(el);
-    // Table expand can paint width on next frames
     const raf = requestAnimationFrame(applyWidth);
     const t = window.setTimeout(applyWidth, 50);
 
@@ -195,10 +196,7 @@ export function CandleChart({
   return (
     <Box sx={{ width: '100%' }}>
       {showHeader && (
-        <Typography
-          variant="subtitle2"
-          sx={{ mb: 1, fontFamily: 'IBM Plex Mono, monospace', color: 'text.secondary' }}
-        >
+        <Typography level="body-xs" sx={{ mb: 1, ...monoSx, color: 'text.secondary' }}>
           {symbol} · {interval}
           {isLoading ? ' · loading…' : ''}
           {isError ? ' · failed to load candles' : ''}
@@ -210,6 +208,7 @@ export function CandleChart({
           width: '100%',
           minHeight: height,
           overflow: 'hidden',
+          borderRadius: 'sm',
         }}
       />
     </Box>

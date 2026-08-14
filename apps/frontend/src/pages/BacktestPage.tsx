@@ -1,8 +1,22 @@
 import { useState } from 'react';
-import { Alert, Box, Button, MenuItem, Paper, TextField, Typography } from '@mui/material';
+import Alert from '@mui/joy/Alert';
+import Box from '@mui/joy/Box';
+import Button from '@mui/joy/Button';
+import FormControl from '@mui/joy/FormControl';
+import FormLabel from '@mui/joy/FormLabel';
+import Input from '@mui/joy/Input';
+import Option from '@mui/joy/Option';
+import Select from '@mui/joy/Select';
+import Sheet from '@mui/joy/Sheet';
+import Typography from '@mui/joy/Typography';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { STRATEGY_IDS } from '@trading-os/shared';
 import { backtestApi } from '../api';
+import { PageHeader } from '../components/PageHeader';
+import { StatCard } from '../components/StatCard';
+import { StatusChip } from '../components/StatusChip';
+import { KeyValueList } from '../components/ResponsiveRecordList';
+import { formatNumber, formatPercent } from '../utils/format';
 
 export function BacktestPage() {
   const [strategyId, setStrategyId] = useState<string>(STRATEGY_IDS[0]);
@@ -28,60 +42,94 @@ export function BacktestPage() {
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ mb: 2 }}>
-        Backtest
-      </Typography>
-      <Paper sx={{ p: 2, mb: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-        <TextField select label="Strategy" value={strategyId} onChange={(e) => setStrategyId(e.target.value)} sx={{ minWidth: 200 }}>
-          {STRATEGY_IDS.map((id) => (
-            <MenuItem key={id} value={id}>{id}</MenuItem>
-          ))}
-        </TextField>
-        <TextField label="Symbol" value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} />
-        <TextField select label="Interval" value={interval} onChange={(e) => setIntervalTf(e.target.value)} sx={{ width: 120 }}>
-          {['15m', '1h', '4h', '1d'].map((t) => (
-            <MenuItem key={t} value={t}>{t}</MenuItem>
-          ))}
-        </TextField>
-        <Button variant="contained" onClick={() => run.mutate()} disabled={run.isPending}>
+      <PageHeader title="Backtest" subtitle="Replay a strategy over the last 30 days" />
+      <Sheet
+        variant="outlined"
+        sx={{
+          p: 1.5,
+          mb: 2,
+          display: 'grid',
+          gap: 1.5,
+          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr auto auto' },
+          alignItems: 'end',
+          borderRadius: 'md',
+        }}
+      >
+        <FormControl>
+          <FormLabel>Strategy</FormLabel>
+          <Select value={strategyId} onChange={(_, v) => v && setStrategyId(v)}>
+            {STRATEGY_IDS.map((id) => (
+              <Option key={id} value={id}>
+                {id}
+              </Option>
+            ))}
+          </Select>
+        </FormControl>
+        <FormControl>
+          <FormLabel>Symbol</FormLabel>
+          <Input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} />
+        </FormControl>
+        <FormControl>
+          <FormLabel>Interval</FormLabel>
+          <Select value={interval} onChange={(_, v) => v && setIntervalTf(v)}>
+            {['15m', '1h', '4h', '1d'].map((t) => (
+              <Option key={t} value={t}>
+                {t}
+              </Option>
+            ))}
+          </Select>
+        </FormControl>
+        <Button onClick={() => run.mutate()} disabled={run.isPending} sx={{ minHeight: 36 }}>
           {run.isPending ? 'Running…' : 'Run (30d)'}
         </Button>
-      </Paper>
+      </Sheet>
 
-      {run.isError && <Alert severity="error" sx={{ mb: 2 }}>{(run.error as Error).message}</Alert>}
+      {run.isError && (
+        <Alert color="danger" sx={{ mb: 2 }}>
+          {(run.error as Error).message}
+        </Alert>
+      )}
 
       {metrics && (
-        <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)', md: 'repeat(6, 1fr)' }, mb: 2 }}>
-          {[
-            ['Win Rate', `${(metrics.winRate * 100).toFixed(1)}%`],
-            ['Loss Rate', `${(metrics.lossRate * 100).toFixed(1)}%`],
-            ['Profit Factor', metrics.profitFactor.toFixed(2)],
-            ['Max DD', `${(metrics.maxDrawdown * 100).toFixed(1)}%`],
-            ['Avg Profit', metrics.averageProfit.toFixed(2)],
-            ['Net Profit', metrics.netProfit.toFixed(2)],
-          ].map(([label, value]) => (
-            <Paper key={label} sx={{ p: 2 }}>
-              <Typography variant="subtitle2">{label}</Typography>
-              <Typography variant="h6" sx={{ fontFamily: 'IBM Plex Mono, monospace' }}>{value}</Typography>
-            </Paper>
-          ))}
+        <Box
+          sx={{
+            display: 'grid',
+            gap: 1.5,
+            gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)', md: 'repeat(6, 1fr)' },
+            mb: 2,
+          }}
+        >
+          <StatCard label="Win Rate" value={formatPercent(metrics.winRate * 100, 1)} />
+          <StatCard label="Loss Rate" value={formatPercent(metrics.lossRate * 100, 1)} />
+          <StatCard label="Profit Factor" value={metrics.profitFactor.toFixed(2)} />
+          <StatCard label="Max DD" value={formatPercent(metrics.maxDrawdown * 100, 1)} />
+          <StatCard label="Avg Profit" value={formatNumber(metrics.averageProfit)} />
+          <StatCard
+            label="Net Profit"
+            value={formatNumber(metrics.netProfit)}
+            tone={metrics.netProfit > 0 ? 'positive' : metrics.netProfit < 0 ? 'negative' : 'neutral'}
+          />
         </Box>
       )}
 
-      <Typography variant="h6" sx={{ mb: 1 }}>
+      <Typography level="title-md" sx={{ mb: 1 }}>
         Recent runs
       </Typography>
-      <Paper sx={{ p: 2 }}>
-        {(runs?.items ?? []).map((r: Record<string, unknown>) => (
-          <Box key={String(r._id)} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.75, borderBottom: '1px solid', borderColor: 'divider' }}>
-            <Typography>{String(r.strategyId)} · {String(r.symbol)} · {String(r.interval)}</Typography>
-            <Typography>{String(r.status)}</Typography>
-            <Typography>
-              {r.metrics ? `PF ${(r.metrics as { profitFactor: number }).profitFactor.toFixed(2)}` : '—'}
-            </Typography>
-          </Box>
-        ))}
-      </Paper>
+      <KeyValueList
+        emptyTitle="No backtests yet"
+        items={(runs?.items ?? []).map((r: Record<string, unknown>) => ({
+          key: String(r._id),
+          primary: `${String(r.strategyId)} · ${String(r.symbol)} · ${String(r.interval)}`,
+          trailing: (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <StatusChip status={String(r.status)} />
+              {r.metrics
+                ? `PF ${(r.metrics as { profitFactor: number }).profitFactor.toFixed(2)}`
+                : '—'}
+            </Box>
+          ),
+        }))}
+      />
     </Box>
   );
 }

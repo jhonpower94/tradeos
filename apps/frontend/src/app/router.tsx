@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { AppLayout } from './layout/AppLayout';
 import { LoginPage } from '../pages/LoginPage';
@@ -13,8 +14,9 @@ import { JournalPage } from '../pages/JournalPage';
 import { AnalyticsPage } from '../pages/AnalyticsPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { BacktestPage } from '../pages/BacktestPage';
+import { NotFoundPage } from '../pages/NotFoundPage';
 
-function PrivateRoute({ children }: { children: React.ReactNode }) {
+function PrivateRoute({ children }: { children: ReactNode }) {
   const token = useAuthStore((s) => s.token);
   if (!token) return <Navigate to="/login" replace />;
   return children;
@@ -43,7 +45,9 @@ export function AppRouter() {
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="backtest" element={<BacktestPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }

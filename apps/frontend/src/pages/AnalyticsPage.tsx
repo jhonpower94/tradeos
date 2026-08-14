@@ -1,16 +1,31 @@
-import { Box, Paper, Typography } from '@mui/material';
+import Box from '@mui/joy/Box';
+import Typography from '@mui/joy/Typography';
 import { useQuery } from '@tanstack/react-query';
 import { analyticsApi } from '../api';
+import { PageHeader } from '../components/PageHeader';
+import { StatCard } from '../components/StatCard';
+import { KeyValueList } from '../components/ResponsiveRecordList';
+import { PnlText } from '../components/PnlText';
+import { formatNumber, formatPercent } from '../utils/format';
 
 export function AnalyticsPage() {
   const { data } = useQuery({ queryKey: ['analytics'], queryFn: analyticsApi.overview });
+  const netPnl = Number(data?.netPnl ?? 0);
+  const netTone = netPnl > 0 ? 'positive' : netPnl < 0 ? 'negative' : 'neutral';
 
-  const cards = [
-    { label: 'Win Rate', value: `${((data?.winRate ?? 0) * 100).toFixed(1)}%` },
-    { label: 'Profit Factor', value: Number.isFinite(data?.profitFactor) ? Number(data?.profitFactor).toFixed(2) : '∞' },
-    { label: 'Sharpe', value: (data?.sharpeRatio ?? 0).toFixed(2) },
-    { label: 'Max Drawdown', value: `${((data?.maxDrawdown ?? 0) * 100).toFixed(1)}%` },
-    { label: 'Net PnL', value: (data?.netPnl ?? 0).toFixed(2) },
+  const cards: Array<{
+    label: string;
+    value: string;
+    tone?: 'positive' | 'negative' | 'neutral';
+  }> = [
+    { label: 'Win Rate', value: formatPercent((data?.winRate ?? 0) * 100, 1) },
+    {
+      label: 'Profit Factor',
+      value: Number.isFinite(data?.profitFactor) ? Number(data?.profitFactor).toFixed(2) : '∞',
+    },
+    { label: 'Sharpe', value: formatNumber(data?.sharpeRatio ?? 0) },
+    { label: 'Max Drawdown', value: formatPercent((data?.maxDrawdown ?? 0) * 100, 1) },
+    { label: 'Net PnL', value: formatNumber(netPnl), tone: netTone },
     { label: 'Trades', value: String(data?.tradeCount ?? 0) },
     { label: 'Best Strategy', value: data?.bestStrategy ?? '—' },
     { label: 'Worst Strategy', value: data?.worstStrategy ?? '—' },
@@ -18,31 +33,29 @@ export function AnalyticsPage() {
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ mb: 2 }}>
-        Analytics
-      </Typography>
-      <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: 'repeat(4, 1fr)' } }}>
+      <PageHeader title="Analytics" subtitle="Closed-trade performance" />
+      <Box
+        sx={{
+          display: 'grid',
+          gap: 1.5,
+          gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' },
+        }}
+      >
         {cards.map((c) => (
-          <Paper key={c.label} sx={{ p: 2 }}>
-            <Typography variant="subtitle2">{c.label}</Typography>
-            <Typography variant="h5" sx={{ fontFamily: 'IBM Plex Mono, monospace', mt: 1 }}>
-              {c.value}
-            </Typography>
-          </Paper>
+          <StatCard key={c.label} label={c.label} value={c.value} tone={c.tone ?? 'neutral'} />
         ))}
       </Box>
-      <Paper sx={{ p: 2, mt: 2 }}>
-        <Typography variant="h6" sx={{ mb: 1 }}>
-          Monthly Returns
-        </Typography>
-        {(data?.monthlyReturns ?? []).map((m: { month: string; pnl: number }) => (
-          <Box key={m.month} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
-            <Typography>{m.month}</Typography>
-            <Typography color={m.pnl >= 0 ? 'long.main' : 'short.main'}>{m.pnl.toFixed(2)}</Typography>
-          </Box>
-        ))}
-        {!data?.monthlyReturns?.length && <Typography color="text.secondary">No closed trades yet</Typography>}
-      </Paper>
+      <Typography level="title-md" sx={{ mt: 2.5, mb: 1 }}>
+        Monthly Returns
+      </Typography>
+      <KeyValueList
+        emptyTitle="No closed trades yet"
+        items={(data?.monthlyReturns ?? []).map((m: { month: string; pnl: number }) => ({
+          key: m.month,
+          primary: m.month,
+          trailing: <PnlText value={m.pnl} />,
+        }))}
+      />
     </Box>
   );
 }

@@ -1,4 +1,5 @@
-import { CssBaseline, ThemeProvider } from '@mui/material';
+import { CssBaseline } from '@mui/joy';
+import { CssVarsProvider } from '@mui/joy/styles';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
@@ -21,7 +22,7 @@ const queryClient = new QueryClient({
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider theme={theme}>
+      <CssVarsProvider theme={theme} defaultMode="dark" disableTransitionOnChange>
         <CssBaseline />
         <BrowserRouter
           future={{
@@ -31,7 +32,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
         >
           {children}
         </BrowserRouter>
-      </ThemeProvider>
+      </CssVarsProvider>
     </QueryClientProvider>
   );
 }

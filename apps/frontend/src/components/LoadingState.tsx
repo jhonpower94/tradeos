@@ -1,6 +1,6 @@
-import Box from '@mui/material/Box';
-import CircularProgress from '@mui/material/CircularProgress';
-import Typography from '@mui/material/Typography';
+import Box from '@mui/joy/Box';
+import CircularProgress from '@mui/joy/CircularProgress';
+import Typography from '@mui/joy/Typography';
 
 export function LoadingState({ label = 'Loading…' }: { label?: string }) {
   return (
@@ -15,8 +15,8 @@ export function LoadingState({ label = 'Loading…' }: { label?: string }) {
         color: 'text.secondary',
       }}
     >
-      <CircularProgress size={28} thickness={4} />
-      <Typography variant="body2">{label}</Typography>
+      <CircularProgress size="md" />
+      <Typography level="body-sm">{label}</Typography>
     </Box>
   );
 }

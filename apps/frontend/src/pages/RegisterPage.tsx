@@ -1,8 +1,16 @@
 import { useState } from 'react';
-import { Box, Button, Paper, TextField, Typography, Link, Alert } from '@mui/material';
+import Alert from '@mui/joy/Alert';
+import Box from '@mui/joy/Box';
+import Button from '@mui/joy/Button';
+import FormControl from '@mui/joy/FormControl';
+import FormHelperText from '@mui/joy/FormHelperText';
+import FormLabel from '@mui/joy/FormLabel';
+import Input from '@mui/joy/Input';
+import Link from '@mui/joy/Link';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { authApi } from '../api';
 import { useAuthStore } from '../stores/authStore';
+import { AuthShell } from '../components/AuthShell';
 
 export function RegisterPage() {
   const [email, setEmail] = useState('');
@@ -27,37 +35,32 @@ export function RegisterPage() {
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center', p: 2 }}>
-      <Paper sx={{ p: 4, width: 400, maxWidth: '100%' }}>
-        <Typography variant="h4" sx={{ color: 'primary.main', mb: 0.5 }}>
-          Create account
-        </Typography>
-        <Typography variant="subtitle1" sx={{ mb: 3 }}>
-          Start paper trading in minutes
-        </Typography>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-        <Box component="form" onSubmit={onSubmit} sx={{ display: 'grid', gap: 2 }}>
-          <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <TextField
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            helperText="Min 8 characters"
-          />
-          <Button type="submit" variant="contained" size="large">
-            Register
-          </Button>
-        </Box>
-        <Typography variant="body2" sx={{ mt: 2 }}>
-          Have an account? <Link component={RouterLink} to="/login">Sign in</Link>
-        </Typography>
-      </Paper>
-    </Box>
+    <AuthShell title="Create account" subtitle="Start paper trading in minutes">
+      {error && (
+        <Alert color="danger" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+      <Box component="form" onSubmit={onSubmit} sx={{ display: 'grid', gap: 1.5 }}>
+        <FormControl required>
+          <FormLabel>Email</FormLabel>
+          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        </FormControl>
+        <FormControl required>
+          <FormLabel>Password</FormLabel>
+          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <FormHelperText>Min 8 characters</FormHelperText>
+        </FormControl>
+        <Button type="submit" size="lg">
+          Register
+        </Button>
+      </Box>
+      <FormHelperText sx={{ mt: 2, display: 'block' }}>
+        Have an account?{' '}
+        <Link component={RouterLink} to="/login">
+          Sign in
+        </Link>
+      </FormHelperText>
+    </AuthShell>
   );
 }

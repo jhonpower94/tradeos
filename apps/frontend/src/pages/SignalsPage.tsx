@@ -1,23 +1,22 @@
-import { Fragment, useEffect, useState } from 'react';
-import {
-  Alert,
-  Box,
-  Button,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  ToggleButton,
-  ToggleButtonGroup,
-  Typography,
-} from '@mui/material';
+import { useEffect, useState } from 'react';
+import Alert from '@mui/joy/Alert';
+import Box from '@mui/joy/Box';
+import Button from '@mui/joy/Button';
+import IconButton from '@mui/joy/IconButton';
+import ToggleButtonGroup from '@mui/joy/ToggleButtonGroup';
+import Typography from '@mui/joy/Typography';
+import Close from '@mui/icons-material/Close';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { signalsApi } from '../api';
 import { CandleChart } from '../components/CandleChart';
-import { formatDateTime, formatRelativeTime } from '../utils/format';
+import { PageHeader } from '../components/PageHeader';
+import { SideChip } from '../components/SideChip';
+import { StatusChip } from '../components/StatusChip';
+import { ConfidenceBar } from '../components/ConfidenceBar';
+import { ResponsiveRecordList } from '../components/ResponsiveRecordList';
+import { formatDateTime, formatPrice, formatRelativeTime } from '../utils/format';
+import { monoSx } from '../theme/theme';
 
 function mutationErrorMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {
@@ -66,150 +65,169 @@ export function SignalsPage() {
     },
   });
 
+  const rows = (data?.items ?? []) as Array<Record<string, unknown>>;
+
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, gap: 2, flexWrap: 'wrap' }}>
-        <Box>
-          <Typography variant="h4">Signals</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            {view === 'ranked'
-              ? 'Active ranked opportunities — same board as Scanner. Approve here to trade.'
-              : 'Past signals (executed, rejected, expired).'}
-          </Typography>
-        </Box>
-        <ToggleButtonGroup
-          size="small"
-          exclusive
-          value={view}
-          onChange={(_, v) => {
-            if (v) {
-              setView(v);
-              setChartSignalId(null);
-            }
-          }}
-        >
-          <ToggleButton value="ranked">Active</ToggleButton>
-          <ToggleButton value="history">History</ToggleButton>
-        </ToggleButtonGroup>
-      </Box>
+      <PageHeader
+        title="Signals"
+        subtitle={
+          view === 'ranked'
+            ? 'Active ranked opportunities — same board as Scanner. Approve here to trade.'
+            : 'Past signals (executed, rejected, expired).'
+        }
+        actions={
+          <ToggleButtonGroup
+            size="sm"
+            value={view}
+            onChange={(_, v) => {
+              if (v) {
+                setView(v);
+                setChartSignalId(null);
+              }
+            }}
+          >
+            <Button value="ranked">Active</Button>
+            <Button value="history">History</Button>
+          </ToggleButtonGroup>
+        }
+      />
       {approve.isError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => approve.reset()}>
+        <Alert
+          color="danger"
+          sx={{ mb: 2 }}
+          endDecorator={
+            <IconButton size="sm" variant="plain" color="danger" onClick={() => approve.reset()}>
+              <Close />
+            </IconButton>
+          }
+        >
           {mutationErrorMessage(approve.error)}
         </Alert>
       )}
-      <Paper>
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>Symbol</TableCell>
-              <TableCell>Side</TableCell>
-              <TableCell>TF</TableCell>
-              <TableCell>Appeared</TableCell>
-              <TableCell>Confidence</TableCell>
-              <TableCell>Entry</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Strategy</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {(data?.items ?? []).length === 0 && (
-              <TableRow>
-                <TableCell colSpan={9}>
-                  <Typography variant="body2" color="text.secondary">
-                    {view === 'ranked' ? 'No active ranked signals right now.' : 'No signal history yet.'}
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            )}
-            {(data?.items ?? []).map((s: Record<string, unknown>) => {
+      <ResponsiveRecordList
+        rows={rows}
+        getRowKey={(s) => String(s._id)}
+        emptyTitle={view === 'ranked' ? 'No active ranked signals right now.' : 'No signal history yet.'}
+        cardTitle={(s) => (
+          <Typography level="title-md" sx={monoSx}>
+            {String(s.symbol)}
+          </Typography>
+        )}
+        cardMeta={(s) => (
+          <>
+            <SideChip side={String(s.side)} />
+            <StatusChip status={String(s.status)} />
+          </>
+        )}
+        cardFields={[
+          { label: 'TF', render: (s) => String(s.timeframe ?? '—') },
+          { label: 'Appeared', render: (s) => formatRelativeTime((s.updatedAt ?? s.createdAt) as string) },
+          { label: 'Confidence', render: (s) => <ConfidenceBar value={Number(s.confidence)} /> },
+          { label: 'Entry', render: (s) => <Typography sx={monoSx}>{formatPrice(Number(s.entry))}</Typography> },
+          { label: 'Strategy', render: (s) => String(s.primaryStrategy) },
+        ]}
+        cardActions={(s) => {
+          const id = String(s._id);
+          const chartOpen = chartSignalId === id;
+          return (
+            <>
+              <Button
+                variant={chartOpen ? 'solid' : 'outlined'}
+                color="neutral"
+                onClick={() => setChartSignalId(chartOpen ? null : id)}
+              >
+                Chart
+              </Button>
+              {s.status === 'ranked' && view === 'ranked' && (
+                <>
+                  <Button color="success" onClick={() => approve.mutate(id)}>
+                    Approve
+                  </Button>
+                  <Button color="warning" variant="outlined" onClick={() => reject.mutate(id)}>
+                    Reject
+                  </Button>
+                </>
+              )}
+            </>
+          );
+        }}
+        expandedContent={(s) => {
+          const id = String(s._id);
+          if (chartSignalId !== id) return null;
+          const timeframe = String(s.timeframe ?? '1h');
+          const appearedAt = (s.updatedAt ?? s.createdAt) as string | undefined;
+          return (
+            <Box>
+              <Typography level="body-sm" sx={{ mb: 1.5, ...monoSx, color: 'text.secondary' }}>
+                {String(s.side)} · {timeframe}
+                {' · '}Entry {fmt(s.entry)}
+                {' · '}SL {fmt(s.stopLoss)}
+                {' · '}TP {fmt(s.takeProfit)}
+                {s.riskReward != null ? ` · RR ${Number(s.riskReward).toFixed(2)}` : ''}
+                {s.primaryStrategy ? ` · ${String(s.primaryStrategy)}` : ''}
+                {appearedAt ? ` · ${formatRelativeTime(appearedAt)}` : ''}
+              </Typography>
+              <CandleChart
+                symbol={String(s.symbol)}
+                interval={timeframe || '1h'}
+                height={280}
+                entry={Number(s.entry)}
+                stopLoss={s.stopLoss != null ? Number(s.stopLoss) : undefined}
+                takeProfit={s.takeProfit != null ? Number(s.takeProfit) : undefined}
+              />
+            </Box>
+          );
+        }}
+        columns={[
+          { key: 'symbol', header: 'Symbol', render: (s) => <Typography sx={monoSx}>{String(s.symbol)}</Typography> },
+          { key: 'side', header: 'Side', render: (s) => <SideChip side={String(s.side)} /> },
+          { key: 'tf', header: 'TF', render: (s) => String(s.timeframe ?? '—') },
+          {
+            key: 'appeared',
+            header: 'Appeared',
+            render: (s) => {
+              const appearedAt = (s.updatedAt ?? s.createdAt) as string | undefined;
+              return <span title={formatDateTime(appearedAt)}>{formatRelativeTime(appearedAt)}</span>;
+            },
+          },
+          { key: 'conf', header: 'Confidence', numeric: true, render: (s) => `${Number(s.confidence).toFixed(1)}%` },
+          { key: 'entry', header: 'Entry', numeric: true, render: (s) => formatPrice(Number(s.entry)) },
+          { key: 'status', header: 'Status', render: (s) => <StatusChip status={String(s.status)} /> },
+          { key: 'strategy', header: 'Strategy', render: (s) => String(s.primaryStrategy) },
+          {
+            key: 'actions',
+            header: 'Actions',
+            align: 'right',
+            render: (s) => {
               const id = String(s._id);
               const chartOpen = chartSignalId === id;
-              const timeframe = String(s.timeframe ?? '1h');
-              const appearedAt = (s.updatedAt ?? s.createdAt) as string | undefined;
               return (
-                <Fragment key={id}>
-                  <TableRow>
-                    <TableCell sx={{ fontFamily: 'IBM Plex Mono, monospace' }}>{String(s.symbol)}</TableCell>
-                    <TableCell sx={{ color: s.side === 'BUY' ? 'long.main' : 'short.main' }}>
-                      {String(s.side)}
-                    </TableCell>
-                    <TableCell>{String(s.timeframe ?? '—')}</TableCell>
-                    <TableCell
-                      title={formatDateTime(appearedAt)}
-                      sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}
-                    >
-                      {formatRelativeTime(appearedAt)}
-                    </TableCell>
-                    <TableCell>{Number(s.confidence).toFixed(1)}%</TableCell>
-                    <TableCell>{Number(s.entry).toPrecision(6)}</TableCell>
-                    <TableCell>{String(s.status)}</TableCell>
-                    <TableCell>{String(s.primaryStrategy)}</TableCell>
-                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                      <ToggleButton
-                        size="small"
-                        value="chart"
-                        selected={chartOpen}
-                        onChange={() => setChartSignalId(chartOpen ? null : id)}
-                        sx={{
-                          mr: 1,
-                          px: 1.25,
-                          py: 0.25,
-                          textTransform: 'none',
-                          fontSize: '0.8125rem',
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        Chart
-                      </ToggleButton>
-                      {s.status === 'ranked' && view === 'ranked' && (
-                        <>
-                          <Button size="small" onClick={() => approve.mutate(id)}>
-                            Approve
-                          </Button>
-                          <Button size="small" color="warning" onClick={() => reject.mutate(id)}>
-                            Reject
-                          </Button>
-                        </>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                  {chartOpen && (
-                    <TableRow>
-                      <TableCell colSpan={9} sx={{ bgcolor: 'background.default', py: 2 }}>
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            mb: 1.5,
-                            fontFamily: 'IBM Plex Mono, monospace',
-                            color: 'text.secondary',
-                          }}
-                        >
-                          {String(s.side)} · {timeframe}
-                          {' · '}Entry {fmt(s.entry)}
-                          {' · '}SL {fmt(s.stopLoss)}
-                          {' · '}TP {fmt(s.takeProfit)}
-                          {s.riskReward != null ? ` · RR ${Number(s.riskReward).toFixed(2)}` : ''}
-                          {s.primaryStrategy ? ` · ${String(s.primaryStrategy)}` : ''}
-                          {appearedAt ? ` · ${formatRelativeTime(appearedAt)}` : ''}
-                        </Typography>
-                        <CandleChart
-                          symbol={String(s.symbol)}
-                          interval={timeframe || '1h'}
-                          height={280}
-                          entry={Number(s.entry)}
-                          stopLoss={s.stopLoss != null ? Number(s.stopLoss) : undefined}
-                          takeProfit={s.takeProfit != null ? Number(s.takeProfit) : undefined}
-                        />
-                      </TableCell>
-                    </TableRow>
+                <Box sx={{ display: 'flex', gap: 0.75, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                  <Button
+                    size="sm"
+                    variant={chartOpen ? 'solid' : 'outlined'}
+                    color="neutral"
+                    onClick={() => setChartSignalId(chartOpen ? null : id)}
+                  >
+                    Chart
+                  </Button>
+                  {s.status === 'ranked' && view === 'ranked' && (
+                    <>
+                      <Button size="sm" color="success" onClick={() => approve.mutate(id)}>
+                        Approve
+                      </Button>
+                      <Button size="sm" color="warning" variant="outlined" onClick={() => reject.mutate(id)}>
+                        Reject
+                      </Button>
+                    </>
                   )}
-                </Fragment>
+                </Box>
               );
-            })}
-          </TableBody>
-        </Table>
-      </Paper>
+            },
+          },
+        ]}
+      />
     </Box>
   );
 }

@@ -1,10 +1,10 @@
-import Alert from '@mui/material/Alert';
-import Box from '@mui/material/Box';
+import Alert from '@mui/joy/Alert';
+import Box from '@mui/joy/Box';
 
 export function ErrorState({ message }: { message: string }) {
   return (
     <Box sx={{ py: 2 }}>
-      <Alert severity="error" variant="outlined">
+      <Alert color="danger" variant="outlined">
         {message}
       </Alert>
     </Box>

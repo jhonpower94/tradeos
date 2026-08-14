@@ -1,8 +1,16 @@
 import { useState } from 'react';
-import { Box, Button, Paper, TextField, Typography, Link, Alert } from '@mui/material';
+import Alert from '@mui/joy/Alert';
+import Box from '@mui/joy/Box';
+import Button from '@mui/joy/Button';
+import FormControl from '@mui/joy/FormControl';
+import FormHelperText from '@mui/joy/FormHelperText';
+import FormLabel from '@mui/joy/FormLabel';
+import Input from '@mui/joy/Input';
+import Link from '@mui/joy/Link';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { authApi } from '../api';
 import { useAuthStore } from '../stores/authStore';
+import { AuthShell } from '../components/AuthShell';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
@@ -27,36 +35,31 @@ export function LoginPage() {
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center', p: 2 }}>
-      <Paper sx={{ p: 4, width: 400, maxWidth: '100%' }}>
-        <Typography variant="h4" sx={{ color: 'primary.main', mb: 0.5 }}>
-          Trading OS
-        </Typography>
-        <Typography variant="subtitle1" sx={{ mb: 3 }}>
-          Sign in to your terminal
-        </Typography>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-        <Box component="form" onSubmit={onSubmit} sx={{ display: 'grid', gap: 2 }}>
-          <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <TextField
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          <Button type="submit" variant="contained" size="large">
-            Sign in
-          </Button>
-        </Box>
-        <Typography variant="body2" sx={{ mt: 2 }}>
-          No account? <Link component={RouterLink} to="/register">Register</Link>
-        </Typography>
-      </Paper>
-    </Box>
+    <AuthShell title="Sign in" subtitle="Sign in to your terminal">
+      {error && (
+        <Alert color="danger" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+      <Box component="form" onSubmit={onSubmit} sx={{ display: 'grid', gap: 1.5 }}>
+        <FormControl required>
+          <FormLabel>Email</FormLabel>
+          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        </FormControl>
+        <FormControl required>
+          <FormLabel>Password</FormLabel>
+          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </FormControl>
+        <Button type="submit" size="lg">
+          Sign in
+        </Button>
+      </Box>
+      <FormHelperText sx={{ mt: 2, display: 'block' }}>
+        No account?{' '}
+        <Link component={RouterLink} to="/register">
+          Register
+        </Link>
+      </FormHelperText>
+    </AuthShell>
   );
 }
