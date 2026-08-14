@@ -6,6 +6,7 @@ import {
   FormControlLabel,
   MenuItem,
   Paper,
+  Snackbar,
   Switch,
   Tab,
   Tabs,
@@ -13,8 +14,49 @@ import {
   Typography,
 } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { TIMEFRAMES } from '@trading-os/shared';
 import { notificationsApi, settingsApi } from '../api';
 import { disableWebPush, enableWebPush, getActivePushEndpoint } from '../lib/webPush';
+
+/** Controlled number field: blur saves only when the value actually changed. */
+function SettingsNumberField({
+  label,
+  value,
+  onSave,
+  helperText,
+  inputProps,
+}: {
+  label: string;
+  value: number;
+  onSave: (n: number) => void;
+  helperText?: string;
+  inputProps?: React.ComponentProps<typeof TextField>['inputProps'];
+}) {
+  const [local, setLocal] = useState(String(value));
+
+  useEffect(() => {
+    setLocal(String(value));
+  }, [value]);
+
+  return (
+    <TextField
+      label={label}
+      type="number"
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => {
+        const n = Number(local);
+        if (!Number.isFinite(n) || n === value) {
+          setLocal(String(value));
+          return;
+        }
+        onSave(n);
+      }}
+      helperText={helperText}
+      inputProps={{ step: 'any', ...inputProps }}
+    />
+  );
+}
 
 export function SettingsPage() {
   const [tab, setTab] = useState(0);
@@ -29,25 +71,40 @@ export function SettingsPage() {
     void getActivePushEndpoint().then((ep) => setPushEnabled(Boolean(ep)));
   }, [tab]);
 
+  const msgSeverity = /ok|saved|sent|connection ok|enabled|disabled|active/i.test(msg)
+    ? 'success'
+    : 'error';
+
   const saveBinance = useMutation({
-    mutationFn: () => settingsApi.setBinance({ apiKey, apiSecret, testnet: data?.binance?.testnet ?? false }),
-    onSuccess: () => {
+    mutationFn: () =>
+      settingsApi.setBinance({ apiKey, apiSecret, testnet: data?.binance?.testnet ?? false }),
+    onSuccess: (next) => {
       setMsg('Binance keys saved');
-      qc.invalidateQueries({ queryKey: ['settings'] });
+      qc.setQueryData(['settings'], next);
     },
   });
   const testBinance = useMutation({
     mutationFn: settingsApi.testBinance,
     onSuccess: (r) => setMsg(`Connection OK — ${r.assets} assets`),
     onError: (e: unknown) =>
-      setMsg((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Test failed'),
+      setMsg(
+        (e as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+          'Test failed',
+      ),
   });
   const saveSettings = useMutation({
     mutationFn: (body: unknown) => settingsApi.update(body),
-    onSuccess: () => {
+    onSuccess: (next) => {
       setMsg('Settings saved');
-      qc.invalidateQueries({ queryKey: ['settings'] });
+      qc.setQueryData(['settings'], next);
     },
+    onError: (e: unknown) =>
+      setMsg(
+        (e as { response?: { data?: { message?: string } }; message?: string })?.response?.data
+          ?.message ??
+          (e as Error)?.message ??
+          'Failed to save settings',
+      ),
   });
   const testNotify = useMutation({
     mutationFn: notificationsApi.test,
@@ -96,15 +153,22 @@ export function SettingsPage() {
       <Typography variant="h4" sx={{ mb: 2 }}>
         Settings
       </Typography>
-      {msg && (
+      <Snackbar
+        open={Boolean(msg)}
+        autoHideDuration={4000}
+        onClose={() => setMsg('')}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        disableWindowBlurListener
+      >
         <Alert
-          sx={{ mb: 2 }}
-          severity={/ok|saved|sent|connection ok/i.test(msg) ? 'success' : 'error'}
+          severity={msgSeverity}
           onClose={() => setMsg('')}
+          variant="filled"
+          sx={{ width: '100%' }}
         >
           {msg}
         </Alert>
-      )}
+      </Snackbar>
       <Paper sx={{ mb: 2 }}>
         <Tabs value={tab} onChange={(_, v) => setTab(v)}>
           <Tab label="Binance" />
@@ -122,15 +186,29 @@ export function SettingsPage() {
           </Typography>
           <Typography variant="caption" color="text.secondary">
             Test calls Binance account API. If you see ENOTFOUND / unreachable, api.binance.com may be
-            blocked on your network — use a VPN or set BINANCE_REST_URL in .env (e.g. https://api1.binance.com).
+            blocked on your network — use a VPN or set BINANCE_REST_URL in .env (e.g.
+            https://api1.binance.com).
           </Typography>
           <TextField label="API Key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-          <TextField label="API Secret" type="password" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} />
+          <TextField
+            label="API Secret"
+            type="password"
+            value={apiSecret}
+            onChange={(e) => setApiSecret(e.target.value)}
+          />
           <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button variant="contained" onClick={() => saveBinance.mutate()} disabled={!apiKey || !apiSecret}>
+            <Button
+              variant="contained"
+              onClick={() => saveBinance.mutate()}
+              disabled={!apiKey || !apiSecret}
+            >
               Save keys
             </Button>
-            <Button variant="outlined" onClick={() => testBinance.mutate()} disabled={!data?.binance?.configured}>
+            <Button
+              variant="outlined"
+              onClick={() => testBinance.mutate()}
+              disabled={!data?.binance?.configured}
+            >
               Test connection
             </Button>
           </Box>
@@ -139,39 +217,38 @@ export function SettingsPage() {
 
       {tab === 1 && data && (
         <Paper sx={{ p: 2, display: 'grid', gap: 2, maxWidth: 480 }}>
-          <TextField
+          <SettingsNumberField
             label="Max risk per trade"
-            type="number"
-            defaultValue={data.risk?.maxRiskPerTrade}
-            onBlur={(e) => saveSettings.mutate({ risk: { maxRiskPerTrade: Number(e.target.value) } })}
+            value={Number(data.risk?.maxRiskPerTrade ?? 0.01)}
+            inputProps={{ min: 0.001, max: 0.1 }}
+            onSave={(n) => saveSettings.mutate({ risk: { maxRiskPerTrade: n } })}
+            helperText="Fraction of equity (0.01 = 1%, 0.09 = 9%)."
           />
-          <TextField
+          <SettingsNumberField
             label="Max daily loss"
-            type="number"
-            defaultValue={data.risk?.maxDailyLoss}
-            onBlur={(e) => saveSettings.mutate({ risk: { maxDailyLoss: Number(e.target.value) } })}
+            value={Number(data.risk?.maxDailyLoss ?? 0.05)}
+            inputProps={{ min: 0.01, max: 0.5 }}
+            onSave={(n) => saveSettings.mutate({ risk: { maxDailyLoss: n } })}
+            helperText="Fraction of equity (0.05 = 5%)."
           />
-          <TextField
+          <SettingsNumberField
             label="Max open positions"
-            type="number"
-            defaultValue={data.risk?.maxOpenPositions}
-            onBlur={(e) => saveSettings.mutate({ risk: { maxOpenPositions: Number(e.target.value) } })}
+            value={Number(data.risk?.maxOpenPositions ?? 5)}
+            inputProps={{ min: 1, max: 50 }}
+            onSave={(n) => saveSettings.mutate({ risk: { maxOpenPositions: n } })}
           />
-          <TextField
+          <SettingsNumberField
             label="Min risk/reward"
-            type="number"
-            defaultValue={data.risk?.minRiskReward}
-            onBlur={(e) => saveSettings.mutate({ risk: { minRiskReward: Number(e.target.value) } })}
+            value={Number(data.risk?.minRiskReward ?? 2)}
+            inputProps={{ min: 0.5, max: 10 }}
+            onSave={(n) => saveSettings.mutate({ risk: { minRiskReward: n } })}
           />
-          <TextField
+          <SettingsNumberField
             label="Max % of free balance per trade"
-            type="number"
-            inputProps={{ step: 0.05, min: 0.05, max: 1 }}
-            defaultValue={data.risk?.maxFreeNotionalPct ?? 0.25}
-            onBlur={(e) =>
-              saveSettings.mutate({ risk: { maxFreeNotionalPct: Number(e.target.value) } })
-            }
-            helperText="Caps entry notional to this fraction of free USDT (e.g. 0.25 = 25%)."
+            value={Number(data.risk?.maxFreeNotionalPct ?? 0.25)}
+            inputProps={{ min: 0.05, max: 1 }}
+            onSave={(n) => saveSettings.mutate({ risk: { maxFreeNotionalPct: n } })}
+            helperText="Fraction of free USDT (1 = 100%, 0.25 = 25%). Range 0.05–1."
           />
         </Paper>
       )}
@@ -181,8 +258,11 @@ export function SettingsPage() {
           <TextField
             select
             label="Trading mode"
-            defaultValue={data.trading?.mode}
-            onChange={(e) => saveSettings.mutate({ trading: { mode: e.target.value } })}
+            value={data.trading?.mode ?? 'paper'}
+            onChange={(e) => {
+              if (e.target.value === data.trading?.mode) return;
+              saveSettings.mutate({ trading: { mode: e.target.value } });
+            }}
           >
             <MenuItem value="paper">Paper</MenuItem>
             <MenuItem value="live">Live</MenuItem>
@@ -190,20 +270,21 @@ export function SettingsPage() {
           <TextField
             select
             label="Approval mode"
-            defaultValue={data.trading?.approval}
-            onChange={(e) => saveSettings.mutate({ trading: { approval: e.target.value } })}
+            value={data.trading?.approval ?? 'manual'}
+            onChange={(e) => {
+              if (e.target.value === data.trading?.approval) return;
+              saveSettings.mutate({ trading: { approval: e.target.value } });
+            }}
           >
             <MenuItem value="manual">Manual</MenuItem>
             <MenuItem value="semi">Semi automatic</MenuItem>
             <MenuItem value="auto">Automatic</MenuItem>
           </TextField>
-          <TextField
+          <SettingsNumberField
             label="Paper starting balance (USDT)"
-            type="number"
-            defaultValue={data.trading?.paperStartingBalance ?? 10000}
-            onBlur={(e) =>
-              saveSettings.mutate({ trading: { paperStartingBalance: Number(e.target.value) } })
-            }
+            value={Number(data.trading?.paperStartingBalance ?? 10000)}
+            inputProps={{ min: 0 }}
+            onSave={(n) => saveSettings.mutate({ trading: { paperStartingBalance: n } })}
             helperText="Baseline paper funding. Realized PnL and deposits/withdrawals stack on top."
           />
           <FormControlLabel
@@ -217,24 +298,18 @@ export function SettingsPage() {
             }
             label="Partial take profit"
           />
-          <TextField
+          <SettingsNumberField
             label="Partial TP fraction"
-            type="number"
-            inputProps={{ step: 0.05, min: 0.05, max: 0.95 }}
-            defaultValue={data.trading?.partialTpFraction ?? 0.33}
-            onBlur={(e) =>
-              saveSettings.mutate({ trading: { partialTpFraction: Number(e.target.value) } })
-            }
+            value={Number(data.trading?.partialTpFraction ?? 0.33)}
+            inputProps={{ min: 0.05, max: 0.95 }}
+            onSave={(n) => saveSettings.mutate({ trading: { partialTpFraction: n } })}
             helperText="Fraction of size to close at the R trigger (e.g. 0.33 = 33%)."
           />
-          <TextField
+          <SettingsNumberField
             label="Partial TP at R"
-            type="number"
-            inputProps={{ step: 0.25, min: 0.25 }}
-            defaultValue={data.trading?.partialTpAtR ?? 1.5}
-            onBlur={(e) =>
-              saveSettings.mutate({ trading: { partialTpAtR: Number(e.target.value) } })
-            }
+            value={Number(data.trading?.partialTpAtR ?? 1.5)}
+            inputProps={{ min: 0.25 }}
+            onSave={(n) => saveSettings.mutate({ trading: { partialTpAtR: n } })}
           />
           <FormControlLabel
             control={
@@ -258,23 +333,17 @@ export function SettingsPage() {
             }
             label="Trailing stop"
           />
-          <TextField
+          <SettingsNumberField
             label="Trailing stop %"
-            type="number"
-            inputProps={{ step: 0.1, min: 0.1 }}
-            defaultValue={data.trading?.trailingStopPct ?? 1.5}
-            onBlur={(e) =>
-              saveSettings.mutate({ trading: { trailingStopPct: Number(e.target.value) } })
-            }
+            value={Number(data.trading?.trailingStopPct ?? 1.5)}
+            inputProps={{ min: 0.1 }}
+            onSave={(n) => saveSettings.mutate({ trading: { trailingStopPct: n } })}
           />
-          <TextField
+          <SettingsNumberField
             label="Trail activate at R"
-            type="number"
-            inputProps={{ step: 0.25, min: 0.25 }}
-            defaultValue={data.trading?.trailingActivateAtR ?? 1.5}
-            onBlur={(e) =>
-              saveSettings.mutate({ trading: { trailingActivateAtR: Number(e.target.value) } })
-            }
+            value={Number(data.trading?.trailingActivateAtR ?? 1.5)}
+            inputProps={{ min: 0.25 }}
+            onSave={(n) => saveSettings.mutate({ trading: { trailingActivateAtR: n } })}
             helperText="Arm trailing once price reaches this R-multiple (even if partial TP is off)."
           />
           <FormControlLabel
@@ -288,14 +357,11 @@ export function SettingsPage() {
             }
             label="Adverse R early exit"
           />
-          <TextField
+          <SettingsNumberField
             label="Max adverse R"
-            type="number"
-            inputProps={{ step: 0.05, min: 0.1, max: 2 }}
-            defaultValue={data.trading?.maxAdverseR ?? 0.75}
-            onBlur={(e) =>
-              saveSettings.mutate({ trading: { maxAdverseR: Number(e.target.value) } })
-            }
+            value={Number(data.trading?.maxAdverseR ?? 0.75)}
+            inputProps={{ min: 0.1, max: 2 }}
+            onSave={(n) => saveSettings.mutate({ trading: { maxAdverseR: n } })}
             helperText="Close when R falls to −this value (before full stop)."
           />
           <FormControlLabel
@@ -309,30 +375,24 @@ export function SettingsPage() {
             }
             label="Time stop"
           />
-          <TextField
+          <SettingsNumberField
             label="Max hold (hours)"
-            type="number"
-            inputProps={{ step: 0.5, min: 1 / 60, max: 168 }}
-            defaultValue={
+            value={
               data.trading?.maxHoldMs != null
                 ? data.trading.maxHoldMs / (60 * 60 * 1000)
                 : 6
             }
-            onBlur={(e) =>
-              saveSettings.mutate({
-                trading: { maxHoldMs: Number(e.target.value) * 60 * 60 * 1000 },
-              })
+            inputProps={{ min: 1 / 60, max: 168 }}
+            onSave={(n) =>
+              saveSettings.mutate({ trading: { maxHoldMs: n * 60 * 60 * 1000 } })
             }
             helperText="Close if still below min progress R after this many hours."
           />
-          <TextField
+          <SettingsNumberField
             label="Min progress R (time stop)"
-            type="number"
-            inputProps={{ step: 0.05, min: 0, max: 1 }}
-            defaultValue={data.trading?.minProgressR ?? 0.3}
-            onBlur={(e) =>
-              saveSettings.mutate({ trading: { minProgressR: Number(e.target.value) } })
-            }
+            value={Number(data.trading?.minProgressR ?? 0.3)}
+            inputProps={{ min: 0, max: 1 }}
+            onSave={(n) => saveSettings.mutate({ trading: { minProgressR: n } })}
           />
         </Paper>
       )}
@@ -340,39 +400,51 @@ export function SettingsPage() {
       {tab === 3 && data && (
         <Paper sx={{ p: 2, display: 'grid', gap: 2, maxWidth: 480 }}>
           <TextField
+            select
+            label="Scan timeframes"
+            SelectProps={{ multiple: true }}
+            value={data.scanner?.timeframes ?? ['15m', '1h', '4h']}
+            onChange={(e) => {
+              const raw = e.target.value;
+              const next = typeof raw === 'string' ? raw.split(',') : raw;
+              if (!next.length) return;
+              const prev = data.scanner?.timeframes ?? ['15m', '1h', '4h'];
+              if (next.length === prev.length && next.every((t, i) => t === prev[i])) return;
+              saveSettings.mutate({ scanner: { timeframes: next } });
+            }}
+            helperText="Prefer one family (e.g. 1h + 4h). Mixed 15m + 4h often conflicts."
+          >
+            {TIMEFRAMES.map((t) => (
+              <MenuItem key={t} value={t}>
+                {t}
+              </MenuItem>
+            ))}
+          </TextField>
+          <SettingsNumberField
             label="Min confidence"
-            type="number"
-            defaultValue={data.scanner?.minConfidence}
-            onBlur={(e) => saveSettings.mutate({ scanner: { minConfidence: Number(e.target.value) } })}
+            value={Number(data.scanner?.minConfidence ?? 75)}
+            onSave={(n) => saveSettings.mutate({ scanner: { minConfidence: n } })}
           />
-          <TextField
+          <SettingsNumberField
             label="Min aligned strategies"
-            type="number"
-            defaultValue={data.scanner?.minAlignedStrategies ?? 2}
-            onBlur={(e) =>
-              saveSettings.mutate({ scanner: { minAlignedStrategies: Number(e.target.value) } })
-            }
+            value={Number(data.scanner?.minAlignedStrategies ?? 2)}
+            onSave={(n) => saveSettings.mutate({ scanner: { minAlignedStrategies: n } })}
           />
-          <TextField
+          <SettingsNumberField
             label="Min agreement ratio"
-            type="number"
-            inputProps={{ step: 0.05, min: 0, max: 1 }}
-            defaultValue={data.scanner?.minAgreementRatio ?? 0.6}
-            onBlur={(e) =>
-              saveSettings.mutate({ scanner: { minAgreementRatio: Number(e.target.value) } })
-            }
+            value={Number(data.scanner?.minAgreementRatio ?? 0.6)}
+            inputProps={{ min: 0, max: 1 }}
+            onSave={(n) => saveSettings.mutate({ scanner: { minAgreementRatio: n } })}
           />
-          <TextField
+          <SettingsNumberField
             label="Hot set size"
-            type="number"
-            defaultValue={data.scanner?.hotSetSize}
-            onBlur={(e) => saveSettings.mutate({ scanner: { hotSetSize: Number(e.target.value) } })}
+            value={Number(data.scanner?.hotSetSize ?? 50)}
+            onSave={(n) => saveSettings.mutate({ scanner: { hotSetSize: n } })}
           />
-          <TextField
+          <SettingsNumberField
             label="Concurrency"
-            type="number"
-            defaultValue={data.scanner?.concurrency}
-            onBlur={(e) => saveSettings.mutate({ scanner: { concurrency: Number(e.target.value) } })}
+            value={Number(data.scanner?.concurrency ?? 5)}
+            onSave={(n) => saveSettings.mutate({ scanner: { concurrency: n } })}
           />
           <FormControlLabel
             control={
@@ -384,8 +456,9 @@ export function SettingsPage() {
             label="Filter strategies by market regime"
           />
           <Typography variant="caption" color="text.secondary">
-            When enabled, only strategies designed for the detected regime (trending / ranging / volatile) are
-            evaluated. Unknown regime skips trading. Counter-trend sides are vetoed in strong trends.
+            When enabled, only strategies designed for the detected regime (trending / ranging /
+            volatile) are evaluated. Unknown regime skips trading. Counter-trend sides are vetoed in
+            strong trends.
           </Typography>
           <FormControlLabel
             control={
@@ -407,14 +480,14 @@ export function SettingsPage() {
       {tab === 4 && (
         <Paper sx={{ p: 2, display: 'grid', gap: 2, maxWidth: 480 }}>
           <Typography variant="body2">
-            Configure Telegram / Discord / Email via environment and settings API. Browser notifications
-            are enabled by default.
+            Configure Telegram / Discord / Email via environment and settings API. Browser
+            notifications are enabled by default.
           </Typography>
           <Typography variant="subtitle2">Web Push (per-trade profit highs)</Typography>
           <Typography variant="caption" color="text.secondary">
             Works with the tab closed. Requires HTTPS or localhost, and VAPID keys (
-            <code>npm run setup:vapid</code> once). Alerts fire when an open trade&apos;s uPnL sets a new
-            high at least $1 above its previous peak.
+            <code>npm run setup:vapid</code> once). Alerts fire when an open trade&apos;s uPnL sets a
+            new high at least $1 above its previous peak.
           </Typography>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             {!pushEnabled ? (
