@@ -8,7 +8,7 @@ import { getRawSettings } from '../settings/index.js';
 import { AppError } from '../../utils/errors.js';
 import { config } from '../../config/index.js';
 import { notify } from '../notifications/index.js';
-import { shouldNotifyProfitHigh } from './profit-high.js';
+import { shouldNotifyProfitHigh, shouldNotifyProfitLow } from './profit-high.js';
 
 export function calcUnrealizedPnl(
   side: Side,
@@ -208,6 +208,7 @@ export async function markPositions(userId?: string) {
 
     const upnl = p.unrealizedPnl ?? 0;
     const peak = p.peakUnrealizedPnl ?? 0;
+    const trough = p.troughUnrealizedPnl ?? 0;
     const high = shouldNotifyProfitHigh(upnl, peak);
     if (high.notify) {
       p.peakUnrealizedPnl = high.newPeak;
@@ -220,6 +221,25 @@ export async function markPositions(userId?: string) {
             tradeId: String(p.tradeId),
             upnl,
             peak,
+          },
+        });
+      } catch {
+        // don't block marking
+      }
+    }
+
+    const low = shouldNotifyProfitLow(upnl, trough);
+    if (low.notify) {
+      p.troughUnrealizedPnl = low.newTrough;
+      try {
+        await notify(uid, NotificationType.PROFIT_LOW, {
+          title: `${p.symbol} new uPnL low`,
+          body: `uPnL ${upnl.toFixed(2)} (was ${trough.toFixed(2)})`,
+          payload: {
+            positionId: String(p._id),
+            tradeId: String(p.tradeId),
+            upnl,
+            trough,
           },
         });
       } catch {

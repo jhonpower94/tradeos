@@ -315,6 +315,7 @@ export async function executeOpportunity(
     highestPrice: entryPrice,
     lowestPrice: entryPrice,
     peakUnrealizedPnl: 0,
+    troughUnrealizedPnl: 0,
     partialTpDone: false,
     status: PositionStatus.OPEN,
     openedAt: new Date(),

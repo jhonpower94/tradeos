@@ -81,6 +81,7 @@ export enum NotificationType {
   TRADE_CLOSED = 'trade_closed',
   RISK_ALERT = 'risk_alert',
   PROFIT_HIGH = 'profit_high',
+  PROFIT_LOW = 'profit_low',
   ERROR = 'error',
 }
 

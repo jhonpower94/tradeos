@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { shouldNotifyProfitHigh, PROFIT_HIGH_MIN_STEP_USDT } from '../src/modules/position/profit-high.js';
+import {
+  shouldNotifyProfitHigh,
+  shouldNotifyProfitLow,
+  PROFIT_HIGH_MIN_STEP_USDT,
+} from '../src/modules/position/profit-high.js';
 import { config } from '../src/config/index.js';
 import webpush from 'web-push';
 
@@ -64,6 +68,30 @@ describe('shouldNotifyProfitHigh', () => {
     const r = shouldNotifyProfitHigh(5 + PROFIT_HIGH_MIN_STEP_USDT, 5);
     expect(r.notify).toBe(true);
     expect(r.newPeak).toBe(6);
+  });
+});
+
+describe('shouldNotifyProfitLow', () => {
+  it('does not notify when upnl is not negative', () => {
+    expect(shouldNotifyProfitLow(0, 0).notify).toBe(false);
+    expect(shouldNotifyProfitLow(1, 0).notify).toBe(false);
+  });
+
+  it('notifies on first loss trough of at least min step', () => {
+    const r = shouldNotifyProfitLow(-1.5, 0);
+    expect(r.notify).toBe(true);
+    expect(r.newTrough).toBe(-1.5);
+  });
+
+  it('does not notify for tiny ticks below min step', () => {
+    expect(shouldNotifyProfitLow(-0.5, 0).notify).toBe(false);
+    expect(shouldNotifyProfitLow(-5.5, -5).notify).toBe(false);
+  });
+
+  it('notifies when beating previous trough by >= min step', () => {
+    const r = shouldNotifyProfitLow(-5 - PROFIT_HIGH_MIN_STEP_USDT, -5);
+    expect(r.notify).toBe(true);
+    expect(r.newTrough).toBe(-6);
   });
 });
 

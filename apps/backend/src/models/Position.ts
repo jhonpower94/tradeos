@@ -19,6 +19,7 @@ const positionSchema = new Schema(
     highestPrice: Number,
     lowestPrice: Number,
     peakUnrealizedPnl: { type: Number, default: 0 },
+    troughUnrealizedPnl: { type: Number, default: 0 },
     partialTpDone: { type: Boolean, default: false },
     status: {
       type: String,
