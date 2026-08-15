@@ -46,7 +46,7 @@ export async function notify(
 
     if (isWebPushConfigured()) {
       try {
-        await sendWebPushToUser(userId, content);
+        await sendWebPushToUser(userId, { ...content, type });
       } catch (e) {
         console.error('Web Push send failed', e);
       }

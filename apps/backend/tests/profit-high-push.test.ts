@@ -6,6 +6,7 @@ import {
 } from '../src/modules/position/profit-high.js';
 import { config } from '../src/config/index.js';
 import webpush from 'web-push';
+import { NotificationType } from '@trading-os/shared';
 
 const store = new Map<string, { userId: string; endpoint: string; keys: { p256dh: string; auth: string } }>();
 
@@ -147,7 +148,11 @@ describe('push subscription helpers', () => {
       Object.assign(new Error('gone'), { statusCode: 410 }),
     );
 
-    const result = await sendWebPushToUser('user1', { title: 't', body: 'b' });
+    const result = await sendWebPushToUser('user1', {
+      title: 't',
+      body: 'b',
+      type: NotificationType.TRADE_SIGNAL,
+    });
     expect(result.removed).toBe(1);
     expect(store.size).toBe(0);
   });

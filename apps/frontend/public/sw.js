@@ -1,4 +1,4 @@
-/* Trading OS Web Push service worker v2 — PNG icons for iOS APNs. */
+/* Trading OS Web Push service worker v3 — tap opens the matching in-app path. */
 self.addEventListener('push', (event) => {
   let title = 'Trading OS';
   let body = '';
@@ -22,16 +22,23 @@ self.addEventListener('push', (event) => {
   );
 });
 
+function pathFromNotificationData(data) {
+  const raw = data && typeof data.url === 'string' ? data.url : '/';
+  if (!/^\/[A-Za-z0-9/_-]*$/.test(raw)) return '/';
+  return raw;
+}
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = '/';
+  const path = pathFromNotificationData(event.notification.data);
+  const url = new URL(path, self.location.origin).href;
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {
-        if ('focus' in client) {
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
           client.focus();
-          if ('navigate' in client) client.navigate(url);
-          return;
+          if ('navigate' in client) return client.navigate(url);
+          return undefined;
         }
       }
       if (self.clients.openWindow) return self.clients.openWindow(url);

@@ -85,6 +85,24 @@ export enum NotificationType {
   ERROR = 'error',
 }
 
+/** In-app path to open when the user taps a Web Push notification. */
+export function notificationPathForType(type: NotificationType | string): string {
+  switch (type) {
+    case NotificationType.TRADE_SIGNAL:
+      return '/signals';
+    case NotificationType.TRADE_EXECUTED:
+    case NotificationType.TRADE_CLOSED:
+      return '/trades';
+    case NotificationType.PROFIT_HIGH:
+    case NotificationType.PROFIT_LOW:
+      return '/portfolio';
+    case NotificationType.RISK_ALERT:
+      return '/settings';
+    default:
+      return '/';
+  }
+}
+
 export const TIMEFRAMES = Object.values(Timeframe);
 
 export const STRATEGY_IDS = [

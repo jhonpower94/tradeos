@@ -1,4 +1,5 @@
 import webpush from 'web-push';
+import { NotificationType, notificationPathForType } from '@trading-os/shared';
 import { config } from '../../config/index.js';
 import { PushSubscription } from '../../models/PushSubscription.js';
 
@@ -60,7 +61,12 @@ export async function savePushSubscription(
 
 export async function sendWebPushToUser(
   userId: string,
-  content: { title: string; body: string; payload?: unknown },
+  content: {
+    title: string;
+    body: string;
+    payload?: unknown;
+    type: NotificationType;
+  },
 ): Promise<{ sent: number; removed: number }> {
   if (!ensureVapid()) {
     return { sent: 0, removed: 0 };
@@ -69,10 +75,18 @@ export async function sendWebPushToUser(
   const subs = await PushSubscription.find({ userId }).lean();
   if (!subs.length) return { sent: 0, removed: 0 };
 
+  const extra =
+    content.payload && typeof content.payload === 'object' && !Array.isArray(content.payload)
+      ? (content.payload as Record<string, unknown>)
+      : {};
   const payload = JSON.stringify({
     title: content.title,
     body: content.body,
-    data: content.payload ?? {},
+    data: {
+      ...extra,
+      type: content.type,
+      url: notificationPathForType(content.type),
+    },
   });
 
   let sent = 0;
