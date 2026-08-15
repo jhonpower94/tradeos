@@ -1,4 +1,4 @@
-/* Trading OS Web Push service worker — works with the tab closed. */
+/* Trading OS Web Push service worker v2 — PNG icons for iOS APNs. */
 self.addEventListener('push', (event) => {
   let title = 'Trading OS';
   let body = '';
@@ -16,8 +16,8 @@ self.addEventListener('push', (event) => {
     self.registration.showNotification(title, {
       body,
       data,
-      icon: '/favicon.svg',
-      badge: '/favicon.svg',
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
     }),
   );
 });

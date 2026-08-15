@@ -90,14 +90,28 @@ export async function sendWebPushToUser(
             keys: { p256dh, auth },
           },
           payload,
+          { TTL: 86_400, urgency: 'high' },
         );
         sent += 1;
       } catch (e: unknown) {
         const status = (e as { statusCode?: number })?.statusCode;
+        const body = (e as { body?: string })?.body;
         if (status === 404 || status === 410) {
           await PushSubscription.deleteOne({ endpoint: sub.endpoint });
           removed += 1;
+          return;
         }
+        console.error('Web Push delivery failed', {
+          status,
+          body,
+          endpointHost: (() => {
+            try {
+              return new URL(sub.endpoint).host;
+            } catch {
+              return 'invalid';
+            }
+          })(),
+        });
       }
     }),
   );

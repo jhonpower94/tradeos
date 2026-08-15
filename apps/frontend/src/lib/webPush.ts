@@ -69,9 +69,14 @@ export async function enableWebPush(opts: {
   await navigator.serviceWorker.ready;
 
   const publicKey = await opts.getPublicKey();
+  const keyBytes = urlBase64ToUint8Array(publicKey);
   const sub = await reg.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
+    // Safari/iOS needs a plain ArrayBuffer, not a Uint8Array view
+    applicationServerKey: keyBytes.buffer.slice(
+      keyBytes.byteOffset,
+      keyBytes.byteOffset + keyBytes.byteLength,
+    ),
   });
 
   const json = sub.toJSON();
