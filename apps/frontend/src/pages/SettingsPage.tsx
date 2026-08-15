@@ -250,20 +250,43 @@ export function SettingsPage() {
       <Tabs
         value={tab}
         onChange={(_, v) => setTab(v as number)}
-        sx={{ mb: 2 }}
+        sx={{ mb: 2, bgcolor: 'transparent' }}
       >
         <TabList
+          disableUnderline
           sx={{
-            overflowX: 'auto',
-            flexWrap: { xs: 'nowrap', md: 'wrap' },
+            display: 'grid',
+            gridTemplateColumns: {
+              xs: 'repeat(2, 1fr)',
+              sm: 'repeat(3, 1fr)',
+              md: 'repeat(6, 1fr)',
+            },
+            gap: 0.75,
+            p: 0.75,
+            overflow: 'visible',
+            bgcolor: 'background.level1',
+            borderRadius: 'lg',
+            '--TabList-underlineThickness': '0px',
           }}
         >
-          <Tab>Binance</Tab>
-          <Tab>Risk</Tab>
-          <Tab>Trading</Tab>
-          <Tab>Paper</Tab>
-          <Tab>Scanner</Tab>
-          <Tab>Notifications</Tab>
+          {['Binance', 'Risk', 'Trading', 'Paper', 'Scanner', 'Notifications'].map((label, i) => (
+            <Tab
+              key={label}
+              value={i}
+              variant={tab === i ? 'solid' : 'plain'}
+              color={tab === i ? 'primary' : 'neutral'}
+              sx={{
+                width: '100%',
+                minHeight: 40,
+                borderRadius: 'md',
+                justifyContent: 'center',
+                px: 1,
+                fontWeight: tab === i ? 600 : 500,
+              }}
+            >
+              {label}
+            </Tab>
+          ))}
         </TabList>
       </Tabs>
 
