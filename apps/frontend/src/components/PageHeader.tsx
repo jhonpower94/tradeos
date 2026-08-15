@@ -15,8 +15,8 @@ export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
       direction={{ xs: 'column', sm: 'row' }}
       alignItems={{ xs: 'stretch', sm: 'flex-start' }}
       justifyContent="space-between"
-      sx={{ mb: 2 }}
-      spacing={1.5}
+      sx={{ mb: 3.5 }}
+      spacing={2}
     >
       <Box>
         <Typography level="h3">{title}</Typography>

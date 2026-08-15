@@ -63,17 +63,17 @@ export function ResponsiveRecordList<T>({
   return (
     <>
       <Stack
-        spacing={1.25}
+        spacing={2}
         sx={{ display: cardsOnly ? 'flex' : { xs: 'flex', md: 'none' } }}
       >
         {rows.map((row) => {
           const expanded = expandedContent?.(row);
           return (
-            <Card key={getRowKey(row)} variant="outlined" sx={{ p: 1.75, boxShadow: 'none' }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, alignItems: 'flex-start' }}>
-                <Box sx={{ minWidth: 0 }}>{cardTitle(row)}</Box>
+            <Card key={getRowKey(row)} variant="outlined" sx={{ p: 2.25, boxShadow: 'none' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1.5, alignItems: 'flex-start' }}>
+                <Box sx={{ minWidth: 0, pr: 1 }}>{cardTitle(row)}</Box>
                 {cardMeta && (
-                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <Box sx={{ display: 'flex', gap: 1.25, flexWrap: 'wrap', justifyContent: 'flex-end', flex: 1 }}>
                     {cardMeta(row)}
                   </Box>
                 )}
@@ -82,8 +82,8 @@ export function ResponsiveRecordList<T>({
                 sx={{
                   display: 'grid',
                   gridTemplateColumns: '1fr 1fr',
-                  gap: 1,
-                  mt: 1.5,
+                  gap: 1.5,
+                  mt: 2,
                 }}
               >
                 {fields.map((field) => (
@@ -122,7 +122,14 @@ export function ResponsiveRecordList<T>({
           variant="outlined"
           sx={{ display: { xs: 'none', md: 'block' }, overflowX: 'auto', borderRadius: 'md' }}
         >
-          <Table stickyHeader>
+          <Table
+            stickyHeader
+            sx={{
+              tableLayout: 'auto',
+              minWidth: 1180,
+              '& th, & td': { whiteSpace: 'nowrap' },
+            }}
+          >
             <thead>
               <tr>
                 {columns.map((col) => (
@@ -193,9 +200,9 @@ export function KeyValueList({
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            gap: 1.5,
-            px: 2,
-            py: 1.25,
+            gap: 2,
+            px: 2.5,
+            py: 1.75,
             borderBottom: i === items.length - 1 ? 'none' : '1px solid',
             borderColor: 'divider',
           }}

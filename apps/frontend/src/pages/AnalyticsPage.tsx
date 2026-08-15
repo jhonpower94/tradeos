@@ -37,7 +37,7 @@ export function AnalyticsPage() {
       <Box
         sx={{
           display: 'grid',
-          gap: 1.5,
+          gap: 2,
           gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' },
         }}
       >
@@ -45,7 +45,7 @@ export function AnalyticsPage() {
           <StatCard key={c.label} label={c.label} value={c.value} tone={c.tone ?? 'neutral'} />
         ))}
       </Box>
-      <Typography level="title-md" sx={{ mt: 2.5, mb: 1 }}>
+      <Typography level="title-md" sx={{ mt: 4, mb: 1.5 }}>
         Monthly Returns
       </Typography>
       <KeyValueList

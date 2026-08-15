@@ -35,9 +35,9 @@ export function HomePage() {
       <Box
         sx={{
           display: 'grid',
-          gap: 1.5,
+          gap: 2,
           gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' },
-          mb: 2,
+          mb: 3.5,
         }}
       >
         <StatCard
@@ -50,9 +50,9 @@ export function HomePage() {
         <StatCard label="Equity" value={formatNumber(portfolio?.equity ?? 0)} />
       </Box>
 
-      <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
+      <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
         <Box>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
             <Typography level="title-md">Top Opportunities</Typography>
             <Chip size="sm" variant="soft" color={status?.running ? 'success' : 'neutral'}>
               {status?.running ? 'Scanner on' : 'Scanner off'}
@@ -76,7 +76,7 @@ export function HomePage() {
           />
         </Box>
         <Box>
-          <Typography level="title-md" sx={{ mb: 1 }}>
+          <Typography level="title-md" sx={{ mb: 1.5 }}>
             Recent Trades
           </Typography>
           <KeyValueList

@@ -2,11 +2,7 @@ import { useState } from 'react';
 import Alert from '@mui/joy/Alert';
 import Box from '@mui/joy/Box';
 import Button from '@mui/joy/Button';
-import FormControl from '@mui/joy/FormControl';
-import FormLabel from '@mui/joy/FormLabel';
 import IconButton from '@mui/joy/IconButton';
-import Input from '@mui/joy/Input';
-import Sheet from '@mui/joy/Sheet';
 import Typography from '@mui/joy/Typography';
 import Close from '@mui/icons-material/Close';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -20,7 +16,7 @@ import { StatCard } from '../components/StatCard';
 import { SideChip } from '../components/SideChip';
 import { PnlText } from '../components/PnlText';
 import { KeyValueList, ResponsiveRecordList } from '../components/ResponsiveRecordList';
-import { formatDateTime, formatNumber, formatPrice } from '../utils/format';
+import { formatNumber, formatPrice } from '../utils/format';
 import { monoSx } from '../theme/theme';
 
 function errMsg(err: unknown): string {
@@ -64,14 +60,7 @@ export function PortfolioPage() {
   const contextByPosition = new Map<string, PositionContext>(
     ((contexts?.items ?? []) as PositionContext[]).map((c) => [c.positionId, c]),
   );
-  const { data: ledger } = useQuery({
-    queryKey: ['paper-ledger'],
-    queryFn: portfolioApi.ledger,
-    enabled: summary?.mode === 'paper',
-  });
 
-  const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
   const [chartPositionId, setChartPositionId] = useState<string | null>(null);
 
   const closeTrade = useMutation({
@@ -84,27 +73,6 @@ export function PortfolioPage() {
     },
   });
 
-  const deposit = useMutation({
-    mutationFn: () => portfolioApi.deposit(Number(amount), note || undefined),
-    onSuccess: () => {
-      setAmount('');
-      setNote('');
-      qc.invalidateQueries({ queryKey: ['portfolio'] });
-      qc.invalidateQueries({ queryKey: ['paper-ledger'] });
-    },
-  });
-  const withdraw = useMutation({
-    mutationFn: () => portfolioApi.withdraw(Number(amount), note || undefined),
-    onSuccess: () => {
-      setAmount('');
-      setNote('');
-      qc.invalidateQueries({ queryKey: ['portfolio'] });
-      qc.invalidateQueries({ queryKey: ['paper-ledger'] });
-    },
-  });
-
-  const isPaper = summary?.mode === 'paper';
-  const fundError = deposit.error ?? withdraw.error;
   const openPositions = ((positions?.items ?? []) as Array<Record<string, unknown>>).filter(
     (p) => p.status === 'open',
   );
@@ -113,13 +81,13 @@ export function PortfolioPage() {
 
   return (
     <Box>
-      <PageHeader title="Portfolio" subtitle="Balances, paper funding, and open spots" />
+      <PageHeader title="Portfolio" subtitle="Balances and open spots" />
       <Box
         sx={{
           display: 'grid',
-          gap: 1.5,
+          gap: 2,
           gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(3, 1fr)' },
-          mb: 2,
+          mb: 3.5,
         }}
       >
         <StatCard label="Equity" value={formatNumber(summary?.equity ?? 0)} />
@@ -141,60 +109,10 @@ export function PortfolioPage() {
         <StatCard label="Mode" value={summary?.mode ?? 'paper'} />
       </Box>
 
-      {isPaper && (
-        <Sheet variant="outlined" sx={{ p: 2, mb: 3, display: 'grid', gap: 1.5, maxWidth: 520, borderRadius: 'md' }}>
-          <Typography level="title-md">Fund paper account</Typography>
-          <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-            Deposits and withdrawals adjust equity on top of starting balance and realized trade PnL.
-          </Typography>
-          {fundError && (
-            <Alert
-              color="danger"
-              endDecorator={
-                <IconButton
-                  size="sm"
-                  variant="plain"
-                  color="danger"
-                  onClick={() => {
-                    deposit.reset();
-                    withdraw.reset();
-                  }}
-                >
-                  <Close />
-                </IconButton>
-              }
-            >
-              {errMsg(fundError)}
-            </Alert>
-          )}
-          <FormControl>
-            <FormLabel>Amount (USDT)</FormLabel>
-            <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
-          </FormControl>
-          <FormControl>
-            <FormLabel>Note (optional)</FormLabel>
-            <Input value={note} onChange={(e) => setNote(e.target.value)} />
-          </FormControl>
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            <Button disabled={!Number(amount) || deposit.isPending} onClick={() => deposit.mutate()}>
-              Deposit
-            </Button>
-            <Button
-              variant="outlined"
-              color="warning"
-              disabled={!Number(amount) || withdraw.isPending}
-              onClick={() => withdraw.mutate()}
-            >
-              Withdraw
-            </Button>
-          </Box>
-        </Sheet>
-      )}
-
-      <Typography level="title-md" sx={{ mb: 1 }}>
+      <Typography level="title-md" sx={{ mb: 1.5 }}>
         Balances
       </Typography>
-      <Box sx={{ mb: 3 }}>
+      <Box sx={{ mb: 4 }}>
         <KeyValueList
           emptyTitle="No balances"
           items={(summary?.balances ?? []).map((b: { asset: string; free: number; locked: number }) => ({
@@ -206,31 +124,7 @@ export function PortfolioPage() {
         />
       </Box>
 
-      {isPaper && (
-        <Box sx={{ mb: 3 }}>
-          <Typography level="title-md" sx={{ mb: 1 }}>
-            Funding ledger
-          </Typography>
-          <KeyValueList
-            emptyTitle="No deposits or withdrawals yet."
-            items={(ledger?.items ?? []).map((e: Record<string, unknown>) => ({
-              key: String(e._id),
-              primary: String(e.type),
-              secondary: String(e.note ?? formatDateTime(e.createdAt as string)),
-              trailing: (
-                <Box sx={{ textAlign: 'right' }}>
-                  <Typography sx={monoSx}>{Number(e.amount).toFixed(2)}</Typography>
-                  <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
-                    {e.createdAt ? formatDateTime(String(e.createdAt)) : '—'}
-                  </Typography>
-                </Box>
-              ),
-            }))}
-          />
-        </Box>
-      )}
-
-      <Typography level="title-md" sx={{ mb: 1 }}>
+      <Typography level="title-md" sx={{ mb: 1.5 }}>
         Open Positions
       </Typography>
       {closeTrade.isError && (
@@ -258,11 +152,22 @@ export function PortfolioPage() {
         cardMeta={(p) => {
           const ctx = contextByPosition.get(String(p._id));
           return (
-            <>
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                flexWrap: 'wrap',
+                columnGap: 1.5,
+                rowGap: 1,
+              }}
+            >
               <SideChip side={String(p.side)} />
               <PnlText value={Number(p.unrealizedPnl)} />
-              {ctx ? <BiasChip aligned={ctx.aligned} suggestion={ctx.suggestion} message={ctx.message} /> : null}
-            </>
+              {ctx ? (
+                <BiasChip aligned={ctx.aligned} suggestion={ctx.suggestion} message={ctx.message} />
+              ) : null}
+            </Box>
           );
         }}
         cardFields={[

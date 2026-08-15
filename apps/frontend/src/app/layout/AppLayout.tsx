@@ -28,8 +28,9 @@ import { useAuthStore } from '../../stores/authStore';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { authApi } from '../../api';
 import { ConnectionStatusBadge } from '../../components/ConnectionStatusBadge';
+import { ColorModeToggle } from '../../components/ColorModeToggle';
 
-const DRAWER = 240;
+const DRAWER = 264;
 
 type NavItem = { to: string; label: string; icon: ReactNode };
 
@@ -66,13 +67,17 @@ function NavList({
   onNavigate: (to: string) => void;
 }) {
   return (
-    <List size="sm" sx={{ '--ListItem-radius': '8px', '--ListItemDecorator-size': '36px', gap: 0.25, px: 1 }}>
+    <List
+      size="md"
+      sx={{ '--ListItem-radius': '12px', '--ListItemDecorator-size': '40px', gap: 0.5, px: 1.5 }}
+    >
       {items.map((item) => (
         <ListItem key={item.to}>
           <ListItemButton
             selected={isActive(pathname, item.to)}
             onClick={() => onNavigate(item.to)}
             color={isActive(pathname, item.to) ? 'primary' : 'neutral'}
+            variant={isActive(pathname, item.to) ? 'soft' : 'plain'}
           >
             <ListItemDecorator>{item.icon}</ListItemDecorator>
             <ListItemContent>{item.label}</ListItemContent>
@@ -109,27 +114,26 @@ export function AppLayout() {
   }
 
   const brand = (
-    <Box sx={{ px: 2, py: 2.25 }}>
-      <Typography level="title-lg" sx={{ color: 'primary.plainColor', fontWeight: 700 }}>
+    <Box sx={{ px: 2.5, py: 3 }}>
+      <Typography level="title-lg" sx={{ color: 'primary.plainColor', fontWeight: 700, letterSpacing: -0.4 }}>
         Trading OS
       </Typography>
-      <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
+      <Typography level="body-xs" sx={{ color: 'text.tertiary', mt: 0.5 }}>
         Spot · Binance
       </Typography>
     </Box>
   );
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100dvh' }}>
+    <Box sx={{ display: 'flex', minHeight: '100dvh', bgcolor: 'background.body' }}>
       <Sheet
-        variant="outlined"
+        variant="plain"
         sx={{
           display: { xs: 'none', md: 'flex' },
           width: DRAWER,
           flexDirection: 'column',
-          borderTop: 0,
-          borderBottom: 0,
-          borderLeft: 0,
+          borderRight: '1px solid',
+          borderColor: 'divider',
           position: 'sticky',
           top: 0,
           height: '100dvh',
@@ -137,20 +141,26 @@ export function AppLayout() {
         }}
       >
         {brand}
-        <Box sx={{ flex: 1, overflow: 'auto' }}>
+        <Box sx={{ flex: 1, overflow: 'auto', py: 1 }}>
           <NavList items={allNav} pathname={location.pathname} onNavigate={go} />
         </Box>
       </Sheet>
 
       <Drawer open={moreOpen} onClose={() => setMoreOpen(false)} sx={{ display: { md: 'none' } }}>
-        <Box sx={{ width: 280, maxWidth: '100%' }}>
+        <Box sx={{ width: 300, maxWidth: '100%', py: 1 }}>
           {brand}
           <Divider />
-          <Typography level="body-xs" sx={{ px: 2.5, pt: 1.5, color: 'text.tertiary', fontWeight: 600 }}>
+          <Typography
+            level="body-xs"
+            sx={{ px: 2.5, pt: 2, pb: 0.5, color: 'text.tertiary', fontWeight: 600, letterSpacing: 0.8 }}
+          >
             TRADE
           </Typography>
           <NavList items={primaryNav} pathname={location.pathname} onNavigate={go} />
-          <Typography level="body-xs" sx={{ px: 2.5, pt: 1, color: 'text.tertiary', fontWeight: 600 }}>
+          <Typography
+            level="body-xs"
+            sx={{ px: 2.5, pt: 1.5, pb: 0.5, color: 'text.tertiary', fontWeight: 600, letterSpacing: 0.8 }}
+          >
             MORE
           </Typography>
           <NavList items={moreNav} pathname={location.pathname} onNavigate={go} />
@@ -159,7 +169,7 @@ export function AppLayout() {
 
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <Sheet
-          variant="outlined"
+          variant="plain"
           sx={{
             position: 'sticky',
             top: 0,
@@ -167,19 +177,17 @@ export function AppLayout() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            gap: 1,
-            minHeight: 56,
-            px: { xs: 1, md: 2 },
-            py: 0.75,
-            borderTop: 0,
-            borderLeft: 0,
-            borderRight: 0,
-            bgcolor: 'rgba(14, 20, 28, 0.92)',
-            backdropFilter: 'blur(12px)',
-            pt: 'max(6px, env(safe-area-inset-top))',
+            gap: 1.5,
+            minHeight: 64,
+            px: { xs: 1.5, md: 3 },
+            py: 1,
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            bgcolor: 'background.surface',
+            pt: 'max(8px, env(safe-area-inset-top))',
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, minWidth: 0 }}>
             <IconButton
               variant="plain"
               color="neutral"
@@ -191,7 +199,7 @@ export function AppLayout() {
             </IconButton>
             <Typography
               level="body-sm"
-              sx={{ fontFamily: 'code', color: 'text.secondary', display: { xs: 'none', sm: 'block' } }}
+              sx={{ fontFamily: 'var(--joy-fontFamily-code)', color: 'text.secondary', display: { xs: 'none', sm: 'block' } }}
               noWrap
             >
               {user?.email ?? ''}
@@ -203,8 +211,9 @@ export function AppLayout() {
               Trading OS
             </Typography>
           </Box>
-          <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
             <ConnectionStatusBadge />
+            <ColorModeToggle />
             <IconButton variant="plain" color="neutral" onClick={() => void onLogout()} title="Logout">
               <LogoutOutlined />
             </IconButton>
@@ -213,16 +222,20 @@ export function AppLayout() {
 
         <Box
           sx={{
-            p: { xs: 1.5, md: 2.5 },
+            width: '100%',
+            maxWidth: 1280,
+            mx: 'auto',
+            px: { xs: 2.5, md: 4 },
+            py: { xs: 3, md: 4 },
             flex: 1,
-            pb: { xs: 'calc(80px + env(safe-area-inset-bottom))', md: 2.5 },
+            pb: { xs: 'calc(108px + env(safe-area-inset-bottom))', md: 5 },
           }}
         >
           <Outlet />
         </Box>
 
         <Sheet
-          variant="outlined"
+          variant="plain"
           sx={{
             display: { xs: 'flex', md: 'none' },
             position: 'fixed',
@@ -231,13 +244,12 @@ export function AppLayout() {
             right: 0,
             zIndex: 40,
             justifyContent: 'space-around',
-            borderBottom: 0,
-            borderLeft: 0,
-            borderRight: 0,
-            bgcolor: 'rgba(14, 20, 28, 0.96)',
-            backdropFilter: 'blur(12px)',
+            borderTop: '1px solid',
+            borderColor: 'divider',
+            bgcolor: 'background.surface',
             pb: 'env(safe-area-inset-bottom)',
-            pt: 0.5,
+            pt: 1,
+            px: 0.5,
           }}
         >
           {primaryNav.map((item) => {
@@ -250,15 +262,19 @@ export function AppLayout() {
                 onClick={() => go(item.to)}
                 sx={{
                   flexDirection: 'column',
-                  gap: 0.15,
-                  borderRadius: 0,
+                  gap: 0.4,
+                  borderRadius: '12px',
                   minWidth: 56,
-                  py: 0.75,
+                  py: 1,
                   '--Icon-fontSize': '22px',
                 }}
               >
                 {item.icon}
-                <Typography level="body-xs" component="span" sx={{ fontSize: '0.65rem', fontWeight: active ? 700 : 500 }}>
+                <Typography
+                  level="body-xs"
+                  component="span"
+                  sx={{ fontSize: '0.65rem', fontWeight: active ? 700 : 500 }}
+                >
                   {item.label}
                 </Typography>
               </IconButton>
@@ -270,15 +286,19 @@ export function AppLayout() {
             onClick={() => setMoreOpen(true)}
             sx={{
               flexDirection: 'column',
-              gap: 0.15,
-              borderRadius: 0,
+              gap: 0.4,
+              borderRadius: '12px',
               minWidth: 56,
-              py: 0.75,
+              py: 1,
               '--Icon-fontSize': '22px',
             }}
           >
             <MoreHoriz />
-            <Typography level="body-xs" component="span" sx={{ fontSize: '0.65rem', fontWeight: moreActive ? 700 : 500 }}>
+            <Typography
+              level="body-xs"
+              component="span"
+              sx={{ fontSize: '0.65rem', fontWeight: moreActive ? 700 : 500 }}
+            >
               More
             </Typography>
           </IconButton>

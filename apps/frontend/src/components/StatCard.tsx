@@ -34,12 +34,12 @@ export function StatCard({
     <Card
       variant="outlined"
       sx={{
-        p: 2,
+        p: 2.5,
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
-        gap: 1,
+        gap: 1.5,
         boxShadow: 'none',
       }}
     >

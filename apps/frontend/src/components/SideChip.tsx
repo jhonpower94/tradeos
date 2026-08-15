@@ -1,20 +1,35 @@
+import Box from '@mui/joy/Box';
 import Chip from '@mui/joy/Chip';
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 
 export function SideChip({ side }: { side: 'BUY' | 'SELL' | string }) {
-  const isLong = side === 'BUY' || side === 'LONG';
+  const isBuy = side === 'BUY' || side === 'LONG';
+  const color = isBuy ? 'success' : 'danger';
 
   return (
     <Chip
       size="sm"
-      variant="soft"
-      color={isLong ? 'success' : 'danger'}
+      variant="outlined"
+      color={color}
       startDecorator={
-        isLong ? <ArrowUpwardIcon sx={{ fontSize: 14 }} /> : <ArrowDownwardIcon sx={{ fontSize: 14 }} />
+        <Box
+          sx={{
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            bgcolor: `${color}.solidBg`,
+          }}
+        />
       }
+      sx={{
+        '--Chip-minHeight': '26px',
+        '--Chip-radius': '8px',
+        fontWeight: 600,
+        letterSpacing: 0.2,
+        bgcolor: `${color}.softBg`,
+        borderColor: `${color}.outlinedBorder`,
+      }}
     >
-      {isLong ? 'LONG' : 'SHORT'}
+      {isBuy ? 'Buy' : 'Sell'}
     </Chip>
   );
 }

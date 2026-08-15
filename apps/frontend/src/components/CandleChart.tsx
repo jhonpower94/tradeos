@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import Box from '@mui/joy/Box';
 import Typography from '@mui/joy/Typography';
+import { useColorScheme } from '@mui/joy/styles';
 import {
   createChart,
   CrosshairMode,
@@ -24,6 +25,28 @@ export type CandleChartProps = {
   limit?: number;
 };
 
+function chartColors(isDark: boolean) {
+  return isDark
+    ? {
+        bg: '#121A24',
+        text: '#8B9BB0',
+        grid: 'rgba(148,168,190,0.1)',
+        border: 'rgba(148,168,190,0.28)',
+        up: '#22A86C',
+        down: '#E5484D',
+        entry: '#8B9BB0',
+      }
+    : {
+        bg: '#FFFFFF',
+        text: '#5B6B7C',
+        grid: 'rgba(16,32,51,0.06)',
+        border: 'rgba(16,32,51,0.14)',
+        up: '#0D9F6E',
+        down: '#E5484D',
+        entry: '#5B6B7C',
+      };
+}
+
 function priceFormatFor(sample: number): { type: 'price'; precision: number; minMove: number } {
   if (!(sample > 0)) return { type: 'price', precision: 2, minMove: 0.01 };
   if (sample >= 1000) return { type: 'price', precision: 2, minMove: 0.01 };
@@ -42,6 +65,10 @@ export function CandleChart({
   showHeader = true,
   limit = 300,
 }: CandleChartProps) {
+  const { mode, systemMode } = useColorScheme();
+  const isDark = (mode === 'system' ? systemMode : mode) === 'dark';
+  const colors = chartColors(isDark);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -60,22 +87,22 @@ export function CandleChart({
 
     const chart = createChart(el, {
       layout: {
-        background: { color: '#0E141C' },
-        textColor: '#C5D0DC',
+        background: { color: colors.bg },
+        textColor: colors.text,
       },
       grid: {
-        vertLines: { color: 'rgba(148,168,190,0.08)' },
-        horzLines: { color: 'rgba(148,168,190,0.08)' },
+        vertLines: { color: colors.grid },
+        horzLines: { color: colors.grid },
       },
       rightPriceScale: {
         visible: true,
         borderVisible: true,
-        borderColor: 'rgba(148,168,190,0.35)',
+        borderColor: colors.border,
         scaleMargins: { top: 0.1, bottom: 0.1 },
       },
       timeScale: {
         borderVisible: true,
-        borderColor: 'rgba(148,168,190,0.35)',
+        borderColor: colors.border,
         timeVisible: true,
         secondsVisible: false,
       },
@@ -88,11 +115,11 @@ export function CandleChart({
       height,
     });
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: '#2DD4A7',
-      downColor: '#FF6B5E',
+      upColor: colors.up,
+      downColor: colors.down,
       borderVisible: false,
-      wickUpColor: '#2DD4A7',
-      wickDownColor: '#FF6B5E',
+      wickUpColor: colors.up,
+      wickDownColor: colors.down,
       lastValueVisible: true,
       priceLineVisible: true,
       priceFormat: { type: 'price', precision: 4, minMove: 0.0001 },
@@ -124,7 +151,7 @@ export function CandleChart({
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, [height, symbol, interval]);
+  }, [height, symbol, interval, isDark]);
 
   useEffect(() => {
     const series = seriesRef.current;
@@ -166,7 +193,7 @@ export function CandleChart({
         }
       });
     }
-  }, [data]);
+  }, [data, isDark]);
 
   useEffect(() => {
     const series = seriesRef.current;
@@ -188,10 +215,10 @@ export function CandleChart({
         }),
       );
     };
-    add(entry, '#8598AC', 'Entry');
-    add(stopLoss, '#FF6B5E', 'SL');
-    add(takeProfit, '#2DD4A7', 'TP');
-  }, [entry, stopLoss, takeProfit, data]);
+    add(entry, colors.entry, 'Entry');
+    add(stopLoss, colors.down, 'SL');
+    add(takeProfit, colors.up, 'TP');
+  }, [entry, stopLoss, takeProfit, data, colors.entry, colors.down, colors.up]);
 
   return (
     <Box sx={{ width: '100%' }}>

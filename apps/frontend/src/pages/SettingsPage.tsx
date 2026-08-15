@@ -16,10 +16,23 @@ import TabList from '@mui/joy/TabList';
 import Tabs from '@mui/joy/Tabs';
 import Typography from '@mui/joy/Typography';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import axios from 'axios';
 import { TIMEFRAMES } from '@trading-os/shared';
-import { notificationsApi, settingsApi } from '../api';
+import { notificationsApi, portfolioApi, settingsApi } from '../api';
 import { disableWebPush, enableWebPush, getActivePushEndpoint } from '../lib/webPush';
 import { PageHeader } from '../components/PageHeader';
+import { KeyValueList } from '../components/ResponsiveRecordList';
+import { formatDateTime } from '../utils/format';
+import { monoSx } from '../theme/theme';
+
+function errMsg(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    const body = err.response?.data as { message?: string } | undefined;
+    if (body?.message) return body.message;
+  }
+  if (err instanceof Error) return err.message;
+  return 'Request failed';
+}
 
 function SettingsNumberField({
   label,
@@ -93,9 +106,9 @@ function SwitchRow({
 }
 
 const panelSx = {
-  p: 2,
+  p: 2.5,
   display: 'grid',
-  gap: 2,
+  gap: 2.25,
   maxWidth: 520,
   borderRadius: 'md',
 } as const;
@@ -104,16 +117,24 @@ export function SettingsPage() {
   const [tab, setTab] = useState(0);
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
   const [msg, setMsg] = useState('');
   const [pushEnabled, setPushEnabled] = useState(false);
   const qc = useQueryClient();
   const { data } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
+  const isPaper = (data?.trading?.mode ?? 'paper') === 'paper';
+  const { data: ledger } = useQuery({
+    queryKey: ['paper-ledger'],
+    queryFn: portfolioApi.ledger,
+    enabled: isPaper && tab === 3,
+  });
 
   useEffect(() => {
     void getActivePushEndpoint().then((ep) => setPushEnabled(Boolean(ep)));
   }, [tab]);
 
-  const msgSeverity = /ok|saved|sent|connection ok|enabled|disabled|active/i.test(msg)
+  const msgSeverity = /ok|saved|sent|connection ok|enabled|disabled|active|deposit|withdrawal/i.test(msg)
     ? 'success'
     : 'danger';
 
@@ -178,6 +199,28 @@ export function SettingsPage() {
           'Failed to enable Web Push',
       ),
   });
+  const deposit = useMutation({
+    mutationFn: () => portfolioApi.deposit(Number(amount), note || undefined),
+    onSuccess: () => {
+      setAmount('');
+      setNote('');
+      setMsg('Deposit saved');
+      qc.invalidateQueries({ queryKey: ['portfolio'] });
+      qc.invalidateQueries({ queryKey: ['paper-ledger'] });
+    },
+    onError: (e: unknown) => setMsg(errMsg(e)),
+  });
+  const withdraw = useMutation({
+    mutationFn: () => portfolioApi.withdraw(Number(amount), note || undefined),
+    onSuccess: () => {
+      setAmount('');
+      setNote('');
+      setMsg('Withdrawal saved');
+      qc.invalidateQueries({ queryKey: ['portfolio'] });
+      qc.invalidateQueries({ queryKey: ['paper-ledger'] });
+    },
+    onError: (e: unknown) => setMsg(errMsg(e)),
+  });
   const disablePush = useMutation({
     mutationFn: () =>
       disableWebPush({
@@ -192,7 +235,7 @@ export function SettingsPage() {
 
   return (
     <Box>
-      <PageHeader title="Settings" subtitle="Exchange, risk, scanner, and alerts" />
+      <PageHeader title="Settings" subtitle="Exchange, risk, paper funding, scanner, and alerts" />
       <Snackbar
         open={Boolean(msg)}
         autoHideDuration={4000}
@@ -218,6 +261,7 @@ export function SettingsPage() {
           <Tab>Binance</Tab>
           <Tab>Risk</Tab>
           <Tab>Trading</Tab>
+          <Tab>Paper</Tab>
           <Tab>Scanner</Tab>
           <Tab>Notifications</Tab>
         </TabList>
@@ -415,7 +459,73 @@ export function SettingsPage() {
         </Sheet>
       )}
 
-      {tab === 3 && data && (
+      {tab === 3 && (
+        <Box sx={{ display: 'grid', gap: 3, maxWidth: 560 }}>
+          {!isPaper ? (
+            <Sheet variant="outlined" sx={panelSx}>
+              <Typography level="title-md">Paper funding</Typography>
+              <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
+                Deposits, withdrawals, and the funding ledger apply in paper mode only. Switch
+                trading mode to Paper on the Trading tab to fund a simulated account.
+              </Typography>
+            </Sheet>
+          ) : (
+            <>
+              <Sheet variant="outlined" sx={panelSx}>
+                <Typography level="title-md">Fund paper account</Typography>
+                <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
+                  Deposits and withdrawals adjust equity on top of starting balance and realized
+                  trade PnL. Starting balance is set on the Trading tab.
+                </Typography>
+                <FormControl>
+                  <FormLabel>Amount (USDT)</FormLabel>
+                  <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                </FormControl>
+                <FormControl>
+                  <FormLabel>Note (optional)</FormLabel>
+                  <Input value={note} onChange={(e) => setNote(e.target.value)} />
+                </FormControl>
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                  <Button disabled={!Number(amount) || deposit.isPending} onClick={() => deposit.mutate()}>
+                    Deposit
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="warning"
+                    disabled={!Number(amount) || withdraw.isPending}
+                    onClick={() => withdraw.mutate()}
+                  >
+                    Withdraw
+                  </Button>
+                </Box>
+              </Sheet>
+              <Box>
+                <Typography level="title-md" sx={{ mb: 1.5 }}>
+                  Funding ledger
+                </Typography>
+                <KeyValueList
+                  emptyTitle="No deposits or withdrawals yet."
+                  items={(ledger?.items ?? []).map((e: Record<string, unknown>) => ({
+                    key: String(e._id),
+                    primary: String(e.type),
+                    secondary: String(e.note ?? formatDateTime(e.createdAt as string)),
+                    trailing: (
+                      <Box sx={{ textAlign: 'right' }}>
+                        <Typography sx={monoSx}>{Number(e.amount).toFixed(2)}</Typography>
+                        <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
+                          {e.createdAt ? formatDateTime(String(e.createdAt)) : '—'}
+                        </Typography>
+                      </Box>
+                    ),
+                  }))}
+                />
+              </Box>
+            </>
+          )}
+        </Box>
+      )}
+
+      {tab === 4 && data && (
         <Sheet variant="outlined" sx={panelSx}>
           <FormControl>
             <FormLabel>Scan timeframes</FormLabel>
@@ -479,7 +589,7 @@ export function SettingsPage() {
         </Sheet>
       )}
 
-      {tab === 4 && (
+      {tab === 5 && (
         <Sheet variant="outlined" sx={panelSx}>
           <Typography level="body-sm">
             Configure Telegram / Discord / Email via environment and settings API. Browser

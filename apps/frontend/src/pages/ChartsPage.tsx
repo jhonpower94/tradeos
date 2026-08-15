@@ -27,10 +27,10 @@ export function ChartsPage() {
       <Sheet
         variant="outlined"
         sx={{
-          p: 1.5,
-          mb: 2,
+          p: 2,
+          mb: 3,
           display: 'flex',
-          gap: 1.5,
+          gap: 2,
           flexDirection: { xs: 'column', sm: 'row' },
           borderRadius: 'md',
         }}

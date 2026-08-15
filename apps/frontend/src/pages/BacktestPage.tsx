@@ -46,10 +46,10 @@ export function BacktestPage() {
       <Sheet
         variant="outlined"
         sx={{
-          p: 1.5,
-          mb: 2,
+          p: 2,
+          mb: 3,
           display: 'grid',
-          gap: 1.5,
+          gap: 2,
           gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr auto auto' },
           alignItems: 'end',
           borderRadius: 'md',

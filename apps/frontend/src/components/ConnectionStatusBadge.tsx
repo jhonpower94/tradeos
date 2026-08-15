@@ -28,7 +28,6 @@ export function ConnectionStatusBadge() {
               height: 7,
               borderRadius: '50%',
               backgroundColor: 'currentColor',
-              boxShadow: status === 'connected' ? '0 0 6px currentColor' : 'none',
               animation: status === 'connecting' ? 'trading-pulse 1.4s ease-in-out infinite' : 'none',
             }}
           />

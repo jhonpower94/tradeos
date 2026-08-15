@@ -86,26 +86,34 @@ export function ScannerPage() {
       <Sheet
         variant="outlined"
         sx={{
-          p: 1.5,
-          mb: 2,
+          p: 2,
+          mb: 3,
           display: 'grid',
           gap: 1.5,
-          gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, minmax(0, 160px)) auto' },
+          gridTemplateColumns: {
+            xs: 'minmax(0, 1fr) minmax(0, 1fr)',
+            md: 'repeat(4, minmax(0, 1fr)) auto',
+          },
           alignItems: 'end',
           borderRadius: 'md',
         }}
       >
-        <FormControl>
+        <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Min confidence</FormLabel>
           <Input
             type="number"
             value={minConfidence}
             onChange={(e) => setMinConfidence(Number(e.target.value))}
+            sx={{ width: '100%' }}
           />
         </FormControl>
-        <FormControl>
+        <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Timeframe</FormLabel>
-          <Select value={timeframe} onChange={(_, v) => setTimeframe(v ?? '')}>
+          <Select
+            value={timeframe}
+            onChange={(_, v) => setTimeframe(v ?? '')}
+            sx={{ minWidth: 0, width: '100%' }}
+          >
             <Option value="">All</Option>
             {['1m', '5m', '15m', '30m', '1h', '4h', '1d'].map((t) => (
               <Option key={t} value={t}>
@@ -114,19 +122,35 @@ export function ScannerPage() {
             ))}
           </Select>
         </FormControl>
-        <FormControl>
+        <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Side</FormLabel>
-          <Select value={side} onChange={(_, v) => setSide(v ?? '')}>
+          <Select
+            value={side}
+            onChange={(_, v) => setSide(v ?? '')}
+            sx={{ minWidth: 0, width: '100%' }}
+          >
             <Option value="">All</Option>
             <Option value="BUY">BUY</Option>
             <Option value="SELL">SELL</Option>
           </Select>
         </FormControl>
-        <FormControl>
+        <FormControl sx={{ minWidth: 0, gridColumn: { xs: '1 / -1', md: 'auto' } }}>
           <FormLabel>Search</FormLabel>
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pair" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Pair"
+            sx={{ width: '100%' }}
+          />
         </FormControl>
-        <Typography level="body-sm" sx={{ color: 'text.secondary', gridColumn: { xs: '1 / -1', md: 'auto' } }}>
+        <Typography
+          level="body-sm"
+          sx={{
+            color: 'text.secondary',
+            gridColumn: { xs: '1 / -1', md: 'auto' },
+            pb: { md: 0.75 },
+          }}
+        >
           Scanned: {status?.pairsScanned ?? 0} · Found: {status?.opportunitiesFound ?? 0}
         </Typography>
       </Sheet>

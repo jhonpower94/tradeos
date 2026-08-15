@@ -7,11 +7,8 @@ body,
 }
 
 body {
-  background-color: #080b10;
-  background-image:
-    radial-gradient(circle at 15% 0%, rgba(45, 212, 167, 0.06), transparent 40%),
-    radial-gradient(circle at 85% 0%, rgba(79, 163, 227, 0.05), transparent 40%);
-  scrollbar-color: rgba(133, 152, 172, 0.35) transparent;
+  background-color: var(--joy-palette-background-body, #f3f6fa);
+  scrollbar-color: rgba(91, 107, 124, 0.35) transparent;
 }
 
 * {
@@ -24,7 +21,7 @@ body {
 }
 
 *::-webkit-scrollbar-thumb {
-  background-color: rgba(133, 152, 172, 0.25);
+  background-color: rgba(91, 107, 124, 0.28);
   border-radius: 8px;
 }
 

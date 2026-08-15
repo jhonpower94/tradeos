@@ -41,7 +41,7 @@ export function RegisterPage() {
           {error}
         </Alert>
       )}
-      <Box component="form" onSubmit={onSubmit} sx={{ display: 'grid', gap: 1.5 }}>
+      <Box component="form" onSubmit={onSubmit} sx={{ display: 'grid', gap: 2 }}>
         <FormControl required>
           <FormLabel>Email</FormLabel>
           <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />

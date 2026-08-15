@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import axios from 'axios';
-import { theme } from '../theme/theme';
+import { MODE_STORAGE_KEY, theme } from '../theme/theme';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,7 +22,12 @@ const queryClient = new QueryClient({
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
-      <CssVarsProvider theme={theme} defaultMode="dark" disableTransitionOnChange>
+      <CssVarsProvider
+        theme={theme}
+        defaultMode="system"
+        modeStorageKey={MODE_STORAGE_KEY}
+        disableTransitionOnChange
+      >
         <CssBaseline />
         <BrowserRouter
           future={{
