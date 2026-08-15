@@ -19,6 +19,6 @@ RUN pnpm --filter @trading-os/shared build \
 FROM nginx:1.27-alpine
 COPY apps/frontend/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/apps/frontend/dist /usr/share/nginx/html
-EXPOSE 80
+EXPOSE 80 443
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://127.0.0.1/ >/dev/null || exit 1
+  CMD wget -qO- http://127.0.0.1/healthz >/dev/null || exit 1

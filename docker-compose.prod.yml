@@ -1,4 +1,4 @@
-# Production stack: MongoDB + Redis + API + nginx UI on :80
+# Production stack: MongoDB + Redis + API + nginx UI on :80/:443
 # Usage:
 #   cp .env.production.example .env.production   # fill secrets
 #   docker compose -f docker-compose.prod.yml up -d --build
@@ -47,6 +47,10 @@ services:
       dockerfile: apps/frontend/Dockerfile
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
     depends_on:
       - api
     restart: unless-stopped
