@@ -7,6 +7,47 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return out;
 }
 
+/** iPhone / iPad (including iPadOS desktop UA). */
+export function isIosDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  // iPadOS 13+ can report as Macintosh with touch
+  return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+}
+
+/** True when opened from Home Screen (or installed PWA). */
+export function isStandaloneDisplay(): boolean {
+  if (typeof window === 'undefined') return false;
+  const nav = window.navigator as Navigator & { standalone?: boolean };
+  if (nav.standalone === true) return true;
+  return window.matchMedia('(display-mode: standalone)').matches;
+}
+
+/** Push API available in this browsing context (secure + PushManager). */
+export function isPushApiAvailable(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    window.isSecureContext &&
+    'serviceWorker' in navigator &&
+    'PushManager' in window
+  );
+}
+
+export function pushUnsupportedReason(): string | null {
+  if (typeof window === 'undefined') return 'Web Push is unavailable';
+  if (!window.isSecureContext) {
+    return 'Web Push requires HTTPS (or localhost).';
+  }
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    if (isIosDevice() && !isStandaloneDisplay()) {
+      return 'On iPhone/iPad, add Trading OS to your Home Screen and open it from that icon before enabling Web Push.';
+    }
+    return 'Web Push is not available in this browser. On iPhone, use the Home Screen app (Safari or Chrome Add to Home Screen).';
+  }
+  return null;
+}
+
 export async function enableWebPush(opts: {
   getPublicKey: () => Promise<string>;
   subscribe: (sub: {
@@ -14,11 +55,9 @@ export async function enableWebPush(opts: {
     keys: { p256dh: string; auth: string };
   }) => Promise<unknown>;
 }): Promise<PushSubscription> {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    throw new Error('Web Push is not supported in this browser');
-  }
-  if (!window.isSecureContext) {
-    throw new Error('Web Push requires HTTPS or localhost');
+  const reason = pushUnsupportedReason();
+  if (reason) {
+    throw new Error(reason);
   }
 
   const permission = await Notification.requestPermission();

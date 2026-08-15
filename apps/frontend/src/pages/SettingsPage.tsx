@@ -19,7 +19,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { TIMEFRAMES } from '@trading-os/shared';
 import { notificationsApi, portfolioApi, settingsApi } from '../api';
-import { disableWebPush, enableWebPush, getActivePushEndpoint } from '../lib/webPush';
+import { disableWebPush, enableWebPush, getActivePushEndpoint, isIosDevice, isPushApiAvailable, isStandaloneDisplay } from '../lib/webPush';
 import { PageHeader } from '../components/PageHeader';
 import { KeyValueList } from '../components/ResponsiveRecordList';
 import { formatDateTime } from '../utils/format';
@@ -601,9 +601,35 @@ export function SettingsPage() {
             <code>npm run setup:vapid</code> once). Alerts fire when an open trade&apos;s uPnL sets a
             new high at least $1 above its previous peak.
           </Typography>
+          {isIosDevice() && !isStandaloneDisplay() && (
+            <Alert color="warning" variant="soft">
+              <Typography level="title-sm" sx={{ mb: 0.5 }}>
+                Install on your Home Screen (required on iPhone)
+              </Typography>
+              <Typography level="body-sm" component="ol" sx={{ m: 0, pl: 2.5 }}>
+                <li>Tap Share in Safari or Chrome</li>
+                <li>Choose Add to Home Screen</li>
+                <li>Open Trading OS from the new Home Screen icon</li>
+                <li>Return here and tap Enable Web Push</li>
+              </Typography>
+              <Typography level="body-xs" sx={{ mt: 1, color: 'text.secondary' }}>
+                iOS only exposes push notifications inside the installed Home Screen app, not in a
+                normal browser tab.
+              </Typography>
+            </Alert>
+          )}
+          {!isIosDevice() && !isPushApiAvailable() && (
+            <Alert color="neutral" variant="soft">
+              Web Push is not available in this browser. Use a current Chrome, Edge, Firefox, or
+              Safari on a device that supports the Push API.
+            </Alert>
+          )}
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             {!pushEnabled ? (
-              <Button disabled={enablePush.isPending} onClick={() => enablePush.mutate()}>
+              <Button
+                disabled={enablePush.isPending || !isPushApiAvailable()}
+                onClick={() => enablePush.mutate()}
+              >
                 Enable Web Push
               </Button>
             ) : (
