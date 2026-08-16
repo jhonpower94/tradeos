@@ -53,6 +53,7 @@ const settingsSchema = new Schema(
       hotSetSize: { type: Number, default: 50 },
       concurrency: { type: Number, default: 5 },
       htfVetoEnabled: { type: Boolean, default: true },
+      entryStyle: { type: String, enum: ['confirmed', 'early'], default: 'confirmed' },
     },
     strategies: {
       type: Map,

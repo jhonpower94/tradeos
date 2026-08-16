@@ -57,6 +57,8 @@ export interface Opportunity {
   regime: MarketRegime;
   estimatedDuration?: string;
   rank?: number;
+  /** Derived from which strategy packs voted (pullback/ignition vs lagging). */
+  entryTiming?: 'early' | 'confirmed' | 'mixed';
 }
 
 export interface RiskValidationResult {

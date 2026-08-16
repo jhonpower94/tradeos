@@ -19,6 +19,7 @@ const signalSchema = new Schema(
     regime: String,
     estimatedDuration: String,
     rank: Number,
+    entryTiming: { type: String, enum: ['early', 'confirmed', 'mixed'] },
     status: {
       type: String,
       enum: Object.values(SignalStatus),

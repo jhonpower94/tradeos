@@ -1,8 +1,37 @@
-import { updateSettingsSchema, binanceSettingsSchema } from '@trading-os/shared';
+import { STRATEGY_IDS, updateSettingsSchema, binanceSettingsSchema } from '@trading-os/shared';
 import { Settings } from '../../models/Settings.js';
 import { encrypt, decrypt } from '../../utils/crypto.js';
 import { AppError } from '../../utils/errors.js';
 import { exchangeService } from '../exchange/index.js';
+
+type StrategySetting = { enabled: boolean; params: Record<string, unknown> };
+
+/** Mongoose Map → plain object so JSON responses keep strategy enable flags. */
+export function strategiesToPlain(strategies: unknown): Record<string, StrategySetting> {
+  const out: Record<string, StrategySetting> = {};
+  if (strategies && typeof strategies === 'object') {
+    const entries =
+      typeof (strategies as Map<string, unknown>).entries === 'function'
+        ? [
+            ...(
+              strategies as Map<string, { enabled?: boolean; params?: Record<string, unknown> }>
+            ).entries(),
+          ]
+        : Object.entries(
+            strategies as Record<string, { enabled?: boolean; params?: Record<string, unknown> }>,
+          );
+    for (const [k, v] of entries) {
+      out[k] = {
+        enabled: v?.enabled !== false,
+        params: v?.params ?? {},
+      };
+    }
+  }
+  for (const id of STRATEGY_IDS) {
+    if (!out[id]) out[id] = { enabled: true, params: {} };
+  }
+  return out;
+}
 
 /** Legacy factory defaults that made typical wins smaller than losses. */
 const LEGACY_ASYMMETRY = {
@@ -72,9 +101,10 @@ export async function getSettings(userId: string) {
 }
 
 function sanitizeSettings(doc: InstanceType<typeof Settings>) {
-  const o = doc.toObject();
+  const o = doc.toObject({ flattenMaps: true });
   return {
     ...o,
+    strategies: strategiesToPlain(o.strategies ?? doc.strategies),
     binance: {
       configured: o.binance?.configured ?? false,
       testnet: o.binance?.testnet ?? false,
@@ -97,9 +127,26 @@ function sanitizeSettings(doc: InstanceType<typeof Settings>) {
 
 export async function updateSettings(userId: string, body: unknown) {
   const parsed = updateSettingsSchema.parse(body);
+  const { strategies: strategiesPatch, ...rest } = parsed;
+  const set = flattenUpdate(rest as Record<string, unknown>);
+
+  // Replace the whole strategies map as a POJO — dotted Map $set often fails to
+  // persist nested { enabled, params } and JSON would serialize Map as {}.
+  if (strategiesPatch) {
+    const existing = await Settings.findOne({ userId });
+    const merged = strategiesToPlain(existing?.strategies);
+    for (const [id, cfg] of Object.entries(strategiesPatch)) {
+      merged[id] = {
+        enabled: cfg.enabled !== false,
+        params: (cfg.params as Record<string, unknown> | undefined) ?? merged[id]?.params ?? {},
+      };
+    }
+    set.strategies = merged;
+  }
+
   const doc = await Settings.findOneAndUpdate(
     { userId },
-    { $set: flattenUpdate(parsed) },
+    { $set: set },
     { new: true, upsert: true },
   );
   return sanitizeSettings(doc!);

@@ -19,13 +19,35 @@ function opp(partial: Partial<Opportunity> & Pick<Opportunity, 'symbol' | 'confi
 }
 
 describe('rankOpportunities', () => {
-  it('preserves scan-batch order and does not sort by confidence', () => {
+  it('sorts by confidence descending', () => {
     const ranked = rankOpportunities([
       opp({ symbol: 'LOWUSDT', confidence: 60 }),
       opp({ symbol: 'HIGHUSDT', confidence: 95 }),
       opp({ symbol: 'MIDUSDT', confidence: 80 }),
     ]);
-    expect(ranked.map((o) => o.symbol)).toEqual(['LOWUSDT', 'HIGHUSDT', 'MIDUSDT']);
+    expect(ranked.map((o) => o.symbol)).toEqual(['HIGHUSDT', 'MIDUSDT', 'LOWUSDT']);
+    expect(ranked.map((o) => o.rank)).toEqual([1, 2, 3]);
+  });
+
+  it('breaks confidence ties with early-pack voter count then symbol', () => {
+    const ranked = rankOpportunities([
+      opp({
+        symbol: 'ZUSDT',
+        confidence: 80,
+        strategyIds: ['supertrend'] as Opportunity['strategyIds'],
+      }),
+      opp({
+        symbol: 'AUSDT',
+        confidence: 80,
+        strategyIds: ['ema_pullback', 'order_block'] as Opportunity['strategyIds'],
+      }),
+      opp({
+        symbol: 'BUSDT',
+        confidence: 80,
+        strategyIds: ['ema_pullback'] as Opportunity['strategyIds'],
+      }),
+    ]);
+    expect(ranked.map((o) => o.symbol)).toEqual(['AUSDT', 'BUSDT', 'ZUSDT']);
     expect(ranked.map((o) => o.rank)).toEqual([1, 2, 3]);
   });
 });

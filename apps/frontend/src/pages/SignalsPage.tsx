@@ -13,6 +13,7 @@ import { CandleChart } from '../components/CandleChart';
 import { PageHeader } from '../components/PageHeader';
 import { SideChip } from '../components/SideChip';
 import { StatusChip } from '../components/StatusChip';
+import { EntryTimingChip } from '../components/EntryTimingChip';
 import { ConfidenceBar } from '../components/ConfidenceBar';
 import { ResponsiveRecordList } from '../components/ResponsiveRecordList';
 import { formatDateTime, formatPrice, formatRelativeTime } from '../utils/format';
@@ -117,6 +118,7 @@ export function SignalsPage() {
         cardMeta={(s) => (
           <>
             <SideChip side={String(s.side)} />
+            <EntryTimingChip entryTiming={s.entryTiming} strategyIds={s.strategyIds} />
             <StatusChip status={String(s.status)} />
           </>
         )}
@@ -182,6 +184,11 @@ export function SignalsPage() {
         columns={[
           { key: 'symbol', header: 'Symbol', render: (s) => <Typography sx={monoSx}>{String(s.symbol)}</Typography> },
           { key: 'side', header: 'Side', render: (s) => <SideChip side={String(s.side)} /> },
+          {
+            key: 'timing',
+            header: 'Timing',
+            render: (s) => <EntryTimingChip entryTiming={s.entryTiming} strategyIds={s.strategyIds} />,
+          },
           { key: 'tf', header: 'TF', render: (s) => String(s.timeframe ?? '—') },
           {
             key: 'appeared',

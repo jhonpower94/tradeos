@@ -1,6 +1,8 @@
 import {
   Side,
   SignalStatus,
+  countEarlyPackVoters,
+  deriveEntryTiming,
   type Opportunity,
   type ConsensusResult,
   type Timeframe,
@@ -50,12 +52,20 @@ export function consensusToOpportunity(
     evidence: consensus.evidence,
     regime: consensus.regime,
     estimatedDuration: estimateDuration(timeframe),
+    entryTiming: deriveEntryTiming(consensus.strategyIds),
   };
 }
 
-/** Assign display rank in scan-batch order (most recently listed via updatedAt on read). */
+/** Rank by confidence desc, then early-pack voter count, then symbol. */
 export function rankOpportunities(opps: Opportunity[]): Opportunity[] {
-  return opps.map((o, i) => ({ ...o, rank: i + 1 }));
+  const sorted = [...opps].sort((a, b) => {
+    if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+    const earlyDiff =
+      countEarlyPackVoters(b.strategyIds) - countEarlyPackVoters(a.strategyIds);
+    if (earlyDiff !== 0) return earlyDiff;
+    return a.symbol.localeCompare(b.symbol);
+  });
+  return sorted.map((o, i) => ({ ...o, rank: i + 1 }));
 }
 
 export async function persistOpportunities(userId: string, opps: Opportunity[]) {
@@ -83,6 +93,7 @@ export async function persistOpportunities(userId: string, opps: Opportunity[]) 
           evidence: o.evidence,
           regime: o.regime,
           estimatedDuration: o.estimatedDuration,
+          entryTiming: o.entryTiming,
           rank: o.rank,
           consensusSnapshot: o,
           expiresAt,
@@ -116,5 +127,5 @@ export async function listOpportunities(userId: string, filters?: {
   if (filters?.timeframe) q.timeframe = filters.timeframe;
   if (filters?.side) q.side = filters.side;
   if (filters?.search) q.symbol = new RegExp(filters.search, 'i');
-  return Signal.find(q).sort({ updatedAt: -1, createdAt: -1 }).limit(100).lean();
+  return Signal.find(q).sort({ rank: 1, confidence: -1 }).limit(100).lean();
 }

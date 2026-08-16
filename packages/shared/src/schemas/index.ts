@@ -68,6 +68,7 @@ export const scannerSettingsSchema = z.object({
   hotSetSize: z.number().int().min(10).max(500).default(50),
   concurrency: z.number().int().min(1).max(20).default(5),
   htfVetoEnabled: z.boolean().default(true),
+  entryStyle: z.enum(['confirmed', 'early']).default('confirmed'),
 });
 
 export const notificationSettingsSchema = z.object({

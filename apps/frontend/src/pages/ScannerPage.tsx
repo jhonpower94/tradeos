@@ -13,6 +13,7 @@ import { scannerApi } from '../api';
 import { useLiveStore } from '../stores/liveStore';
 import { RegimeChip } from '../components/RegimeChip';
 import { SideChip } from '../components/SideChip';
+import { EntryTimingChip } from '../components/EntryTimingChip';
 import { ConfidenceBar } from '../components/ConfidenceBar';
 import { PageHeader } from '../components/PageHeader';
 import { ResponsiveRecordList } from '../components/ResponsiveRecordList';
@@ -166,6 +167,7 @@ export function ScannerPage() {
         cardMeta={(o) => (
           <>
             <SideChip side={String(o.side)} />
+            <EntryTimingChip entryTiming={o.entryTiming} strategyIds={o.strategyIds} />
             {o.regime ? <RegimeChip regime={String(o.regime)} /> : null}
           </>
         )}
@@ -183,6 +185,11 @@ export function ScannerPage() {
           { key: 'rank', header: '#', render: (o) => String(o.rank ?? '—') },
           { key: 'pair', header: 'Pair', render: (o) => <Typography sx={monoSx}>{String(o.symbol)}</Typography> },
           { key: 'side', header: 'Side', render: (o) => <SideChip side={String(o.side)} /> },
+          {
+            key: 'timing',
+            header: 'Timing',
+            render: (o) => <EntryTimingChip entryTiming={o.entryTiming} strategyIds={o.strategyIds} />,
+          },
           { key: 'regime', header: 'Regime', render: (o) => (o.regime ? <RegimeChip regime={String(o.regime)} /> : '—') },
           { key: 'conf', header: 'Confidence', numeric: true, render: (o) => `${Number(o.confidence).toFixed(1)}%` },
           { key: 'entry', header: 'Entry', numeric: true, render: (o) => formatPrice(Number(o.entry)) },

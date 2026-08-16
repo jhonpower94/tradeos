@@ -14,12 +14,19 @@ import Switch from '@mui/joy/Switch';
 import Tab from '@mui/joy/Tab';
 import TabList from '@mui/joy/TabList';
 import Tabs from '@mui/joy/Tabs';
-import Typography from '@mui/joy/Typography';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import ToggleButtonGroup from '@mui/joy/ToggleButtonGroup';
+import Typography from '@mui/joy/Typography';import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
-import { TIMEFRAMES } from '@trading-os/shared';
-import { notificationsApi, portfolioApi, settingsApi } from '../api';
-import { disableWebPush, enableWebPush, getActivePushEndpoint, isIosDevice, isPushApiAvailable, isStandaloneDisplay } from '../lib/webPush';
+import {
+  TIMEFRAMES,
+  applyScannerPreset,
+  EARLY_STRATEGY_PACK,
+  LAGGING_STRATEGY_PACK,
+  isPackFullyEnabled,
+  strategyPackPatch,
+  type ScannerEntryStyle,
+} from '@trading-os/shared';
+import { notificationsApi, portfolioApi, settingsApi } from '../api';import { disableWebPush, enableWebPush, getActivePushEndpoint, isIosDevice, isPushApiAvailable, isStandaloneDisplay } from '../lib/webPush';
 import { PageHeader } from '../components/PageHeader';
 import { KeyValueList } from '../components/ResponsiveRecordList';
 import { formatDateTime } from '../utils/format';
@@ -550,6 +557,57 @@ export function SettingsPage() {
 
       {tab === 4 && data && (
         <Sheet variant="outlined" sx={panelSx}>
+          <FormControl>
+            <FormLabel>Entry profile</FormLabel>
+            <ToggleButtonGroup
+              size="sm"
+              value={(data.scanner?.entryStyle as ScannerEntryStyle | undefined) ?? 'confirmed'}
+              onChange={(_, v) => {
+                if (!v || v === (data.scanner?.entryStyle ?? 'confirmed')) return;
+                saveSettings.mutate(applyScannerPreset(v as ScannerEntryStyle));
+              }}
+            >
+              <Button value="confirmed">Confirmed</Button>
+              <Button value="early">Early entry</Button>
+            </ToggleButtonGroup>
+            <FormHelperText>
+              Confirmed waits for multi-strategy agreement after the trend is clear. Early joins on
+              pullback / ignition while HTF stays aligned. Early is noisier — use paper first.
+            </FormHelperText>
+          </FormControl>
+          <Box>
+            <Typography level="title-sm" sx={{ mb: 1 }}>
+              Strategy packs
+            </Typography>
+            <SwitchRow
+              label="Early pack (pullback / ignition)"
+              checked={isPackFullyEnabled(
+                data.strategies as Record<string, { enabled?: boolean }> | undefined,
+                EARLY_STRATEGY_PACK,
+              )}
+              onChange={(checked) =>
+                saveSettings.mutate({
+                  strategies: strategyPackPatch([...EARLY_STRATEGY_PACK], checked),
+                })
+              }
+              hint="ema_pullback, rsi_pullback, order_block, FVG, CHoCH, ADX ignition, BB squeeze, NR7, support/resistance, liquidity sweep."
+            />
+            <Box sx={{ mt: 1.5 }}>
+              <SwitchRow
+                label="Lagging pack (trend confirmation)"
+                checked={isPackFullyEnabled(
+                  data.strategies as Record<string, { enabled?: boolean }> | undefined,
+                  LAGGING_STRATEGY_PACK,
+                )}
+                onChange={(checked) =>
+                  saveSettings.mutate({
+                    strategies: strategyPackPatch([...LAGGING_STRATEGY_PACK], checked),
+                  })
+                }
+                hint="supertrend, ichimoku, trend_continuation, atr_trend, ema_cross, macd_momentum. Prefer off for Early entry."
+              />
+            </Box>
+          </Box>
           <FormControl>
             <FormLabel>Scan timeframes</FormLabel>
             <Select
