@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { softPrecheck, validateRisk } from '../src/modules/risk/index.js';
+import {
+  alreadyOpenOnSymbolReason,
+  hasOpenPositionOnSymbol,
+  softPrecheck,
+  validateRisk,
+} from '../src/modules/risk/index.js';
 import { buildConsensus, detectRegime } from '../src/modules/consensus/index.js';
 import { Decision, MarketRegime, Side, type StrategyResult } from '@trading-os/shared';
 import { computeAllIndicators } from '../src/modules/indicators/index.js';
@@ -57,6 +62,17 @@ function sellStrategy(id: string, confidence = 80): StrategyResult {
 }
 
 describe('risk', () => {
+  it('hasOpenPositionOnSymbol is true for any side of the same pair', () => {
+    const open = [{ symbol: 'BTCUSDT' }, { symbol: 'ETHUSDT' }];
+    expect(hasOpenPositionOnSymbol(open, 'BTCUSDT')).toBe(true);
+    expect(hasOpenPositionOnSymbol(open, 'ETHUSDT')).toBe(true);
+    expect(hasOpenPositionOnSymbol(open, 'SOLUSDT')).toBe(false);
+    expect(hasOpenPositionOnSymbol([], 'BTCUSDT')).toBe(false);
+    expect(alreadyOpenOnSymbolReason('BTCUSDT')).toBe(
+      'Already have an open position in BTCUSDT',
+    );
+  });
+
   it('rejects bad RR', async () => {
     const result = await validateRisk({
       userId: '000000000000000000000001',

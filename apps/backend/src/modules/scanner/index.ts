@@ -99,10 +99,11 @@ class ScannerService {
 
     let symbols = await exchangeService.getUsdtSymbols();
     symbols = symbols.filter((s) => !deny.has(s));
-    const symbolSet = new Set(symbols);
 
-    const openPos = await Position.find({ userId, status: PositionStatus.OPEN }).lean();
-    const pinned = new Set(openPos.map((p) => p.symbol).filter((s) => symbolSet.has(s)));
+    const openPos = await Position.find({ userId, status: PositionStatus.OPEN })
+      .select('symbol')
+      .lean();
+    const held = new Set(openPos.map((p) => p.symbol));
 
     let tickers: Awaited<ReturnType<typeof exchangeService.getAllTickers24hr>> = [];
     try {
@@ -132,8 +133,8 @@ class ScannerService {
       }
     };
 
-    const liquidCandidates = symbols
-      .filter((s) => !pinned.has(s))
+    const ordered = symbols
+      .filter((s) => !held.has(s))
       .map((s) => {
         const t = tickerBySymbol.get(s);
         if (!t || t.volume24h == null || t.bid == null || t.ask == null || !t.price) {
@@ -147,8 +148,6 @@ class ScannerService {
       .sort((a, b) => b.volume24h - a.volume24h)
       .slice(0, hotSize)
       .map((x) => x.symbol);
-
-    const ordered = [...pinned, ...liquidCandidates.filter((s) => !pinned.has(s))];
 
     const opportunities: Opportunity[] = [];
     let scanned = 0;

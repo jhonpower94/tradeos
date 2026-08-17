@@ -25,27 +25,43 @@ function dbReady() {
   return mongoose.connection.readyState === 1;
 }
 
+export function hasOpenPositionOnSymbol(
+  openPositions: Array<{ symbol: string }>,
+  symbol: string,
+): boolean {
+  return openPositions.some((p) => p.symbol === symbol);
+}
+
+export function alreadyOpenOnSymbolReason(symbol: string): string {
+  return `Already have an open position in ${symbol}`;
+}
+
 export async function validateRisk(ctx: RiskContext): Promise<RiskValidationResult> {
   const reasons: string[] = [];
   const { opportunity: o, risk } = ctx;
 
-  let openCount = 0;
-  let unrealizedPnl = 0;
+  let openPositions: Array<{ symbol: string; unrealizedPnl?: number }> = [];
   if (dbReady()) {
     try {
-      const openPositions = await Position.find({
+      const rows = await Position.find({
         userId: ctx.userId,
         status: PositionStatus.OPEN,
       }).lean();
-      openCount = openPositions.length;
-      unrealizedPnl = openPositions.reduce((a, p) => a + (p.unrealizedPnl ?? 0), 0);
+      openPositions = rows.map((p) => ({
+        symbol: p.symbol,
+        unrealizedPnl: p.unrealizedPnl ?? 0,
+      }));
     } catch {
-      openCount = 0;
-      unrealizedPnl = 0;
+      openPositions = [];
     }
   }
+  const openCount = openPositions.length;
+  const unrealizedPnl = openPositions.reduce((a, p) => a + (p.unrealizedPnl ?? 0), 0);
   if (openCount >= risk.maxOpenPositions) {
     reasons.push(`Max open positions reached (${risk.maxOpenPositions})`);
+  }
+  if (hasOpenPositionOnSymbol(openPositions, o.symbol)) {
+    reasons.push(alreadyOpenOnSymbolReason(o.symbol));
   }
 
   const startOfDay = new Date();
@@ -129,16 +145,22 @@ export async function softPrecheck(
   risk: RiskSettings,
   equity: number,
 ): Promise<{ ok: boolean; reason?: string }> {
-  let openCount = 0;
+  let openPositions: Array<{ symbol: string }> = [];
   if (dbReady()) {
     try {
-      openCount = await Position.countDocuments({ userId, status: PositionStatus.OPEN });
+      const rows = await Position.find({ userId, status: PositionStatus.OPEN })
+        .select('symbol')
+        .lean();
+      openPositions = rows.map((p) => ({ symbol: p.symbol }));
     } catch {
-      openCount = 0;
+      openPositions = [];
     }
   }
-  if (openCount >= risk.maxOpenPositions) {
+  if (openPositions.length >= risk.maxOpenPositions) {
     return { ok: false, reason: `Max open positions reached (${risk.maxOpenPositions})` };
+  }
+  if (hasOpenPositionOnSymbol(openPositions, opportunity.symbol)) {
+    return { ok: false, reason: alreadyOpenOnSymbolReason(opportunity.symbol) };
   }
   if (opportunity.riskReward < risk.minRiskReward) {
     return {

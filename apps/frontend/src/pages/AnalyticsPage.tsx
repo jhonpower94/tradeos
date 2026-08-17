@@ -13,6 +13,17 @@ export function AnalyticsPage() {
   const netPnl = Number(data?.netPnl ?? 0);
   const netTone = netPnl > 0 ? 'positive' : netPnl < 0 ? 'negative' : 'neutral';
 
+  const byStrategy = Object.entries(
+    (data?.byStrategy ?? {}) as Record<string, { trades: number; pnl: number; wins: number }>,
+  )
+    .map(([id, s]) => ({
+      id,
+      trades: s.trades,
+      pnl: s.pnl,
+      winRate: s.trades > 0 ? (s.wins / s.trades) * 100 : 0,
+    }))
+    .sort((a, b) => b.pnl - a.pnl);
+
   const cards: Array<{
     label: string;
     value: string;
@@ -45,6 +56,18 @@ export function AnalyticsPage() {
           <StatCard key={c.label} label={c.label} value={c.value} tone={c.tone ?? 'neutral'} />
         ))}
       </Box>
+      <Typography level="title-md" sx={{ mt: 4, mb: 1.5 }}>
+        By Strategy
+      </Typography>
+      <KeyValueList
+        emptyTitle="No closed trades yet"
+        items={byStrategy.map((s) => ({
+          key: s.id,
+          primary: s.id.replace(/_/g, ' '),
+          secondary: `${s.trades} trade${s.trades === 1 ? '' : 's'} · ${s.winRate.toFixed(1)}% win`,
+          trailing: <PnlText value={s.pnl} />,
+        }))}
+      />
       <Typography level="title-md" sx={{ mt: 4, mb: 1.5 }}>
         Monthly Returns
       </Typography>
