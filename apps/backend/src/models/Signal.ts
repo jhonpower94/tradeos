@@ -20,6 +20,9 @@ const signalSchema = new Schema(
     estimatedDuration: String,
     rank: Number,
     entryTiming: { type: String, enum: ['early', 'confirmed', 'mixed'] },
+    relativeStrength: Number,
+    stage: { type: String, enum: ['watching', 'triggered'] },
+    locations: [{ type: { type: String }, price: Number, distanceAtr: Number, bullish: Boolean }],
     status: {
       type: String,
       enum: Object.values(SignalStatus),

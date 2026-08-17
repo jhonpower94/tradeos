@@ -68,12 +68,19 @@ export function rankOpportunities(opps: Opportunity[]): Opportunity[] {
   return sorted.map((o, i) => ({ ...o, rank: i + 1 }));
 }
 
-/** Mongo filter for RANKED rows not in the current scan. Does not touch approved. */
-export function leftoverRankedFilter(
+export function isWatching(o: { stage?: string; status?: string }): boolean {
+  return o.stage === 'watching' || o.status === 'watching';
+}
+
+/** Mongo filter for ranked/watching rows not in the current scan. Does not touch approved. */
+export function leftoverActiveFilter(
   userId: string,
   current: Array<{ symbol: string; timeframe: string; side: string }>,
 ): Record<string, unknown> {
-  const q: Record<string, unknown> = { userId, status: SignalStatus.RANKED };
+  const q: Record<string, unknown> = {
+    userId,
+    status: { $in: [SignalStatus.RANKED, SignalStatus.WATCHING] },
+  };
   if (current.length > 0) {
     q.$nor = current.map((o) => ({
       symbol: o.symbol,
@@ -84,64 +91,87 @@ export function leftoverRankedFilter(
   return q;
 }
 
-/** List contract: newest first-appearance first. Rank is independent of position. */
-export function sortByCreatedAtDesc<T extends { createdAt?: Date | string }>(items: T[]): T[] {
+/** Triggered (ranked) first, then newest createdAt. */
+export function sortTriggeredThenNewest<
+  T extends { createdAt?: Date | string; stage?: string; status?: string },
+>(items: T[]): T[] {
   return [...items].sort((a, b) => {
+    const aw = isWatching(a) ? 1 : 0;
+    const bw = isWatching(b) ? 1 : 0;
+    if (aw !== bw) return aw - bw;
     const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
     const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
     return tb - ta;
   });
 }
 
+function persistStatus(o: Opportunity): SignalStatus {
+  return o.stage === 'watching' ? SignalStatus.WATCHING : SignalStatus.RANKED;
+}
+
 export async function persistOpportunities(userId: string, opps: Opportunity[]) {
-  const ranked = rankOpportunities(opps);
+  const triggered = opps.filter((o) => o.stage !== 'watching');
+  const watching = opps.filter((o) => o.stage === 'watching');
+  const ranked = [...rankOpportunities(triggered), ...watching];
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const docs: Array<Opportunity & { createdAt?: Date }> = [];
+  const docs: Array<Opportunity & { createdAt?: Date; status?: string }> = [];
 
   for (const o of ranked) {
-    const doc = await Signal.findOneAndUpdate(
-      {
+    const status = persistStatus(o);
+    const watching = o.stage === 'watching';
+    const filter = {
+      userId,
+      symbol: o.symbol,
+      timeframe: o.timeframe,
+      side: o.side,
+      status: { $in: [SignalStatus.RANKED, SignalStatus.WATCHING, SignalStatus.APPROVED] },
+    };
+    const existing = await Signal.findOne(filter).select('status').lean();
+    const $set: Record<string, unknown> = {
+      confidence: o.confidence,
+      entry: o.entry,
+      stopLoss: o.stopLoss,
+      takeProfit: o.takeProfit,
+      riskReward: o.riskReward,
+      strategyIds: o.strategyIds,
+      primaryStrategy: o.primaryStrategy,
+      evidence: o.evidence,
+      regime: o.regime,
+      estimatedDuration: o.estimatedDuration,
+      entryTiming: o.entryTiming,
+      relativeStrength: o.relativeStrength,
+      stage: o.stage,
+      locations: o.locations,
+      consensusSnapshot: o,
+      expiresAt,
+    };
+    if (existing?.status !== SignalStatus.APPROVED) {
+      $set.status = status;
+    }
+    if (!watching && o.rank != null) {
+      $set.rank = o.rank;
+    }
+    const update: Record<string, unknown> = {
+      $set,
+      $setOnInsert: {
         userId,
         symbol: o.symbol,
         timeframe: o.timeframe,
         side: o.side,
-        status: { $in: [SignalStatus.RANKED, SignalStatus.APPROVED] },
       },
-      {
-        $set: {
-          confidence: o.confidence,
-          entry: o.entry,
-          stopLoss: o.stopLoss,
-          takeProfit: o.takeProfit,
-          riskReward: o.riskReward,
-          strategyIds: o.strategyIds,
-          primaryStrategy: o.primaryStrategy,
-          evidence: o.evidence,
-          regime: o.regime,
-          estimatedDuration: o.estimatedDuration,
-          entryTiming: o.entryTiming,
-          rank: o.rank,
-          consensusSnapshot: o,
-          expiresAt,
-          status: SignalStatus.RANKED,
-        },
-        $setOnInsert: {
-          userId,
-          symbol: o.symbol,
-          timeframe: o.timeframe,
-          side: o.side,
-        },
-      },
-      { upsert: true, new: true },
-    ).lean();
-    if (doc) docs.push(doc as Opportunity & { createdAt?: Date });
+    };
+    if (watching && existing?.status !== SignalStatus.APPROVED) {
+      update.$unset = { rank: 1 };
+    }
+    const doc = await Signal.findOneAndUpdate(filter, update, { upsert: true, new: true }).lean();
+    if (doc) docs.push(doc as Opportunity & { createdAt?: Date; status?: string });
   }
 
-  await Signal.updateMany(leftoverRankedFilter(userId, ranked), {
+  await Signal.updateMany(leftoverActiveFilter(userId, ranked), {
     $set: { status: SignalStatus.EXPIRED },
   });
 
-  return sortByCreatedAtDesc(docs);
+  return sortTriggeredThenNewest(docs);
 }
 
 export async function listOpportunities(userId: string, filters?: {
@@ -152,12 +182,17 @@ export async function listOpportunities(userId: string, filters?: {
 }) {
   const q: Record<string, unknown> = {
     userId,
-    status: SignalStatus.RANKED,
+    status: { $in: [SignalStatus.RANKED, SignalStatus.WATCHING] },
     expiresAt: { $gt: new Date() },
   };
-  if (filters?.minConfidence != null) q.confidence = { $gte: filters.minConfidence };
+  if (filters?.minConfidence != null) {
+    q.$or = [
+      { status: SignalStatus.WATCHING },
+      { status: SignalStatus.RANKED, confidence: { $gte: filters.minConfidence } },
+    ];
+  }
   if (filters?.timeframe) q.timeframe = filters.timeframe;
   if (filters?.side) q.side = filters.side;
   if (filters?.search) q.symbol = new RegExp(filters.search, 'i');
-  return Signal.find(q).sort({ createdAt: -1 }).limit(100).lean();
+  return Signal.find(q).sort({ status: 1, createdAt: -1 }).limit(100).lean();
 }

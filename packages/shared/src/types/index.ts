@@ -42,6 +42,26 @@ export interface ConsensusResult {
   strategyIds: StrategyId[];
 }
 
+export type LocationType =
+  | 'support'
+  | 'resistance'
+  | 'order_block'
+  | 'vwap'
+  | 'pivot'
+  | 's1'
+  | 'r1'
+  | 's2'
+  | 'r2'
+  | 'pdh'
+  | 'pdl';
+
+export interface LocationLevel {
+  type: LocationType;
+  price: number;
+  distanceAtr: number;
+  bullish?: boolean;
+}
+
 export interface Opportunity {
   symbol: string;
   timeframe: Timeframe;
@@ -59,6 +79,10 @@ export interface Opportunity {
   rank?: number;
   /** Derived from which strategy packs voted (pullback/ignition vs lagging). */
   entryTiming?: 'early' | 'confirmed' | 'mixed';
+  locations?: LocationLevel[];
+  /** 24h % change minus BTC 24h % change. */
+  relativeStrength?: number;
+  stage?: 'watching' | 'triggered';
 }
 
 export interface RiskValidationResult {

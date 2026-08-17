@@ -69,6 +69,9 @@ export const scannerSettingsSchema = z.object({
   concurrency: z.number().int().min(1).max(20).default(5),
   htfVetoEnabled: z.boolean().default(true),
   entryStyle: z.enum(['confirmed', 'early']).default('confirmed'),
+  locationGateEnabled: z.boolean().default(true),
+  locationProximityAtr: z.number().min(0.25).max(5).default(1.5),
+  btcRelativeStrengthEnabled: z.boolean().default(true),
 });
 
 export const notificationSettingsSchema = z.object({

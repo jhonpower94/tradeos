@@ -19,6 +19,7 @@ export interface TickerPrice {
   bid?: number;
   ask?: number;
   volume24h?: number;
+  priceChangePercent?: number;
 }
 
 export interface OrderBook {
@@ -224,6 +225,7 @@ export class ExchangeService {
       bidPrice: string;
       askPrice: string;
       quoteVolume: string;
+      priceChangePercent: string;
     }>('GET', '/api/v3/ticker/24hr', { symbol: symbol.toUpperCase() });
     return {
       symbol: data.symbol,
@@ -231,6 +233,7 @@ export class ExchangeService {
       bid: Number(data.bidPrice),
       ask: Number(data.askPrice),
       volume24h: Number(data.quoteVolume),
+      priceChangePercent: Number(data.priceChangePercent),
     };
   }
 
@@ -243,6 +246,7 @@ export class ExchangeService {
         bidPrice: string;
         askPrice: string;
         quoteVolume: string;
+        priceChangePercent: string;
       }>
     >('GET', '/api/v3/ticker/24hr');
     return data.map((t) => ({
@@ -251,6 +255,7 @@ export class ExchangeService {
       bid: Number(t.bidPrice),
       ask: Number(t.askPrice),
       volume24h: Number(t.quoteVolume),
+      priceChangePercent: Number(t.priceChangePercent),
     }));
   }
 

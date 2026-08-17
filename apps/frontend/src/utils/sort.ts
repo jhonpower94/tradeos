@@ -4,9 +4,18 @@ export function createdAtMs(value: unknown): number {
   return Number.isNaN(t) ? 0 : t;
 }
 
-/** Newest first-appearance first. Missing createdAt stays at the bottom (stable). */
-export function sortNewestFirst<T extends Record<string, unknown>>(rows: T[]): T[] {
-  return [...rows].sort((a, b) => createdAtMs(b.createdAt) - createdAtMs(a.createdAt));
+export function isWatchingRow(row: Record<string, unknown>): boolean {
+  return row.status === 'watching' || row.stage === 'watching';
+}
+
+/** Triggered first, then newest createdAt. */
+export function sortTriggeredThenNewest<T extends Record<string, unknown>>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const aw = isWatchingRow(a) ? 1 : 0;
+    const bw = isWatchingRow(b) ? 1 : 0;
+    if (aw !== bw) return aw - bw;
+    return createdAtMs(b.createdAt) - createdAtMs(a.createdAt);
+  });
 }
 
 /** Quality rank ASC, then confidence DESC. Missing rank sorts last. */

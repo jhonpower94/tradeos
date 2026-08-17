@@ -1,11 +1,11 @@
 import { Position } from '../../models/Position.js';
-import { MarketRegime, PositionStatus, filterStrategiesForRegime } from '@trading-os/shared';
+import { MarketRegime, PositionStatus, Timeframe, filterStrategiesForRegime } from '@trading-os/shared';
 import { gatewayBroadcast } from '../../websocket/gateway.js';
 import { notify } from '../notifications/index.js';
 import { NotificationType } from '@trading-os/shared';
 import { processAutoSignals } from '../trade/index.js';
 import { getRawSettings } from '../settings/index.js';
-import { consensusToOpportunity, persistOpportunities } from '../ranking/index.js';
+import { consensusToOpportunity, isWatching, persistOpportunities } from '../ranking/index.js';
 import {
   buildConsensus,
   detectHtfTrend,
@@ -13,12 +13,21 @@ import {
 } from '../consensus/index.js';
 import { runAllStrategies, rescaleStrategyRiskReward } from '../strategies/index.js';
 import { detectPatterns } from '../patterns/index.js';
-import { computeAllIndicators, INDICATOR_MIN_PERIODS } from '../indicators/index.js';
+import { computeAllIndicators, INDICATOR_MIN_PERIODS, lastValid } from '../indicators/index.js';
 import { marketDataService, setTickerPrice } from '../market-data/index.js';
 import { exchangeService } from '../exchange/index.js';
 import { User } from '../../models/User.js';
 import { detectRegime } from '../regime/index.js';
-import type { Opportunity, Timeframe } from '@trading-os/shared';
+import type { Opportunity } from '@trading-os/shared';
+import {
+  buildWatchingOpportunity,
+  computeRelativeStrength,
+  findNearbyLocations,
+  locationEvidence,
+  previousDayLevels,
+  relativeStrengthAligned,
+  watchingSide,
+} from '../location/index.js';
 
 export interface ScannerStatus {
   running: boolean;
@@ -104,6 +113,25 @@ class ScannerService {
     }
 
     const tickerBySymbol = new Map(tickers.map((t) => [t.symbol, t]));
+    const btcTicker = tickerBySymbol.get('BTCUSDT') ?? tickerBySymbol.get('BTCUSDC');
+    const rsEnabled = settings.scanner?.btcRelativeStrengthEnabled !== false;
+    const locationGate = settings.scanner?.locationGateEnabled !== false;
+    const pdhCache = new Map<string, { high: number; low: number } | null>();
+
+    const loadPdhPdl = async (symbol: string) => {
+      if (!locationGate) return null;
+      if (pdhCache.has(symbol)) return pdhCache.get(symbol) ?? null;
+      try {
+        const daily = await marketDataService.getCandles(symbol, Timeframe.D1, 3);
+        const levels = previousDayLevels(daily);
+        pdhCache.set(symbol, levels);
+        return levels;
+      } catch {
+        pdhCache.set(symbol, null);
+        return null;
+      }
+    };
+
     const liquidCandidates = symbols
       .filter((s) => !pinned.has(s))
       .map((s) => {
@@ -133,7 +161,16 @@ class ScannerService {
         this.status.currentSymbol = symbol;
         for (const tf of timeframes) {
           try {
-            const opp = await this.analyze(userId, symbol, tf, settings);
+            const rs = rsEnabled
+              ? computeRelativeStrength(
+                  tickerBySymbol.get(symbol)?.priceChangePercent,
+                  btcTicker?.priceChangePercent,
+                )
+              : undefined;
+            const opp = await this.analyze(userId, symbol, tf, settings, {
+              relativeStrength: rs,
+              pdhPdl: await loadPdhPdl(symbol),
+            });
             if (opp) opportunities.push(opp);
           } catch {
             this.status.errors++;
@@ -153,15 +190,18 @@ class ScannerService {
     gatewayBroadcast(userId, 'scanner.status', this.getStatus());
 
     if (items.length) {
-      const byRank = [...items].sort(
+      const triggered = items.filter((o) => !isWatching(o));
+      const byRank = [...triggered].sort(
         (a, b) => (a.rank ?? Number.POSITIVE_INFINITY) - (b.rank ?? Number.POSITIVE_INFINITY),
       );
-      await notify(userId, NotificationType.TRADE_SIGNAL, {
-        title: 'New opportunities',
-        body: `${items.length} ranked opportunities`,
-        payload: { count: items.length, top: byRank[0] },
-      });
-      await processAutoSignals(userId, byRank);
+      if (triggered.length) {
+        await notify(userId, NotificationType.TRADE_SIGNAL, {
+          title: 'New opportunities',
+          body: `${triggered.length} triggered · ${items.length - triggered.length} watching`,
+          payload: { count: triggered.length, top: byRank[0] },
+        });
+        await processAutoSignals(userId, byRank);
+      }
     }
   }
 
@@ -170,6 +210,10 @@ class ScannerService {
     symbol: string,
     timeframe: Timeframe,
     settings: Awaited<ReturnType<typeof getRawSettings>>,
+    ctx: {
+      relativeStrength?: number;
+      pdhPdl?: { high: number; low: number } | null;
+    } = {},
   ): Promise<Opportunity | null> {
     void userId;
     const candles = await marketDataService.getCandles(
@@ -182,6 +226,22 @@ class ScannerService {
 
     const indicators = computeAllIndicators(candles);
     const patterns = detectPatterns(candles, indicators);
+    const last = candles[candles.length - 1]!;
+    const atr = lastValid(indicators.atr14) ?? 0;
+    const locationGate = settings.scanner?.locationGateEnabled !== false;
+    const proximityAtr = settings.scanner?.locationProximityAtr ?? 1.5;
+    const nearby = atr > 0
+      ? findNearbyLocations({
+          close: last.close,
+          atr,
+          proximityAtr,
+          indicators,
+          patterns,
+          pdhPdl: ctx.pdhPdl,
+        })
+      : [];
+
+    if (locationGate && nearby.length === 0) return null;
 
     const stratObj: Record<string, { enabled: boolean; params?: Record<string, unknown> }> = {};
     if (settings.strategies) {
@@ -252,8 +312,35 @@ class ScannerService {
       htfTrend,
       htfVetoEnabled,
     });
-    if (consensus.score < minConf) return null;
-    return consensusToOpportunity(symbol, timeframe, consensus, minConf);
+
+    const rs = ctx.relativeStrength;
+
+    const triggered = consensusToOpportunity(symbol, timeframe, consensus, minConf);
+    if (triggered) {
+      if (!relativeStrengthAligned(triggered.side, rs)) return null;
+      return {
+        ...triggered,
+        locations: nearby,
+        relativeStrength: rs,
+        stage: 'triggered',
+        evidence: [...triggered.evidence, ...locationEvidence(nearby)],
+      };
+    }
+
+    if (!locationGate || nearby.length === 0) return null;
+    const side = watchingSide(htfTrend, nearby);
+    if (!side || !relativeStrengthAligned(side, rs)) return null;
+    return buildWatchingOpportunity({
+      symbol,
+      timeframe,
+      side,
+      nearby,
+      atr,
+      minRR,
+      minConfidence: minConf,
+      regime: regimeResult.regime,
+      relativeStrength: rs,
+    });
   }
 }
 

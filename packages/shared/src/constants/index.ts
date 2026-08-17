@@ -21,6 +21,7 @@ export enum Decision {
 
 export enum SignalStatus {
   RANKED = 'ranked',
+  WATCHING = 'watching',
   APPROVED = 'approved',
   REJECTED = 'rejected',
   EXPIRED = 'expired',

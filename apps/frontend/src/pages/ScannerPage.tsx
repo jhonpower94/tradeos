@@ -17,15 +17,17 @@ import { EntryTimingChip } from '../components/EntryTimingChip';
 import { ConfidenceBar } from '../components/ConfidenceBar';
 import { PageHeader } from '../components/PageHeader';
 import { ResponsiveRecordList } from '../components/ResponsiveRecordList';
-import { formatDateTime, formatPrice, formatRelativeTime } from '../utils/format';
-import { sortNewestFirst } from '../utils/sort';
+import { formatDateTime, formatLocation, formatPrice, formatRelativeStrength, formatRelativeTime } from '../utils/format';
+import { isWatchingRow, sortTriggeredThenNewest } from '../utils/sort';
+import { StatusChip } from '../components/StatusChip';
 import { monoSx } from '../theme/theme';
 
 export function ScannerPage() {
-  const [minConfidence, setMinConfidence] = useState(70);
+  const [minConfidence, setMinConfidence] = useState(75);
   const [timeframe, setTimeframe] = useState('');
   const [side, setSide] = useState('');
   const [search, setSearch] = useState('');
+  const [stage, setStage] = useState('');
   const live = useLiveStore((s) => s.opportunities) as unknown as Array<Record<string, unknown>>;
   const qc = useQueryClient();
 
@@ -54,13 +56,15 @@ export function ScannerPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['scanner-status'] }),
   });
 
-  const items = sortNewestFirst(
+  const items = sortTriggeredThenNewest(
     ((live.length ? live : (data?.items ?? [])) as Array<Record<string, unknown>>).filter(
       (o: Record<string, unknown>) => {
-        if (Number(o.confidence) < minConfidence) return false;
+        if (!isWatchingRow(o) && Number(o.confidence) < minConfidence) return false;
         if (timeframe && o.timeframe !== timeframe) return false;
         if (side && o.side !== side) return false;
         if (search && !String(o.symbol).toLowerCase().includes(search.toLowerCase())) return false;
+        if (stage === 'triggered' && isWatchingRow(o)) return false;
+        if (stage === 'watching' && !isWatchingRow(o)) return false;
         return true;
       },
     ),
@@ -96,7 +100,7 @@ export function ScannerPage() {
           gap: 1.5,
           gridTemplateColumns: {
             xs: 'minmax(0, 1fr) minmax(0, 1fr)',
-            md: 'repeat(4, minmax(0, 1fr)) auto',
+            md: 'repeat(5, minmax(0, 1fr)) auto',
           },
           alignItems: 'end',
           borderRadius: 'md',
@@ -138,6 +142,18 @@ export function ScannerPage() {
             <Option value="SELL">SELL</Option>
           </Select>
         </FormControl>
+        <FormControl sx={{ minWidth: 0 }}>
+          <FormLabel>Stage</FormLabel>
+          <Select
+            value={stage}
+            onChange={(_, v) => setStage(v ?? '')}
+            sx={{ minWidth: 0, width: '100%' }}
+          >
+            <Option value="">All</Option>
+            <Option value="triggered">Triggered</Option>
+            <Option value="watching">Watching</Option>
+          </Select>
+        </FormControl>
         <FormControl sx={{ minWidth: 0, gridColumn: { xs: '1 / -1', md: 'auto' } }}>
           <FormLabel>Search</FormLabel>
           <Input
@@ -170,12 +186,15 @@ export function ScannerPage() {
         cardMeta={(o) => (
           <>
             <SideChip side={String(o.side)} />
+            <StatusChip status={String(o.status ?? o.stage ?? 'ranked')} />
             <EntryTimingChip entryTiming={o.entryTiming} strategyIds={o.strategyIds} />
             {o.regime ? <RegimeChip regime={String(o.regime)} /> : null}
           </>
         )}
         cardFields={[
           { label: 'Appeared', render: (o) => formatRelativeTime(o.createdAt as string) },
+          { label: 'Location', render: (o) => formatLocation(o.locations) },
+          { label: 'RS', render: (o) => formatRelativeStrength(o.relativeStrength) },
           { label: 'Confidence', render: (o) => <ConfidenceBar value={Number(o.confidence)} /> },
           { label: 'RR', render: (o) => <Typography sx={monoSx}>{Number(o.riskReward).toFixed(2)}</Typography> },
           { label: 'Entry', render: (o) => <Typography sx={monoSx}>{formatPrice(Number(o.entry))}</Typography> },
@@ -188,6 +207,7 @@ export function ScannerPage() {
         columns={[
           { key: 'rank', header: '#', render: (o) => String(o.rank ?? '—') },
           { key: 'pair', header: 'Pair', render: (o) => <Typography sx={monoSx}>{String(o.symbol)}</Typography> },
+          { key: 'status', header: 'Stage', render: (o) => <StatusChip status={String(o.status ?? o.stage ?? 'ranked')} /> },
           { key: 'side', header: 'Side', render: (o) => <SideChip side={String(o.side)} /> },
           {
             key: 'timing',
@@ -203,6 +223,8 @@ export function ScannerPage() {
             },
           },
           { key: 'regime', header: 'Regime', render: (o) => (o.regime ? <RegimeChip regime={String(o.regime)} /> : '—') },
+          { key: 'loc', header: 'Location', render: (o) => formatLocation(o.locations) },
+          { key: 'rs', header: 'RS', numeric: true, render: (o) => formatRelativeStrength(o.relativeStrength) },
           { key: 'conf', header: 'Confidence', numeric: true, render: (o) => `${Number(o.confidence).toFixed(1)}%` },
           { key: 'entry', header: 'Entry', numeric: true, render: (o) => formatPrice(Number(o.entry)) },
           { key: 'sl', header: 'SL', numeric: true, render: (o) => formatPrice(Number(o.stopLoss)) },

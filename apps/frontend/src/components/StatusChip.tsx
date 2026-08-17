@@ -4,7 +4,8 @@ import type { ColorPaletteProp } from '@mui/joy/styles';
 type Tone = ColorPaletteProp;
 
 const STATUS_TONE: Record<string, Tone> = {
-  ranked: 'primary',
+  ranked: 'success',
+  watching: 'warning',
   approved: 'success',
   rejected: 'danger',
   expired: 'neutral',
@@ -20,12 +21,17 @@ const STATUS_TONE: Record<string, Tone> = {
   running: 'primary',
 };
 
+const STATUS_LABEL: Record<string, string> = {
+  ranked: 'Triggered',
+  watching: 'Watching',
+};
+
 export function StatusChip({ status }: { status: string }) {
   const color = STATUS_TONE[status] ?? 'neutral';
 
   return (
     <Chip size="sm" variant="soft" color={color} sx={{ textTransform: 'capitalize' }}>
-      {status.replace(/_/g, ' ')}
+      {STATUS_LABEL[status] ?? status.replace(/_/g, ' ')}
     </Chip>
   );
 }

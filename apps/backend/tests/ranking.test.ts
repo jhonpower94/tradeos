@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { leftoverRankedFilter, rankOpportunities, sortByCreatedAtDesc } from '../src/modules/ranking/index.js';
+import { leftoverActiveFilter, rankOpportunities, sortTriggeredThenNewest } from '../src/modules/ranking/index.js';
 import { Side, Timeframe, type Opportunity } from '@trading-os/shared';
 
 function opp(partial: Partial<Opportunity> & Pick<Opportunity, 'symbol' | 'confidence'>): Opportunity {
@@ -52,31 +52,31 @@ describe('rankOpportunities', () => {
   });
 });
 
-describe('list order contract', () => {
-  it('sorts newest createdAt first even when rank is inverted', () => {
-    const newest = { symbol: 'NEWUSDT', rank: 3, createdAt: new Date('2026-08-17T10:00:00Z') };
-    const oldest = { symbol: 'OLDUSDT', rank: 1, createdAt: new Date('2026-08-17T08:00:00Z') };
-    const mid = { symbol: 'MIDUSDT', rank: 2, createdAt: new Date('2026-08-17T09:00:00Z') };
-    const ordered = sortByCreatedAtDesc([oldest, newest, mid]);
-    expect(ordered.map((o) => o.symbol)).toEqual(['NEWUSDT', 'MIDUSDT', 'OLDUSDT']);
-    expect(ordered.map((o) => o.rank)).toEqual([3, 2, 1]);
-  });
-});
-
-describe('leftoverRankedFilter', () => {
-  it('expires every ranked row when the current scan is empty', () => {
-    expect(leftoverRankedFilter('user-1', [])).toEqual({
+describe('leftoverActiveFilter', () => {
+  it('expires every ranked and watching row when the current scan is empty', () => {
+    expect(leftoverActiveFilter('user-1', [])).toEqual({
       userId: 'user-1',
-      status: 'ranked',
+      status: { $in: ['ranked', 'watching'] },
     });
   });
 
   it('excludes current-scan symbol/timeframe/side from expiry', () => {
-    const filter = leftoverRankedFilter('user-1', [
+    const filter = leftoverActiveFilter('user-1', [
       { symbol: 'BTCUSDT', timeframe: '1h', side: 'BUY' },
     ]);
     expect(filter.userId).toBe('user-1');
-    expect(filter.status).toBe('ranked');
+    expect(filter.status).toEqual({ $in: ['ranked', 'watching'] });
     expect(filter.$nor).toEqual([{ symbol: 'BTCUSDT', timeframe: '1h', side: 'BUY' }]);
+  });
+});
+
+describe('sortTriggeredThenNewest', () => {
+  it('puts triggered rows above watching, then newest createdAt', () => {
+    const ordered = sortTriggeredThenNewest([
+      { symbol: 'OLDWATCH', stage: 'watching', createdAt: new Date('2026-08-17T11:00:00Z') },
+      { symbol: 'NEWTRIG', stage: 'triggered', createdAt: new Date('2026-08-17T10:00:00Z') },
+      { symbol: 'OLDTRIG', status: 'ranked', createdAt: new Date('2026-08-17T08:00:00Z') },
+    ]);
+    expect(ordered.map((o) => o.symbol)).toEqual(['NEWTRIG', 'OLDTRIG', 'OLDWATCH']);
   });
 });

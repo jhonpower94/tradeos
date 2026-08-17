@@ -78,6 +78,19 @@ export function formatDuration(ms: number | null | undefined): string {
   return `${days}d ${hours % 24}h`;
 }
 
+export function formatRelativeStrength(value: unknown): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  const sign = n > 0 ? '+' : '';
+  return `${sign}${n.toFixed(1)}% vs BTC`;
+}
+
+export function formatLocation(locations: unknown): string {
+  if (!Array.isArray(locations) || locations.length === 0) return '—';
+  const type = (locations[0] as { type?: unknown }).type;
+  return type ? String(type).replace(/_/g, ' ') : '—';
+}
+
 export function truncateMiddle(value: string, max = 10): string {
   if (value.length <= max) return value;
   const half = Math.floor((max - 3) / 2);

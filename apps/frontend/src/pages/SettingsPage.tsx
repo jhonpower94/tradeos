@@ -667,6 +667,25 @@ export function SettingsPage() {
             onChange={(checked) => saveSettings.mutate({ scanner: { htfVetoEnabled: checked } })}
             hint="Block BUY when the parent timeframe EMA50/200 is bearish (and vice versa for SELL)."
           />
+          <SwitchRow
+            label="Location gate"
+            checked={data.scanner?.locationGateEnabled !== false}
+            onChange={(checked) => saveSettings.mutate({ scanner: { locationGateEnabled: checked } })}
+            hint="Only fully analyze a pair when price is near support, resistance, VWAP, pivots, order blocks, or previous-day high/low. Far from a level is skipped. At a level without confirmation becomes Watching."
+          />
+          <SettingsNumberField
+            label="Location proximity (ATR)"
+            value={Number(data.scanner?.locationProximityAtr ?? 1.5)}
+            min={0.25}
+            max={5}
+            onSave={(n) => saveSettings.mutate({ scanner: { locationProximityAtr: n } })}
+          />
+          <SwitchRow
+            label="BTC relative strength"
+            checked={data.scanner?.btcRelativeStrengthEnabled !== false}
+            onChange={(checked) => saveSettings.mutate({ scanner: { btcRelativeStrengthEnabled: checked } })}
+            hint="Longs must outperform BTC over 24h; shorts must underperform. Missing BTC data does not block."
+          />
         </Sheet>
       )}
 

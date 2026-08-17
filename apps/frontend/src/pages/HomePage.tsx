@@ -27,7 +27,9 @@ export function HomePage() {
   });
 
   const opportunities = liveOpps.length ? liveOpps : ((oppsData?.items ?? []) as Array<Record<string, unknown>>);
-  const topOpportunities = sortByRankThenConfidence(opportunities).slice(0, 5);
+  const topOpportunities = sortByRankThenConfidence(
+    opportunities.filter((o) => o.status !== 'watching' && o.stage !== 'watching'),
+  ).slice(0, 5);
   const trades = (tradesData?.items ?? []) as Array<Record<string, unknown>>;
   const todayPnl = Number(portfolio?.todayPnl ?? 0);
 

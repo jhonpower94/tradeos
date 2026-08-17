@@ -16,8 +16,8 @@ import { StatusChip } from '../components/StatusChip';
 import { EntryTimingChip } from '../components/EntryTimingChip';
 import { ConfidenceBar } from '../components/ConfidenceBar';
 import { ResponsiveRecordList } from '../components/ResponsiveRecordList';
-import { formatDateTime, formatPrice, formatRelativeTime } from '../utils/format';
-import { sortNewestFirst } from '../utils/sort';
+import { formatDateTime, formatLocation, formatPrice, formatRelativeStrength, formatRelativeTime } from '../utils/format';
+import { sortTriggeredThenNewest } from '../utils/sort';
 import { monoSx } from '../theme/theme';
 
 function mutationErrorMessage(err: unknown): string {
@@ -67,7 +67,7 @@ export function SignalsPage() {
     },
   });
 
-  const rows = sortNewestFirst((data?.items ?? []) as Array<Record<string, unknown>>);
+  const rows = sortTriggeredThenNewest((data?.items ?? []) as Array<Record<string, unknown>>);
 
   return (
     <Box>
@@ -75,7 +75,7 @@ export function SignalsPage() {
         title="Signals"
         subtitle={
           view === 'ranked'
-            ? 'Newest opportunities first — same data as Scanner. Approve here to trade.'
+            ? 'Triggered is approve-now. Watching is at a level, waiting for confirmation.'
             : 'Past signals (executed, rejected, expired).'
         }
         actions={
@@ -110,7 +110,7 @@ export function SignalsPage() {
       <ResponsiveRecordList
         rows={rows}
         getRowKey={(s) => String(s._id)}
-        emptyTitle={view === 'ranked' ? 'No active ranked signals right now.' : 'No signal history yet.'}
+        emptyTitle={view === 'ranked' ? 'No active signals right now.' : 'No signal history yet.'}
         cardTitle={(s) => (
           <Typography level="title-md" sx={monoSx}>
             {String(s.symbol)}
@@ -126,6 +126,8 @@ export function SignalsPage() {
         cardFields={[
           { label: 'TF', render: (s) => String(s.timeframe ?? '—') },
           { label: 'Appeared', render: (s) => formatRelativeTime(s.createdAt as string) },
+          { label: 'Location', render: (s) => formatLocation(s.locations) },
+          { label: 'RS', render: (s) => formatRelativeStrength(s.relativeStrength) },
           { label: 'Confidence', render: (s) => <ConfidenceBar value={Number(s.confidence)} /> },
           { label: 'Entry', render: (s) => <Typography sx={monoSx}>{formatPrice(Number(s.entry))}</Typography> },
           { label: 'Strategy', render: (s) => String(s.primaryStrategy) },
@@ -142,11 +144,13 @@ export function SignalsPage() {
               >
                 Chart
               </Button>
-              {s.status === 'ranked' && view === 'ranked' && (
+              {view === 'ranked' && (s.status === 'ranked' || s.status === 'watching') && (
                 <>
-                  <Button color="success" onClick={() => approve.mutate(id)}>
-                    Approve
-                  </Button>
+                  {s.status === 'ranked' && (
+                    <Button color="success" onClick={() => approve.mutate(id)}>
+                      Approve
+                    </Button>
+                  )}
                   <Button color="warning" variant="outlined" onClick={() => reject.mutate(id)}>
                     Reject
                   </Button>
@@ -200,6 +204,8 @@ export function SignalsPage() {
             },
           },
           { key: 'conf', header: 'Confidence', numeric: true, render: (s) => `${Number(s.confidence).toFixed(1)}%` },
+          { key: 'loc', header: 'Location', render: (s) => formatLocation(s.locations) },
+          { key: 'rs', header: 'RS', numeric: true, render: (s) => formatRelativeStrength(s.relativeStrength) },
           { key: 'entry', header: 'Entry', numeric: true, render: (s) => formatPrice(Number(s.entry)) },
           { key: 'status', header: 'Status', render: (s) => <StatusChip status={String(s.status)} /> },
           { key: 'strategy', header: 'Strategy', render: (s) => String(s.primaryStrategy) },
@@ -220,11 +226,13 @@ export function SignalsPage() {
                   >
                     Chart
                   </Button>
-                  {s.status === 'ranked' && view === 'ranked' && (
+                  {view === 'ranked' && (s.status === 'ranked' || s.status === 'watching') && (
                     <>
-                      <Button size="sm" color="success" onClick={() => approve.mutate(id)}>
-                        Approve
-                      </Button>
+                      {s.status === 'ranked' && (
+                        <Button size="sm" color="success" onClick={() => approve.mutate(id)}>
+                          Approve
+                        </Button>
+                      )}
                       <Button size="sm" color="warning" variant="outlined" onClick={() => reject.mutate(id)}>
                         Reject
                       </Button>
