@@ -37,7 +37,7 @@ import {
   getVapidPublicKey,
   isWebPushConfigured,
 } from '../modules/notifications/index.js';
-import { NotificationType, Side, OrderType, type Opportunity } from '@trading-os/shared';
+import { NotificationType, Side, OrderType, SignalStatus, type Opportunity } from '@trading-os/shared';
 import { runBacktest, listBacktests, getBacktest } from '../modules/backtest/index.js';
 import { strategyRegistry } from '../modules/strategies/index.js';
 
@@ -160,13 +160,16 @@ export async function registerRoutes(app: FastifyInstance) {
     return scannerService.getStatus();
   });
 
-  // Signals — default: active ranked board (same as scanner opportunities)
+  // Signals — default: newest active opportunities (same data as scanner)
   app.get('/api/v1/signals', { preHandler: auth }, async (req) => {
     const userId = getUserId(req);
     const q = req.query as { view?: string; minConfidence?: string };
     if (q.view === 'history') {
-      const items = await Signal.find({ userId })
-        .sort({ updatedAt: -1, createdAt: -1 })
+      const items = await Signal.find({
+        userId,
+        status: { $in: [SignalStatus.EXECUTED, SignalStatus.REJECTED, SignalStatus.EXPIRED] },
+      })
+        .sort({ createdAt: -1 })
         .limit(100)
         .lean();
       return { items, view: 'history' };

@@ -144,21 +144,24 @@ class ScannerService {
     });
     await Promise.all(workers);
 
-    const ranked = await persistOpportunities(userId, opportunities);
+    const items = await persistOpportunities(userId, opportunities);
     this.status.lastScanAt = new Date();
     this.status.pairsScanned = scanned;
-    this.status.opportunitiesFound = ranked.length;
+    this.status.opportunitiesFound = items.length;
 
-    gatewayBroadcast(userId, 'opportunities', ranked);
+    gatewayBroadcast(userId, 'opportunities', items);
     gatewayBroadcast(userId, 'scanner.status', this.getStatus());
 
-    if (ranked.length) {
+    if (items.length) {
+      const byRank = [...items].sort(
+        (a, b) => (a.rank ?? Number.POSITIVE_INFINITY) - (b.rank ?? Number.POSITIVE_INFINITY),
+      );
       await notify(userId, NotificationType.TRADE_SIGNAL, {
         title: 'New opportunities',
-        body: `${ranked.length} ranked opportunities`,
-        payload: { count: ranked.length, top: ranked[0] },
+        body: `${items.length} ranked opportunities`,
+        payload: { count: items.length, top: byRank[0] },
       });
-      await processAutoSignals(userId, ranked);
+      await processAutoSignals(userId, byRank);
     }
   }
 

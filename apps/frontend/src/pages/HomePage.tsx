@@ -11,6 +11,7 @@ import { StatusChip } from '../components/StatusChip';
 import { PnlText } from '../components/PnlText';
 import { KeyValueList } from '../components/ResponsiveRecordList';
 import { formatNumber } from '../utils/format';
+import { sortByRankThenConfidence } from '../utils/sort';
 import { monoSx } from '../theme/theme';
 
 export function HomePage() {
@@ -26,6 +27,7 @@ export function HomePage() {
   });
 
   const opportunities = liveOpps.length ? liveOpps : ((oppsData?.items ?? []) as Array<Record<string, unknown>>);
+  const topOpportunities = sortByRankThenConfidence(opportunities).slice(0, 5);
   const trades = (tradesData?.items ?? []) as Array<Record<string, unknown>>;
   const todayPnl = Number(portfolio?.todayPnl ?? 0);
 
@@ -60,7 +62,7 @@ export function HomePage() {
           </Box>
           <KeyValueList
             emptyTitle="No opportunities yet"
-            items={opportunities.slice(0, 5).map((o, i) => ({
+            items={topOpportunities.map((o, i) => ({
               key: String(o._id ?? `${o.symbol}-${o.timeframe ?? ''}-${o.side ?? ''}-${i}`),
               primary: String(o.symbol),
               secondary: String(o.timeframe ?? ''),

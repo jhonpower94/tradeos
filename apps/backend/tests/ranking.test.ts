@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { leftoverRankedFilter, rankOpportunities, sortByCreatedAtDesc } from '../src/modules/ranking/index.js';
 import { Side, Timeframe, type Opportunity } from '@trading-os/shared';
-import { rankOpportunities } from '../src/modules/ranking/index.js';
 
 function opp(partial: Partial<Opportunity> & Pick<Opportunity, 'symbol' | 'confidence'>): Opportunity {
   return {
@@ -49,5 +49,34 @@ describe('rankOpportunities', () => {
     ]);
     expect(ranked.map((o) => o.symbol)).toEqual(['AUSDT', 'BUSDT', 'ZUSDT']);
     expect(ranked.map((o) => o.rank)).toEqual([1, 2, 3]);
+  });
+});
+
+describe('list order contract', () => {
+  it('sorts newest createdAt first even when rank is inverted', () => {
+    const newest = { symbol: 'NEWUSDT', rank: 3, createdAt: new Date('2026-08-17T10:00:00Z') };
+    const oldest = { symbol: 'OLDUSDT', rank: 1, createdAt: new Date('2026-08-17T08:00:00Z') };
+    const mid = { symbol: 'MIDUSDT', rank: 2, createdAt: new Date('2026-08-17T09:00:00Z') };
+    const ordered = sortByCreatedAtDesc([oldest, newest, mid]);
+    expect(ordered.map((o) => o.symbol)).toEqual(['NEWUSDT', 'MIDUSDT', 'OLDUSDT']);
+    expect(ordered.map((o) => o.rank)).toEqual([3, 2, 1]);
+  });
+});
+
+describe('leftoverRankedFilter', () => {
+  it('expires every ranked row when the current scan is empty', () => {
+    expect(leftoverRankedFilter('user-1', [])).toEqual({
+      userId: 'user-1',
+      status: 'ranked',
+    });
+  });
+
+  it('excludes current-scan symbol/timeframe/side from expiry', () => {
+    const filter = leftoverRankedFilter('user-1', [
+      { symbol: 'BTCUSDT', timeframe: '1h', side: 'BUY' },
+    ]);
+    expect(filter.userId).toBe('user-1');
+    expect(filter.status).toBe('ranked');
+    expect(filter.$nor).toEqual([{ symbol: 'BTCUSDT', timeframe: '1h', side: 'BUY' }]);
   });
 });

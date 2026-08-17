@@ -17,6 +17,7 @@ import { EntryTimingChip } from '../components/EntryTimingChip';
 import { ConfidenceBar } from '../components/ConfidenceBar';
 import { ResponsiveRecordList } from '../components/ResponsiveRecordList';
 import { formatDateTime, formatPrice, formatRelativeTime } from '../utils/format';
+import { sortNewestFirst } from '../utils/sort';
 import { monoSx } from '../theme/theme';
 
 function mutationErrorMessage(err: unknown): string {
@@ -66,7 +67,7 @@ export function SignalsPage() {
     },
   });
 
-  const rows = (data?.items ?? []) as Array<Record<string, unknown>>;
+  const rows = sortNewestFirst((data?.items ?? []) as Array<Record<string, unknown>>);
 
   return (
     <Box>
@@ -74,7 +75,7 @@ export function SignalsPage() {
         title="Signals"
         subtitle={
           view === 'ranked'
-            ? 'Active ranked opportunities — same board as Scanner. Approve here to trade.'
+            ? 'Newest opportunities first — same data as Scanner. Approve here to trade.'
             : 'Past signals (executed, rejected, expired).'
         }
         actions={
@@ -124,7 +125,7 @@ export function SignalsPage() {
         )}
         cardFields={[
           { label: 'TF', render: (s) => String(s.timeframe ?? '—') },
-          { label: 'Appeared', render: (s) => formatRelativeTime((s.updatedAt ?? s.createdAt) as string) },
+          { label: 'Appeared', render: (s) => formatRelativeTime(s.createdAt as string) },
           { label: 'Confidence', render: (s) => <ConfidenceBar value={Number(s.confidence)} /> },
           { label: 'Entry', render: (s) => <Typography sx={monoSx}>{formatPrice(Number(s.entry))}</Typography> },
           { label: 'Strategy', render: (s) => String(s.primaryStrategy) },
@@ -158,7 +159,7 @@ export function SignalsPage() {
           const id = String(s._id);
           if (chartSignalId !== id) return null;
           const timeframe = String(s.timeframe ?? '1h');
-          const appearedAt = (s.updatedAt ?? s.createdAt) as string | undefined;
+          const appearedAt = s.createdAt as string | undefined;
           return (
             <Box>
               <Typography level="body-sm" sx={{ mb: 1.5, ...monoSx, color: 'text.secondary' }}>
@@ -194,7 +195,7 @@ export function SignalsPage() {
             key: 'appeared',
             header: 'Appeared',
             render: (s) => {
-              const appearedAt = (s.updatedAt ?? s.createdAt) as string | undefined;
+              const appearedAt = s.createdAt as string | undefined;
               return <span title={formatDateTime(appearedAt)}>{formatRelativeTime(appearedAt)}</span>;
             },
           },

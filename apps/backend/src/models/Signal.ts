@@ -33,6 +33,7 @@ const signalSchema = new Schema(
 );
 
 signalSchema.index({ userId: 1, status: 1, confidence: -1 });
+signalSchema.index({ userId: 1, status: 1, createdAt: -1 });
 signalSchema.index({ userId: 1, symbol: 1, timeframe: 1, side: 1, status: 1 });
 
 export type SignalDoc = InferSchemaType<typeof signalSchema> & {

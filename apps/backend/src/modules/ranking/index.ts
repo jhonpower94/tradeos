@@ -68,12 +68,38 @@ export function rankOpportunities(opps: Opportunity[]): Opportunity[] {
   return sorted.map((o, i) => ({ ...o, rank: i + 1 }));
 }
 
+/** Mongo filter for RANKED rows not in the current scan. Does not touch approved. */
+export function leftoverRankedFilter(
+  userId: string,
+  current: Array<{ symbol: string; timeframe: string; side: string }>,
+): Record<string, unknown> {
+  const q: Record<string, unknown> = { userId, status: SignalStatus.RANKED };
+  if (current.length > 0) {
+    q.$nor = current.map((o) => ({
+      symbol: o.symbol,
+      timeframe: o.timeframe,
+      side: o.side,
+    }));
+  }
+  return q;
+}
+
+/** List contract: newest first-appearance first. Rank is independent of position. */
+export function sortByCreatedAtDesc<T extends { createdAt?: Date | string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return tb - ta;
+  });
+}
+
 export async function persistOpportunities(userId: string, opps: Opportunity[]) {
   const ranked = rankOpportunities(opps);
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const docs: Array<Opportunity & { createdAt?: Date }> = [];
 
   for (const o of ranked) {
-    await Signal.findOneAndUpdate(
+    const doc = await Signal.findOneAndUpdate(
       {
         userId,
         symbol: o.symbol,
@@ -106,10 +132,16 @@ export async function persistOpportunities(userId: string, opps: Opportunity[]) 
           side: o.side,
         },
       },
-      { upsert: true },
-    );
+      { upsert: true, new: true },
+    ).lean();
+    if (doc) docs.push(doc as Opportunity & { createdAt?: Date });
   }
-  return ranked;
+
+  await Signal.updateMany(leftoverRankedFilter(userId, ranked), {
+    $set: { status: SignalStatus.EXPIRED },
+  });
+
+  return sortByCreatedAtDesc(docs);
 }
 
 export async function listOpportunities(userId: string, filters?: {
@@ -127,5 +159,5 @@ export async function listOpportunities(userId: string, filters?: {
   if (filters?.timeframe) q.timeframe = filters.timeframe;
   if (filters?.side) q.side = filters.side;
   if (filters?.search) q.symbol = new RegExp(filters.search, 'i');
-  return Signal.find(q).sort({ rank: 1, confidence: -1 }).limit(100).lean();
+  return Signal.find(q).sort({ createdAt: -1 }).limit(100).lean();
 }

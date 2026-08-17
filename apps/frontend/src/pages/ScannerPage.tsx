@@ -17,7 +17,8 @@ import { EntryTimingChip } from '../components/EntryTimingChip';
 import { ConfidenceBar } from '../components/ConfidenceBar';
 import { PageHeader } from '../components/PageHeader';
 import { ResponsiveRecordList } from '../components/ResponsiveRecordList';
-import { formatPrice } from '../utils/format';
+import { formatDateTime, formatPrice, formatRelativeTime } from '../utils/format';
+import { sortNewestFirst } from '../utils/sort';
 import { monoSx } from '../theme/theme';
 
 export function ScannerPage() {
@@ -53,14 +54,16 @@ export function ScannerPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['scanner-status'] }),
   });
 
-  const items = ((live.length ? live : (data?.items ?? [])) as Array<Record<string, unknown>>).filter(
-    (o: Record<string, unknown>) => {
-      if (Number(o.confidence) < minConfidence) return false;
-      if (timeframe && o.timeframe !== timeframe) return false;
-      if (side && o.side !== side) return false;
-      if (search && !String(o.symbol).toLowerCase().includes(search.toLowerCase())) return false;
-      return true;
-    },
+  const items = sortNewestFirst(
+    ((live.length ? live : (data?.items ?? [])) as Array<Record<string, unknown>>).filter(
+      (o: Record<string, unknown>) => {
+        if (Number(o.confidence) < minConfidence) return false;
+        if (timeframe && o.timeframe !== timeframe) return false;
+        if (side && o.side !== side) return false;
+        if (search && !String(o.symbol).toLowerCase().includes(search.toLowerCase())) return false;
+        return true;
+      },
+    ),
   );
 
   return (
@@ -172,6 +175,7 @@ export function ScannerPage() {
           </>
         )}
         cardFields={[
+          { label: 'Appeared', render: (o) => formatRelativeTime(o.createdAt as string) },
           { label: 'Confidence', render: (o) => <ConfidenceBar value={Number(o.confidence)} /> },
           { label: 'RR', render: (o) => <Typography sx={monoSx}>{Number(o.riskReward).toFixed(2)}</Typography> },
           { label: 'Entry', render: (o) => <Typography sx={monoSx}>{formatPrice(Number(o.entry))}</Typography> },
@@ -189,6 +193,14 @@ export function ScannerPage() {
             key: 'timing',
             header: 'Timing',
             render: (o) => <EntryTimingChip entryTiming={o.entryTiming} strategyIds={o.strategyIds} />,
+          },
+          {
+            key: 'appeared',
+            header: 'Appeared',
+            render: (o) => {
+              const appearedAt = o.createdAt as string | undefined;
+              return <span title={formatDateTime(appearedAt)}>{formatRelativeTime(appearedAt)}</span>;
+            },
           },
           { key: 'regime', header: 'Regime', render: (o) => (o.regime ? <RegimeChip regime={String(o.regime)} /> : '—') },
           { key: 'conf', header: 'Confidence', numeric: true, render: (o) => `${Number(o.confidence).toFixed(1)}%` },
