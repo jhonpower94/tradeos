@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   alreadyOpenOnSymbolReason,
   hasOpenPositionOnSymbol,
-  positionNotionalCap,
   softPrecheck,
   validateRisk,
 } from '../src/modules/risk/index.js';
@@ -72,44 +71,6 @@ describe('risk', () => {
     expect(alreadyOpenOnSymbolReason('BTCUSDT')).toBe(
       'Already have an open position in BTCUSDT',
     );
-  });
-
-  it('positionNotionalCap splits equity evenly across X slots', () => {
-    expect(
-      positionNotionalCap({
-        equity: 2100,
-        freeQuote: 2100,
-        maxOpenPositions: 2,
-        maxFreeNotionalPct: 1,
-      }),
-    ).toBe(1050);
-    expect(
-      positionNotionalCap({
-        equity: 2100,
-        freeQuote: 1050,
-        maxOpenPositions: 2,
-        maxFreeNotionalPct: 1,
-      }),
-    ).toBe(1050);
-    expect(
-      positionNotionalCap({
-        equity: 2100,
-        freeQuote: 1400,
-        maxOpenPositions: 3,
-        maxFreeNotionalPct: 1,
-      }),
-    ).toBe(700);
-  });
-
-  it('positionNotionalCap uses equity % when tighter than a slot', () => {
-    expect(
-      positionNotionalCap({
-        equity: 10_000,
-        freeQuote: 10_000,
-        maxOpenPositions: 2,
-        maxFreeNotionalPct: 0.25,
-      }),
-    ).toBe(2500);
   });
 
   it('rejects bad RR', async () => {
@@ -215,15 +176,14 @@ describe('risk', () => {
     expect((result.qty ?? 0) * 95_000).toBeLessThanOrEqual(freeQuote);
   });
 
-  it('caps notional to maxFreeNotionalPct of equity when tighter than a slot', async () => {
-    const equity = 10_000;
+  it('caps notional to maxFreeNotionalPct of freeQuote', async () => {
+    const freeQuote = 10_000;
     const result = await validateRisk({
       userId: '000000000000000000000001',
-      equity,
-      freeQuote: equity,
+      equity: 10_000,
+      freeQuote,
       risk: {
         ...baseRisk,
-        maxOpenPositions: 2,
         maxFreeNotionalPct: 0.25,
         atrSlMultiplierMin: 0.01,
         atrSlMultiplierMax: 100,
@@ -244,114 +204,7 @@ describe('risk', () => {
       },
     });
     expect(result.ok).toBe(true);
-    expect((result.qty ?? 0) * 95_000).toBeLessThanOrEqual(equity * 0.25 + 1e-6);
-  });
-
-  it('caps a tight-stop fill at equity / 2 slots, not the full book', async () => {
-    const equity = 2100;
-    const result = await validateRisk({
-      userId: '000000000000000000000001',
-      equity,
-      freeQuote: equity,
-      risk: {
-        ...baseRisk,
-        maxRiskPerTrade: 0.05,
-        maxOpenPositions: 2,
-        maxFreeNotionalPct: 1,
-        atrSlMultiplierMin: 0.01,
-        atrSlMultiplierMax: 100,
-      },
-      opportunity: {
-        symbol: 'BTCUSDT',
-        timeframe: '1h' as never,
-        side: Side.BUY,
-        confidence: 80,
-        entry: 95_000,
-        stopLoss: 94_800,
-        takeProfit: 95_400,
-        riskReward: 2,
-        strategyIds: ['breakout'],
-        primaryStrategy: 'breakout',
-        evidence: [],
-        regime: MarketRegime.TRENDING_BULL,
-      },
-    });
-    expect(result.ok).toBe(true);
-    const notional = (result.qty ?? 0) * 95_000;
-    expect(notional).toBeLessThanOrEqual(equity / 2 + 1e-6);
-    expect(notional).toBeGreaterThan(equity / 2 - 95_000 * 0.001);
-  });
-
-  it('second fill may use remaining cash up to one slot', async () => {
-    const equity = 2100;
-    const remaining = 1050;
-    const result = await validateRisk({
-      userId: '000000000000000000000001',
-      equity,
-      freeQuote: remaining,
-      risk: {
-        ...baseRisk,
-        maxRiskPerTrade: 0.05,
-        maxOpenPositions: 2,
-        maxFreeNotionalPct: 1,
-        atrSlMultiplierMin: 0.01,
-        atrSlMultiplierMax: 100,
-      },
-      opportunity: {
-        symbol: 'ETHUSDT',
-        timeframe: '1h' as never,
-        side: Side.BUY,
-        confidence: 80,
-        entry: 95_000,
-        stopLoss: 94_800,
-        takeProfit: 95_400,
-        riskReward: 2,
-        strategyIds: ['breakout'],
-        primaryStrategy: 'breakout',
-        evidence: [],
-        regime: MarketRegime.TRENDING_BULL,
-      },
-    });
-    expect(result.ok).toBe(true);
-    const notional = (result.qty ?? 0) * 95_000;
-    expect(notional).toBeLessThanOrEqual(remaining + 1e-6);
-    expect(notional).toBeGreaterThan(remaining * 0.7);
-  });
-
-  it('caps a tight-stop fill at equity / 3 slots', async () => {
-    const equity = 2100;
-    const slot = equity / 3;
-    const result = await validateRisk({
-      userId: '000000000000000000000001',
-      equity,
-      freeQuote: 1400,
-      risk: {
-        ...baseRisk,
-        maxRiskPerTrade: 0.05,
-        maxOpenPositions: 3,
-        maxFreeNotionalPct: 1,
-        atrSlMultiplierMin: 0.01,
-        atrSlMultiplierMax: 100,
-      },
-      opportunity: {
-        symbol: 'SOLUSDT',
-        timeframe: '1h' as never,
-        side: Side.BUY,
-        confidence: 80,
-        entry: 95_000,
-        stopLoss: 94_800,
-        takeProfit: 95_400,
-        riskReward: 2,
-        strategyIds: ['breakout'],
-        primaryStrategy: 'breakout',
-        evidence: [],
-        regime: MarketRegime.TRENDING_BULL,
-      },
-    });
-    expect(result.ok).toBe(true);
-    const notional = (result.qty ?? 0) * 95_000;
-    expect(notional).toBeLessThanOrEqual(slot + 1e-6);
-    expect(notional).toBeGreaterThan(slot * 0.7);
+    expect((result.qty ?? 0) * 95_000).toBeLessThanOrEqual(freeQuote * 0.25 + 1e-6);
   });
 });
 
