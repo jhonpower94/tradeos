@@ -354,6 +354,7 @@ export function SettingsPage() {
             min={1}
             max={50}
             onSave={(n) => saveSettings.mutate({ risk: { maxOpenPositions: n } })}
+            helperText="Free USDT is split equally across remaining slots."
           />
           <SettingsNumberField
             label="Min risk/reward"
@@ -363,12 +364,12 @@ export function SettingsPage() {
             onSave={(n) => saveSettings.mutate({ risk: { minRiskReward: n } })}
           />
           <SettingsNumberField
-            label="Max % of free balance per trade"
-            value={Number(data.risk?.maxFreeNotionalPct ?? 0.25)}
-            min={0.05}
-            max={1}
-            onSave={(n) => saveSettings.mutate({ risk: { maxFreeNotionalPct: n } })}
-            helperText="Fraction of free USDT (1 = 100%, 0.25 = 25%). Range 0.05–1."
+            label="Min notional per trade (USDT)"
+            value={Number(data.risk?.minNotionalPerTrade ?? 1000)}
+            min={0}
+            max={1_000_000}
+            onSave={(n) => saveSettings.mutate({ risk: { minNotionalPerTrade: n } })}
+            helperText="Floor per entry (e.g. 2100 with 2 slots → ~1050 each). Size is also capped by max risk per trade. 0 disables the floor."
           />
         </Sheet>
       )}

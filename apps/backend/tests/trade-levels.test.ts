@@ -17,6 +17,7 @@ const baseRisk = {
   atrSlMultiplierMin: 0.1,
   atrSlMultiplierMax: 10,
   maxFreeNotionalPct: 1,
+  minNotionalPerTrade: 0,
 };
 
 describe('reanchorRiskLevels', () => {
@@ -82,7 +83,7 @@ describe('validateRisk after re-anchor', () => {
       userId: '000000000000000000000001',
       equity,
       freeQuote: equity,
-      risk: baseRisk,
+      risk: { ...baseRisk, maxOpenPositions: 1 },
       opportunity: {
         symbol: 'BTCUSDT',
         timeframe: '1h' as never,

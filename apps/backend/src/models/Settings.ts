@@ -19,7 +19,8 @@ const settingsSchema = new Schema(
       minLiquidityUsdt: { type: Number, default: 1_000_000 },
       atrSlMultiplierMin: { type: Number, default: 0.5 },
       atrSlMultiplierMax: { type: Number, default: 5 },
-      maxFreeNotionalPct: { type: Number, default: 0.25 },
+      maxFreeNotionalPct: { type: Number, default: 1 },
+      minNotionalPerTrade: { type: Number, default: 1000 },
     },
     trading: {
       mode: { type: String, enum: Object.values(TradingMode), default: TradingMode.PAPER },

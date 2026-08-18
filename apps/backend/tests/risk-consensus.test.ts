@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   alreadyOpenOnSymbolReason,
   hasOpenPositionOnSymbol,
+  slotTargetNotional,
   softPrecheck,
   validateRisk,
 } from '../src/modules/risk/index.js';
@@ -20,7 +21,8 @@ const baseRisk = {
   minLiquidityUsdt: 0,
   atrSlMultiplierMin: 0.5,
   atrSlMultiplierMax: 5,
-  maxFreeNotionalPct: 0.25,
+  maxFreeNotionalPct: 1,
+  minNotionalPerTrade: 0,
 };
 
 function bullishCandles(): Candle[] {
@@ -176,7 +178,7 @@ describe('risk', () => {
     expect((result.qty ?? 0) * 95_000).toBeLessThanOrEqual(freeQuote);
   });
 
-  it('caps notional to maxFreeNotionalPct of freeQuote', async () => {
+  it('caps notional to an equal share of remaining position slots', async () => {
     const freeQuote = 10_000;
     const result = await validateRisk({
       userId: '000000000000000000000001',
@@ -184,7 +186,8 @@ describe('risk', () => {
       freeQuote,
       risk: {
         ...baseRisk,
-        maxFreeNotionalPct: 0.25,
+        maxOpenPositions: 4,
+        minNotionalPerTrade: 0,
         atrSlMultiplierMin: 0.01,
         atrSlMultiplierMax: 100,
       },
@@ -204,7 +207,88 @@ describe('risk', () => {
       },
     });
     expect(result.ok).toBe(true);
-    expect((result.qty ?? 0) * 95_000).toBeLessThanOrEqual(freeQuote * 0.25 + 1e-6);
+    const notional = (result.qty ?? 0) * 95_000;
+    expect(notional).toBeLessThanOrEqual(freeQuote / 4 + 1e-6);
+    expect(notional).toBeGreaterThan(freeQuote / 4 - 95_000 * 0.00002);
+  });
+
+  it('sizes ~half of 2100 across 2 slots with min 1000 notional', async () => {
+    const freeQuote = 2_100;
+    const result = await validateRisk({
+      userId: '000000000000000000000001',
+      equity: 2_100,
+      freeQuote,
+      risk: {
+        ...baseRisk,
+        maxOpenPositions: 2,
+        minNotionalPerTrade: 1_000,
+        atrSlMultiplierMin: 0.01,
+        atrSlMultiplierMax: 100,
+      },
+      opportunity: {
+        symbol: 'BTCUSDT',
+        timeframe: '1h' as never,
+        side: Side.BUY,
+        confidence: 80,
+        entry: 100,
+        stopLoss: 98,
+        takeProfit: 104,
+        riskReward: 2,
+        strategyIds: ['breakout'],
+        primaryStrategy: 'breakout',
+        evidence: [],
+        regime: MarketRegime.TRENDING_BULL,
+      },
+    });
+    expect(result.ok).toBe(true);
+    const notional = (result.qty ?? 0) * 100;
+    expect(notional).toBeGreaterThanOrEqual(1_000);
+    expect(notional).toBeLessThanOrEqual(1_050 + 1e-6);
+  });
+
+  it('rejects when risk cap would size below min notional per trade', async () => {
+    const result = await validateRisk({
+      userId: '000000000000000000000001',
+      equity: 2_100,
+      freeQuote: 2_100,
+      risk: {
+        ...baseRisk,
+        maxOpenPositions: 2,
+        minNotionalPerTrade: 1_000,
+        atrSlMultiplierMin: 0.01,
+        atrSlMultiplierMax: 100,
+      },
+      opportunity: {
+        symbol: 'BTCUSDT',
+        timeframe: '1h' as never,
+        side: Side.BUY,
+        confidence: 80,
+        entry: 100,
+        stopLoss: 95,
+        takeProfit: 110,
+        riskReward: 2,
+        strategyIds: ['breakout'],
+        primaryStrategy: 'breakout',
+        evidence: [],
+        regime: MarketRegime.TRENDING_BULL,
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reasons.some((r) => r.includes('below min per trade'))).toBe(true);
+  });
+});
+
+describe('slotTargetNotional', () => {
+  it('splits 2100 across 2 slots at 1050 each', () => {
+    expect(slotTargetNotional(2_100, 2, 1_000)).toEqual({ targetNotional: 1_050, slots: 2 });
+  });
+
+  it('uses leftover free quote for the last slot', () => {
+    expect(slotTargetNotional(1_050, 1, 1_000)).toEqual({ targetNotional: 1_050, slots: 1 });
+  });
+
+  it('drops extra slots when cash cannot fund the min notional', () => {
+    expect(slotTargetNotional(2_100, 3, 1_000)).toEqual({ targetNotional: 1_050, slots: 2 });
   });
 });
 

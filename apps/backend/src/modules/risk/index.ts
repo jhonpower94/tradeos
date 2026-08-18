@@ -36,6 +36,35 @@ export function alreadyOpenOnSymbolReason(symbol: string): string {
   return `Already have an open position in ${symbol}`;
 }
 
+/** Remaining slots for a new entry (0 when max open positions is already reached). */
+export function remainingPositionSlots(maxOpenPositions: number, openCount: number): number {
+  return Math.max(0, maxOpenPositions - openCount);
+}
+
+/**
+ * Equal-split remaining free quote across remaining slots.
+ * If minNotionalPerTrade > 0 and cash cannot fund every configured slot, drop
+ * extra slots (e.g. 2100 free, min 1000, 3 slots → 2 × 1050).
+ */
+export function slotTargetNotional(
+  freeQuote: number,
+  remainingSlots: number,
+  minNotionalPerTrade = 0,
+): { targetNotional: number; slots: number } {
+  if (!(freeQuote > 0) || remainingSlots <= 0) {
+    return { targetNotional: 0, slots: 0 };
+  }
+  let slots = remainingSlots;
+  if (minNotionalPerTrade > 0) {
+    const affordable = Math.floor(freeQuote / minNotionalPerTrade + 1e-9);
+    if (affordable < 1) {
+      return { targetNotional: freeQuote, slots: 1 };
+    }
+    slots = Math.min(remainingSlots, affordable);
+  }
+  return { targetNotional: freeQuote / slots, slots };
+}
+
 export async function validateRisk(ctx: RiskContext): Promise<RiskValidationResult> {
   const reasons: string[] = [];
   const { opportunity: o, risk } = ctx;
@@ -104,14 +133,21 @@ export async function validateRisk(ctx: RiskContext): Promise<RiskValidationResu
     if (atrMult > risk.atrSlMultiplierMax) reasons.push('Stop loss too wide vs ATR');
   }
 
+  const remainingSlots = remainingPositionSlots(risk.maxOpenPositions, openCount);
+  const minNotionalPerTrade = risk.minNotionalPerTrade ?? 1000;
+  const { targetNotional } = slotTargetNotional(
+    ctx.freeQuote,
+    remainingSlots,
+    minNotionalPerTrade,
+  );
+
   const riskAmount = ctx.equity * risk.maxRiskPerTrade;
   let qty = slDist > 0 ? riskAmount / slDist : 0;
   qty = exchangeService.roundQty(o.symbol, qty);
 
   const { stepSize, minNotional } = exchangeService.getLotSize(o.symbol);
-  const maxFreePct = risk.maxFreeNotionalPct ?? 0.25;
-  const capNotional = Math.min(ctx.freeQuote, ctx.freeQuote * maxFreePct);
-  if (o.entry > 0 && qty * o.entry > capNotional) {
+  const capNotional = remainingSlots > 0 ? Math.min(ctx.freeQuote, targetNotional) : 0;
+  if (remainingSlots > 0 && o.entry > 0 && qty * o.entry > capNotional) {
     qty = exchangeService.roundQty(o.symbol, capNotional / o.entry);
     if (qty * o.entry > capNotional && stepSize > 0) {
       qty = exchangeService.roundQty(o.symbol, Math.max(0, qty - stepSize));
@@ -119,15 +155,21 @@ export async function validateRisk(ctx: RiskContext): Promise<RiskValidationResu
   }
 
   const notional = qty * o.entry;
-  if (qty <= 0) {
-    reasons.push('Position size is zero');
-  } else if (notional < minNotional) {
-    if (ctx.freeQuote < minNotional || ctx.freeQuote < notional + stepSize * o.entry) {
+  if (remainingSlots > 0) {
+    if (qty <= 0) {
+      reasons.push('Position size is zero');
+    } else if (notional < minNotional) {
+      if (ctx.freeQuote < minNotional || ctx.freeQuote < notional + stepSize * o.entry) {
+        reasons.push(
+          `Insufficient free balance (notional ${notional.toFixed(2)}, free ${ctx.freeQuote.toFixed(2)}, min ${minNotional})`,
+        );
+      } else {
+        reasons.push(`Notional ${notional.toFixed(2)} below min`);
+      }
+    } else if (minNotionalPerTrade > 0 && notional + 1e-9 < minNotionalPerTrade) {
       reasons.push(
-        `Insufficient free balance (notional ${notional.toFixed(2)}, free ${ctx.freeQuote.toFixed(2)}, min ${minNotional})`,
+        `Notional ${notional.toFixed(2)} below min per trade (${minNotionalPerTrade})`,
       );
-    } else {
-      reasons.push(`Notional ${notional.toFixed(2)} below min`);
     }
   }
 

@@ -26,8 +26,10 @@ export const riskSettingsSchema = z.object({
   minLiquidityUsdt: z.number().min(0).default(1_000_000),
   atrSlMultiplierMin: z.number().default(0.5),
   atrSlMultiplierMax: z.number().default(5),
-  /** Cap entry notional to this fraction of free quote (default 25%). */
-  maxFreeNotionalPct: z.number().min(0.05).max(1).default(0.25),
+  /** Legacy field kept so old clients can still PATCH it. Slot sizing is the notional cap. */
+  maxFreeNotionalPct: z.number().min(0.05).max(1).default(1),
+  /** USDT floor per entry. 0 disables. Free balance is split across remaining slots. */
+  minNotionalPerTrade: z.number().min(0).max(1_000_000).default(1000),
 });
 
 export const tradingSettingsSchema = z.object({
