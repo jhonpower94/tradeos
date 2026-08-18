@@ -354,6 +354,7 @@ export function SettingsPage() {
             min={1}
             max={50}
             onSave={(n) => saveSettings.mutate({ risk: { maxOpenPositions: n } })}
+            helperText="Also splits equity evenly (2 = half each, 3 = a third each)."
           />
           <SettingsNumberField
             label="Min risk/reward"
@@ -363,12 +364,12 @@ export function SettingsPage() {
             onSave={(n) => saveSettings.mutate({ risk: { minRiskReward: n } })}
           />
           <SettingsNumberField
-            label="Max % of free balance per trade"
+            label="Max % of equity per trade"
             value={Number(data.risk?.maxFreeNotionalPct ?? 0.25)}
             min={0.05}
             max={1}
             onSave={(n) => saveSettings.mutate({ risk: { maxFreeNotionalPct: n } })}
-            helperText="Fraction of free USDT (1 = 100%, 0.25 = 25%). Range 0.05–1."
+            helperText="Optional tighter ceiling vs equity (1 = off). For even full-book splits, use 1."
           />
         </Sheet>
       )}

@@ -10,7 +10,7 @@ import { MarketRegime } from '@trading-os/shared';
 const baseRisk = {
   maxRiskPerTrade: 0.01,
   maxDailyLoss: 0.05,
-  maxOpenPositions: 5,
+  maxOpenPositions: 1,
   minRiskReward: 2,
   maxSpreadBps: 20,
   minLiquidityUsdt: 0,

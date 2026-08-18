@@ -36,6 +36,19 @@ export function alreadyOpenOnSymbolReason(symbol: string): string {
   return `Already have an open position in ${symbol}`;
 }
 
+/** Max entry notional: leftover cash, one even slot of equity, optional equity % ceiling. */
+export function positionNotionalCap(input: {
+  equity: number;
+  freeQuote: number;
+  maxOpenPositions: number;
+  maxFreeNotionalPct?: number;
+}): number {
+  const slots = Math.max(1, input.maxOpenPositions);
+  const slotCap = input.equity / slots;
+  const equityPctCap = input.equity * (input.maxFreeNotionalPct ?? 0.25);
+  return Math.max(0, Math.min(input.freeQuote, slotCap, equityPctCap));
+}
+
 export async function validateRisk(ctx: RiskContext): Promise<RiskValidationResult> {
   const reasons: string[] = [];
   const { opportunity: o, risk } = ctx;
@@ -109,8 +122,12 @@ export async function validateRisk(ctx: RiskContext): Promise<RiskValidationResu
   qty = exchangeService.roundQty(o.symbol, qty);
 
   const { stepSize, minNotional } = exchangeService.getLotSize(o.symbol);
-  const maxFreePct = risk.maxFreeNotionalPct ?? 0.25;
-  const capNotional = Math.min(ctx.freeQuote, ctx.freeQuote * maxFreePct);
+  const capNotional = positionNotionalCap({
+    equity: ctx.equity,
+    freeQuote: ctx.freeQuote,
+    maxOpenPositions: risk.maxOpenPositions,
+    maxFreeNotionalPct: risk.maxFreeNotionalPct,
+  });
   if (o.entry > 0 && qty * o.entry > capNotional) {
     qty = exchangeService.roundQty(o.symbol, capNotional / o.entry);
     if (qty * o.entry > capNotional && stepSize > 0) {
