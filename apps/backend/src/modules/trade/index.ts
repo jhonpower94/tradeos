@@ -535,6 +535,11 @@ export async function closePosition(
     payload: { tradeId: trade._id, pnl: slicePnl },
   });
 
+  const freedSymbol = position.symbol;
+  void import('../scanner/index.js')
+    .then(({ scannerService }) => scannerService.scanUserSymbol(userId, freedSymbol))
+    .catch((e) => console.error('Post-close rescan failed', e));
+
   return trade;
 }
 

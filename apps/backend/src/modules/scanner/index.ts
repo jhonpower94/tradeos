@@ -5,7 +5,7 @@ import { notify } from '../notifications/index.js';
 import { NotificationType } from '@trading-os/shared';
 import { processAutoSignals } from '../trade/index.js';
 import { getRawSettings } from '../settings/index.js';
-import { consensusToOpportunity, isWatching, persistOpportunities } from '../ranking/index.js';
+import { consensusToOpportunity, isWatching, listOpportunities, persistOpportunities, persistSymbolOpportunities } from '../ranking/index.js';
 import {
   buildConsensus,
   detectHtfTrend,
@@ -47,6 +47,8 @@ class ScannerService {
     opportunitiesFound: 0,
     errors: 0,
   };
+  /** In-flight post-close / targeted rescans keyed by userId:symbol. */
+  private symbolScanInFlight = new Map<string, Promise<void>>();
 
   getStatus() {
     return { ...this.status, running: this.running };
@@ -186,6 +188,101 @@ class ScannerService {
     this.status.opportunitiesFound = items.length;
 
     gatewayBroadcast(userId, 'opportunities', items);
+    gatewayBroadcast(userId, 'scanner.status', this.getStatus());
+
+    if (items.length) {
+      const triggered = items.filter((o) => !isWatching(o));
+      const byRank = [...triggered].sort(
+        (a, b) => (a.rank ?? Number.POSITIVE_INFINITY) - (b.rank ?? Number.POSITIVE_INFINITY),
+      );
+      if (triggered.length) {
+        await notify(userId, NotificationType.TRADE_SIGNAL, {
+          title: 'New opportunities',
+          body: `${triggered.length} triggered · ${items.length - triggered.length} watching`,
+          payload: { count: triggered.length, top: byRank[0] },
+        });
+        await processAutoSignals(userId, byRank);
+      }
+    }
+  }
+
+  /**
+   * Re-analyze one freed symbol immediately (e.g. after position close) without
+   * waiting for the full hot-set poll. Coalesces overlapping kicks per user+symbol.
+   */
+  async scanUserSymbol(userId: string, symbol: string): Promise<void> {
+    const key = `${userId}:${symbol}`;
+    const existing = this.symbolScanInFlight.get(key);
+    if (existing) return existing;
+
+    const run = this.runScanUserSymbol(userId, symbol).finally(() => {
+      this.symbolScanInFlight.delete(key);
+    });
+    this.symbolScanInFlight.set(key, run);
+    return run;
+  }
+
+  private async runScanUserSymbol(userId: string, symbol: string): Promise<void> {
+    const settings = await getRawSettings(userId);
+    if (settings.scanner?.enabled === false) return;
+
+    const deny = new Set(settings.scanner?.symbolsDenyList ?? []);
+    if (deny.has(symbol)) return;
+
+    const stillOpen = await Position.exists({
+      userId,
+      symbol,
+      status: PositionStatus.OPEN,
+    });
+    if (stillOpen) return;
+
+    const timeframes = (settings.scanner?.timeframes ?? ['15m', '1h', '4h']) as Timeframe[];
+    const rsEnabled = settings.scanner?.btcRelativeStrengthEnabled !== false;
+    const locationGate = settings.scanner?.locationGateEnabled !== false;
+
+    let relativeStrength: number | undefined;
+    if (rsEnabled) {
+      try {
+        const tickers = await exchangeService.getAllTickers24hr();
+        const tickerBySymbol = new Map(tickers.map((t) => [t.symbol, t]));
+        const btcTicker = tickerBySymbol.get('BTCUSDT') ?? tickerBySymbol.get('BTCUSDC');
+        relativeStrength = computeRelativeStrength(
+          tickerBySymbol.get(symbol)?.priceChangePercent,
+          btcTicker?.priceChangePercent,
+        );
+      } catch {
+        relativeStrength = undefined;
+      }
+    }
+
+    let pdhPdl: { high: number; low: number } | null = null;
+    if (locationGate) {
+      try {
+        const daily = await marketDataService.getCandles(symbol, Timeframe.D1, 3);
+        pdhPdl = previousDayLevels(daily);
+      } catch {
+        pdhPdl = null;
+      }
+    }
+
+    const opportunities: Opportunity[] = [];
+    for (const tf of timeframes) {
+      try {
+        this.status.currentSymbol = symbol;
+        const opp = await this.analyze(userId, symbol, tf, settings, {
+          relativeStrength,
+          pdhPdl,
+        });
+        if (opp) opportunities.push(opp);
+      } catch {
+        this.status.errors++;
+      }
+    }
+
+    const items = await persistSymbolOpportunities(userId, symbol, opportunities);
+    // Full active list so live WS clients are not wiped down to this symbol only.
+    const allActive = await listOpportunities(userId);
+    gatewayBroadcast(userId, 'opportunities', allActive);
     gatewayBroadcast(userId, 'scanner.status', this.getStatus());
 
     if (items.length) {

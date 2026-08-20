@@ -91,6 +91,22 @@ export function leftoverActiveFilter(
   return q;
 }
 
+/**
+ * Like leftoverActiveFilter but scoped to one symbol so a single-symbol rescan
+ * cannot expire other pairs' ranked/watching rows.
+ */
+export function leftoverActiveFilterForSymbol(
+  userId: string,
+  symbol: string,
+  current: Array<{ symbol: string; timeframe: string; side: string }>,
+): Record<string, unknown> {
+  const forSymbol = current.filter((o) => o.symbol === symbol);
+  return {
+    ...leftoverActiveFilter(userId, forSymbol),
+    symbol,
+  };
+}
+
 /** Triggered (ranked) first, then newest createdAt. */
 export function sortTriggeredThenNewest<
   T extends { createdAt?: Date | string; stage?: string; status?: string },
@@ -109,7 +125,7 @@ function persistStatus(o: Opportunity): SignalStatus {
   return o.stage === 'watching' ? SignalStatus.WATCHING : SignalStatus.RANKED;
 }
 
-export async function persistOpportunities(userId: string, opps: Opportunity[]) {
+async function upsertOpportunityDocs(userId: string, opps: Opportunity[]) {
   const triggered = opps.filter((o) => o.stage !== 'watching');
   const watching = opps.filter((o) => o.stage === 'watching');
   const ranked = [...rankOpportunities(triggered), ...watching];
@@ -118,7 +134,7 @@ export async function persistOpportunities(userId: string, opps: Opportunity[]) 
 
   for (const o of ranked) {
     const status = persistStatus(o);
-    const watching = o.stage === 'watching';
+    const isWatchingOpp = o.stage === 'watching';
     const filter = {
       userId,
       symbol: o.symbol,
@@ -148,7 +164,7 @@ export async function persistOpportunities(userId: string, opps: Opportunity[]) 
     if (existing?.status !== SignalStatus.APPROVED) {
       $set.status = status;
     }
-    if (!watching && o.rank != null) {
+    if (!isWatchingOpp && o.rank != null) {
       $set.rank = o.rank;
     }
     const update: Record<string, unknown> = {
@@ -160,14 +176,36 @@ export async function persistOpportunities(userId: string, opps: Opportunity[]) 
         side: o.side,
       },
     };
-    if (watching && existing?.status !== SignalStatus.APPROVED) {
+    if (isWatchingOpp && existing?.status !== SignalStatus.APPROVED) {
       update.$unset = { rank: 1 };
     }
     const doc = await Signal.findOneAndUpdate(filter, update, { upsert: true, new: true }).lean();
     if (doc) docs.push(doc as Opportunity & { createdAt?: Date; status?: string });
   }
 
+  return { ranked, docs };
+}
+
+export async function persistOpportunities(userId: string, opps: Opportunity[]) {
+  const { ranked, docs } = await upsertOpportunityDocs(userId, opps);
+
   await Signal.updateMany(leftoverActiveFilter(userId, ranked), {
+    $set: { status: SignalStatus.EXPIRED },
+  });
+
+  return sortTriggeredThenNewest(docs);
+}
+
+/** Upsert opps for one symbol and expire only that symbol's leftover ranked/watching rows. */
+export async function persistSymbolOpportunities(
+  userId: string,
+  symbol: string,
+  opps: Opportunity[],
+) {
+  const scoped = opps.filter((o) => o.symbol === symbol);
+  const { ranked, docs } = await upsertOpportunityDocs(userId, scoped);
+
+  await Signal.updateMany(leftoverActiveFilterForSymbol(userId, symbol, ranked), {
     $set: { status: SignalStatus.EXPIRED },
   });
 

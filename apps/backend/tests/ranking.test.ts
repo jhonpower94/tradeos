@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { leftoverActiveFilter, rankOpportunities, sortTriggeredThenNewest } from '../src/modules/ranking/index.js';
+import {
+  leftoverActiveFilter,
+  leftoverActiveFilterForSymbol,
+  rankOpportunities,
+  sortTriggeredThenNewest,
+} from '../src/modules/ranking/index.js';
 import { Side, Timeframe, type Opportunity } from '@trading-os/shared';
 
 function opp(partial: Partial<Opportunity> & Pick<Opportunity, 'symbol' | 'confidence'>): Opportunity {
@@ -67,6 +72,36 @@ describe('leftoverActiveFilter', () => {
     expect(filter.userId).toBe('user-1');
     expect(filter.status).toEqual({ $in: ['ranked', 'watching'] });
     expect(filter.$nor).toEqual([{ symbol: 'BTCUSDT', timeframe: '1h', side: 'BUY' }]);
+  });
+});
+
+describe('leftoverActiveFilterForSymbol', () => {
+  it('always scopes expiry to the given symbol', () => {
+    const filter = leftoverActiveFilterForSymbol('user-1', 'BTCUSDT', []);
+    expect(filter).toEqual({
+      userId: 'user-1',
+      symbol: 'BTCUSDT',
+      status: { $in: ['ranked', 'watching'] },
+    });
+  });
+
+  it('does not include other symbols in the filter so they cannot be expired', () => {
+    const filter = leftoverActiveFilterForSymbol('user-1', 'BTCUSDT', [
+      { symbol: 'BTCUSDT', timeframe: '1h', side: 'BUY' },
+      { symbol: 'ETHUSDT', timeframe: '1h', side: 'BUY' },
+    ]);
+    expect(filter.symbol).toBe('BTCUSDT');
+    expect(filter.userId).toBe('user-1');
+    expect(filter.$nor).toEqual([{ symbol: 'BTCUSDT', timeframe: '1h', side: 'BUY' }]);
+    expect(JSON.stringify(filter)).not.toContain('ETHUSDT');
+  });
+
+  it('expires all TF/side variants for the symbol when current batch is empty', () => {
+    const filter = leftoverActiveFilterForSymbol('user-1', 'SOLUSDT', [
+      { symbol: 'ETHUSDT', timeframe: '15m', side: 'SELL' },
+    ]);
+    expect(filter.symbol).toBe('SOLUSDT');
+    expect(filter.$nor).toBeUndefined();
   });
 });
 
