@@ -89,9 +89,6 @@ export async function validateRisk(ctx: RiskContext): Promise<RiskValidationResu
   if (openCount >= risk.maxOpenPositions) {
     reasons.push(`Max open positions reached (${risk.maxOpenPositions})`);
   }
-  if (hasOpenPositionOnSymbol(openPositions, o.symbol)) {
-    reasons.push(alreadyOpenOnSymbolReason(o.symbol));
-  }
 
   const startOfDay = new Date();
   startOfDay.setUTCHours(0, 0, 0, 0);
@@ -200,9 +197,6 @@ export async function softPrecheck(
   }
   if (openPositions.length >= risk.maxOpenPositions) {
     return { ok: false, reason: `Max open positions reached (${risk.maxOpenPositions})` };
-  }
-  if (hasOpenPositionOnSymbol(openPositions, opportunity.symbol)) {
-    return { ok: false, reason: alreadyOpenOnSymbolReason(opportunity.symbol) };
   }
   if (opportunity.riskReward < risk.minRiskReward) {
     return {

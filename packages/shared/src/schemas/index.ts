@@ -154,6 +154,18 @@ export const createTradeSchema = z.object({
   takeProfit: z.number().positive().optional(),
 });
 
+/** Copy opens from a fresh symbol rescan; levels are not client-supplied. */
+export const copyTradeSchema = z.object({
+  orderType: z.enum(['MARKET', 'LIMIT']).default('MARKET'),
+  limitPrice: z.number().positive().optional(),
+});
+
+export const updatePositionLevelsSchema = z.object({
+  stopLoss: z.number().positive().optional(),
+  takeProfit: z.number().positive().optional(),
+  trailingStopPct: z.number().positive().optional(),
+});
+
 export const backtestRequestSchema = z.object({
   strategyId: z.enum(STRATEGY_IDS as unknown as [string, ...string[]]),
   symbol: z.string(),

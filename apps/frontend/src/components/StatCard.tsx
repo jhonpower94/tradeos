@@ -35,6 +35,7 @@ export function StatCard({
       variant="outlined"
       sx={{
         p: 2.5,
+        minWidth: 0,
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
@@ -43,13 +44,22 @@ export function StatCard({
         boxShadow: 'none',
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
         <Typography level="body-xs" sx={{ textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>
           {label}
         </Typography>
         {icon && <Box sx={{ color: 'text.tertiary', display: 'flex' }}>{icon}</Box>}
       </Box>
-      <Typography level="h3" sx={{ ...monoSx, color: toneColor }}>
+      <Typography
+        level="h3"
+        sx={{
+          ...monoSx,
+          color: toneColor,
+          minWidth: 0,
+          overflowWrap: 'anywhere',
+          wordBreak: 'break-word',
+        }}
+      >
         {value}
       </Typography>
       {delta && (

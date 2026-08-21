@@ -1,12 +1,15 @@
 import {
   ApprovalMode,
+  MarketRegime,
   OrderType,
   PositionStatus,
   Side,
   SignalStatus,
+  Timeframe,
   TradeStatus,
   TradingMode,
   type Opportunity,
+  type StrategyId,
 } from '@trading-os/shared';
 import { Trade } from '../../models/Trade.js';
 import { Position } from '../../models/Position.js';
@@ -28,7 +31,7 @@ import {
   fillPriceFromOrder,
   resolveLiveExitPrice,
 } from './pricing.js';
-import { entryDriftExceeded, reanchorRiskLevels } from './levels.js';
+import { entryDriftExceeded, reanchorRiskLevels, buildCloneOpportunity, CloneLevelsError } from './levels.js';
 
 /**
  * Resolve settlement price for a close.
@@ -545,4 +548,89 @@ export async function closePosition(
 
 export async function listTrades(userId: string) {
   return Trade.find({ userId }).sort({ createdAt: -1 }).limit(200).lean();
+}
+
+/**
+ * Straight clone: re-enter using the source trade's side and SL/TP distances at live price.
+ * Allows stacking on the same symbol when position slots remain.
+ */
+export async function copyTrade(
+  userId: string,
+  tradeId: string,
+  opts?: { orderType?: OrderType; limitPrice?: number },
+) {
+  const source = await Trade.findOne({ _id: tradeId, userId }).lean();
+  if (!source) throw new AppError('NOT_FOUND', 'Trade not found', 404);
+
+  let timeframe = Timeframe.H1;
+  let primaryStrategy: StrategyId = 'breakout';
+  let strategyIds: StrategyId[] = ['breakout'];
+  let confidence = 80;
+  let regime = MarketRegime.UNKNOWN;
+
+  if (source.signalId) {
+    const sig = await Signal.findById(source.signalId).lean();
+    if (sig) {
+      if (sig.timeframe) timeframe = sig.timeframe as Timeframe;
+      if (sig.primaryStrategy) primaryStrategy = sig.primaryStrategy as StrategyId;
+      if (Array.isArray(sig.strategyIds) && sig.strategyIds.length) {
+        strategyIds = sig.strategyIds as StrategyId[];
+      }
+      if (typeof sig.confidence === 'number') confidence = sig.confidence;
+      if (sig.regime) regime = sig.regime as MarketRegime;
+    }
+  }
+
+  let liveEntry = Number(source.entryPrice) || 0;
+  const cached = getTickerPrice(source.symbol);
+  if (cached != null && cached > 0) {
+    liveEntry = cached;
+  } else {
+    try {
+      const ticker = await exchangeService.getTicker(source.symbol);
+      if (ticker.price > 0) {
+        liveEntry = ticker.price;
+        setTickerPrice(source.symbol, ticker.price);
+      }
+    } catch {
+      // fall back to source entry
+    }
+  }
+
+  let opportunity: Opportunity;
+  try {
+    opportunity = buildCloneOpportunity(source, liveEntry, {
+      timeframe,
+      primaryStrategy,
+      strategyIds,
+      confidence,
+      regime,
+      sourceTradeId: String(source._id),
+    });
+  } catch (e) {
+    if (e instanceof CloneLevelsError) {
+      throw new AppError('INVALID_TRADE', e.message, 400);
+    }
+    throw e;
+  }
+
+  const trade = await executeOpportunity(userId, opportunity, undefined, {
+    orderType: opts?.orderType,
+    limitPrice: opts?.limitPrice,
+  });
+
+  return {
+    trade,
+    opportunity: {
+      symbol: opportunity.symbol,
+      side: opportunity.side,
+      timeframe: opportunity.timeframe,
+      confidence: opportunity.confidence,
+      entry: opportunity.entry,
+      stopLoss: opportunity.stopLoss,
+      takeProfit: opportunity.takeProfit,
+      riskReward: opportunity.riskReward,
+      primaryStrategy: opportunity.primaryStrategy,
+    },
+  };
 }

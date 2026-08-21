@@ -352,11 +352,26 @@ export async function updatePositionLevels(
   positionId: string,
   patch: { stopLoss?: number; takeProfit?: number; trailingStopPct?: number },
 ) {
+  const set: Record<string, number> = {};
+  if (patch.stopLoss != null) set.stopLoss = patch.stopLoss;
+  if (patch.takeProfit != null) set.takeProfit = patch.takeProfit;
+  if (patch.trailingStopPct != null) set.trailingStopPct = patch.trailingStopPct;
+  if (Object.keys(set).length === 0) {
+    throw new AppError('VALIDATION', 'No levels to update', 400);
+  }
+
   const p = await Position.findOneAndUpdate(
     { _id: positionId, userId, status: PositionStatus.OPEN },
-    { $set: patch },
+    { $set: set },
     { new: true },
   );
   if (!p) throw new AppError('NOT_FOUND', 'Position not found', 404);
+
+  const tradeSet: Record<string, number> = {};
+  if (set.stopLoss != null) tradeSet.stopLoss = set.stopLoss;
+  if (set.takeProfit != null) tradeSet.takeProfit = set.takeProfit;
+  if (set.trailingStopPct != null) tradeSet.trailingStopPct = set.trailingStopPct;
+  await Trade.findByIdAndUpdate(p.tradeId, { $set: tradeSet });
+
   return p;
 }

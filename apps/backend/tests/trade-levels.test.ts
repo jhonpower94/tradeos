@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { Side } from '@trading-os/shared';
+import { MarketRegime, Side, Timeframe } from '@trading-os/shared';
 import {
+  buildCloneOpportunity,
+  CloneLevelsError,
   entryDriftExceeded,
   reanchorRiskLevels,
 } from '../src/modules/trade/levels.js';
 import { validateRisk } from '../src/modules/risk/index.js';
-import { MarketRegime } from '@trading-os/shared';
 
 const baseRisk = {
   maxRiskPerTrade: 0.01,
@@ -57,6 +58,34 @@ describe('reanchorRiskLevels', () => {
     const levels = reanchorRiskLevels(Side.BUY, fill, signalEntry, signalSl, signalTp);
     const actualRisk = qty * Math.abs(fill - levels.stopLoss);
     expect(actualRisk).toBeCloseTo(riskAmount, 8);
+  });
+});
+
+describe('buildCloneOpportunity', () => {
+  it('clones BUY SL/TP distances onto live entry without scanning', () => {
+    const opp = buildCloneOpportunity(
+      { symbol: 'BTCUSDT', side: Side.BUY, entryPrice: 100, stopLoss: 98, takeProfit: 104 },
+      110,
+      { timeframe: Timeframe.M15, sourceTradeId: 'abc' },
+    );
+    expect(opp.symbol).toBe('BTCUSDT');
+    expect(opp.side).toBe(Side.BUY);
+    expect(opp.entry).toBe(110);
+    expect(opp.stopLoss).toBe(108);
+    expect(opp.takeProfit).toBe(114);
+    expect(opp.riskReward).toBe(2);
+    expect(opp.timeframe).toBe(Timeframe.M15);
+    expect(opp.evidence[0]?.source).toBe('copy');
+    expect(opp.regime).toBe(MarketRegime.UNKNOWN);
+  });
+
+  it('rejects source trades missing levels', () => {
+    expect(() =>
+      buildCloneOpportunity(
+        { symbol: 'BTCUSDT', side: Side.BUY, entryPrice: 100, stopLoss: null, takeProfit: 104 },
+        100,
+      ),
+    ).toThrow(CloneLevelsError);
   });
 });
 

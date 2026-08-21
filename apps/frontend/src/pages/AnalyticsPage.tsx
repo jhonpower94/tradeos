@@ -38,8 +38,14 @@ export function AnalyticsPage() {
     { label: 'Max Drawdown', value: formatPercent((data?.maxDrawdown ?? 0) * 100, 1) },
     { label: 'Net PnL', value: formatNumber(netPnl), tone: netTone },
     { label: 'Trades', value: String(data?.tradeCount ?? 0) },
-    { label: 'Best Strategy', value: data?.bestStrategy ?? '—' },
-    { label: 'Worst Strategy', value: data?.worstStrategy ?? '—' },
+    {
+      label: 'Best Strategy',
+      value: String(data?.bestStrategy ?? '—').replace(/_/g, ' '),
+    },
+    {
+      label: 'Worst Strategy',
+      value: String(data?.worstStrategy ?? '—').replace(/_/g, ' '),
+    },
   ];
 
   return (
@@ -50,6 +56,7 @@ export function AnalyticsPage() {
           display: 'grid',
           gap: 2,
           gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' },
+          '& > *': { minWidth: 0 },
         }}
       >
         {cards.map((c) => (

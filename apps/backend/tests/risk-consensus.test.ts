@@ -75,6 +75,30 @@ describe('risk', () => {
     );
   });
 
+  it('softPrecheck allows same-symbol when slots remain', async () => {
+    setTickerPrice('BTCUSDT', 100);
+    const result = await softPrecheck(
+      '000000000000000000000001',
+      {
+        symbol: 'BTCUSDT',
+        timeframe: '1h' as never,
+        side: Side.BUY,
+        confidence: 80,
+        entry: 100,
+        stopLoss: 98,
+        takeProfit: 104,
+        riskReward: 2,
+        strategyIds: ['breakout'],
+        primaryStrategy: 'breakout',
+        evidence: [],
+        regime: MarketRegime.TRENDING_BULL,
+      },
+      baseRisk as never,
+      10_000,
+    );
+    expect(result.ok).toBe(true);
+  });
+
   it('rejects bad RR', async () => {
     const result = await validateRisk({
       userId: '000000000000000000000001',

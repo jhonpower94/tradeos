@@ -46,12 +46,18 @@ export const signalsApi = {
 export const tradesApi = {
   list: () => api.get('/trades').then((r) => r.data),
   close: (id: string) => api.post(`/trades/${id}/close`).then((r) => r.data),
+  copy: (id: string, body?: { orderType?: string; limitPrice?: number }) =>
+    api.post(`/trades/${id}/copy`, body ?? {}).then((r) => r.data),
 };
 
 export const positionsApi = {
   list: () => api.get('/positions').then((r) => r.data),
   context: () => api.get('/positions/context').then((r) => r.data),
   getContext: (id: string) => api.get(`/positions/${id}/context`).then((r) => r.data),
+  update: (
+    id: string,
+    body: { stopLoss?: number; takeProfit?: number; trailingStopPct?: number },
+  ) => api.patch(`/positions/${id}`, body).then((r) => r.data),
 };
 
 export const portfolioApi = {

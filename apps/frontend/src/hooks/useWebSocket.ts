@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../stores/authStore';
 import { useLiveStore } from '../stores/liveStore';
 
@@ -7,6 +8,7 @@ const BASE_BACKOFF_MS = 500;
 
 export function useWebSocket() {
   const token = useAuthStore((s) => s.token);
+  const queryClient = useQueryClient();
   const setConnectionStatus = useLiveStore((s) => s.setConnectionStatus);
   const setOpportunities = useLiveStore((s) => s.setOpportunities);
   const setPositions = useLiveStore((s) => s.setPositions);
@@ -57,7 +59,12 @@ export function useWebSocket() {
         if (!alive) return;
         try {
           const msg = JSON.parse(ev.data) as { channel: string; data: unknown };
-          if (msg.channel === 'opportunities' && Array.isArray(msg.data)) setOpportunities(msg.data);
+          if (msg.channel === 'opportunities' && Array.isArray(msg.data)) {
+            setOpportunities(msg.data);
+            // Signals page uses the same active rows via REST; keep it in sync with live updates.
+            void queryClient.invalidateQueries({ queryKey: ['signals'] });
+            void queryClient.invalidateQueries({ queryKey: ['opportunities'] });
+          }
           if (msg.channel === 'positions' && Array.isArray(msg.data)) setPositions(msg.data);
         } catch {
           // ignore malformed frames
@@ -112,5 +119,5 @@ export function useWebSocket() {
         }
       }
     };
-  }, [token, setConnectionStatus, setOpportunities, setPositions]);
+  }, [token, queryClient, setConnectionStatus, setOpportunities, setPositions]);
 }

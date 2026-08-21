@@ -223,7 +223,7 @@ export function AppLayout() {
         <Box
           sx={{
             width: '100%',
-            maxWidth: 1280,
+            maxWidth: location.pathname.startsWith('/signals') ? 1800 : 1280,
             mx: 'auto',
             px: { xs: 2.5, md: 4 },
             py: { xs: 3, md: 4 },

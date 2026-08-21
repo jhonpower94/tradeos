@@ -7,7 +7,7 @@ import Typography from '@mui/joy/Typography';
 import Close from '@mui/icons-material/Close';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
-import { portfolioApi, positionsApi, tradesApi } from '../api';
+import { portfolioApi, positionsApi, settingsApi, tradesApi } from '../api';
 import { RegimeChip } from '../components/RegimeChip';
 import { BiasChip } from '../components/BiasChip';
 import { CandleChart } from '../components/CandleChart';
@@ -57,27 +57,108 @@ export function PortfolioPage() {
     queryFn: positionsApi.context,
     refetchInterval: 30_000,
   });
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: settingsApi.get,
+  });
   const contextByPosition = new Map<string, PositionContext>(
     ((contexts?.items ?? []) as PositionContext[]).map((c) => [c.positionId, c]),
   );
 
   const [chartPositionId, setChartPositionId] = useState<string | null>(null);
+  const [copyInfo, setCopyInfo] = useState<string | null>(null);
+
+  const invalidateTradeQueries = () => {
+    qc.invalidateQueries({ queryKey: ['positions'] });
+    qc.invalidateQueries({ queryKey: ['positions-context'] });
+    qc.invalidateQueries({ queryKey: ['trades'] });
+    qc.invalidateQueries({ queryKey: ['portfolio'] });
+    qc.invalidateQueries({ queryKey: ['opportunities'] });
+    qc.invalidateQueries({ queryKey: ['signals'] });
+  };
 
   const closeTrade = useMutation({
     mutationFn: (tradeId: string) => tradesApi.close(tradeId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['positions'] });
-      qc.invalidateQueries({ queryKey: ['positions-context'] });
-      qc.invalidateQueries({ queryKey: ['trades'] });
-      qc.invalidateQueries({ queryKey: ['portfolio'] });
+      invalidateTradeQueries();
+      // Post-close symbol rescan is fire-and-forget; refresh again after it can persist.
+      window.setTimeout(() => {
+        void qc.invalidateQueries({ queryKey: ['signals'] });
+        void qc.invalidateQueries({ queryKey: ['opportunities'] });
+      }, 2_000);
+    },
+  });
+
+  const copyTrade = useMutation({
+    mutationFn: (tradeId: string) => tradesApi.copy(tradeId),
+    onSuccess: (data: {
+      opportunity?: { stopLoss?: number; takeProfit?: number; primaryStrategy?: string };
+    }) => {
+      invalidateTradeQueries();
+      const o = data.opportunity;
+      setCopyInfo(
+        o
+          ? `Cloned · SL ${o.stopLoss != null ? formatPrice(o.stopLoss) : '—'} · TP ${o.takeProfit != null ? formatPrice(o.takeProfit) : '—'}`
+          : 'Trade cloned',
+      );
     },
   });
 
   const openPositions = ((positions?.items ?? []) as Array<Record<string, unknown>>).filter(
     (p) => p.status === 'open',
   );
+  const maxOpen = Number(settings?.risk?.maxOpenPositions ?? 5);
+  const slotsFull = openPositions.length >= maxOpen;
   const uPnl = Number(summary?.unrealizedPnl ?? 0);
   const rPnl = Number(summary?.realizedPnl ?? 0);
+
+  const actionError =
+    (closeTrade.isError && errMsg(closeTrade.error)) ||
+    (copyTrade.isError && errMsg(copyTrade.error)) ||
+    null;
+
+  const clearActionError = () => {
+    closeTrade.reset();
+    copyTrade.reset();
+  };
+
+  const renderActions = (p: Record<string, unknown>) => {
+    const id = String(p._id);
+    const chartOpen = chartPositionId === id;
+    return (
+      <>
+        <Button
+          size="sm"
+          variant={chartOpen ? 'solid' : 'outlined'}
+          color="neutral"
+          onClick={() => setChartPositionId(chartOpen ? null : id)}
+        >
+          Chart
+        </Button>
+        <Button
+          size="sm"
+          variant="outlined"
+          color="neutral"
+          disabled={copyTrade.isPending || slotsFull}
+          onClick={() => {
+            setCopyInfo(null);
+            copyTrade.mutate(String(p.tradeId));
+          }}
+        >
+          Copy
+        </Button>
+        <Button
+          size="sm"
+          color="warning"
+          variant="outlined"
+          disabled={closeTrade.isPending}
+          onClick={() => closeTrade.mutate(String(p.tradeId))}
+        >
+          Close
+        </Button>
+      </>
+    );
+  };
 
   return (
     <Box>
@@ -127,17 +208,30 @@ export function PortfolioPage() {
       <Typography level="title-md" sx={{ mb: 1.5 }}>
         Open Positions
       </Typography>
-      {closeTrade.isError && (
+      {actionError && (
         <Alert
           color="danger"
           sx={{ mb: 1 }}
           endDecorator={
-            <IconButton size="sm" variant="plain" color="danger" onClick={() => closeTrade.reset()}>
+            <IconButton size="sm" variant="plain" color="danger" onClick={clearActionError}>
               <Close />
             </IconButton>
           }
         >
-          {errMsg(closeTrade.error)}
+          {actionError}
+        </Alert>
+      )}
+      {copyInfo && (
+        <Alert
+          color="success"
+          sx={{ mb: 1 }}
+          endDecorator={
+            <IconButton size="sm" variant="plain" color="success" onClick={() => setCopyInfo(null)}>
+              <Close />
+            </IconButton>
+          }
+        >
+          {copyInfo}
         </Alert>
       )}
       <ResponsiveRecordList
@@ -203,29 +297,9 @@ export function PortfolioPage() {
             },
           },
         ]}
-        cardActions={(p) => {
-          const id = String(p._id);
-          const chartOpen = chartPositionId === id;
-          return (
-            <>
-              <Button
-                variant={chartOpen ? 'solid' : 'outlined'}
-                color="neutral"
-                onClick={() => setChartPositionId(chartOpen ? null : id)}
-              >
-                Chart
-              </Button>
-              <Button
-                color="warning"
-                variant="outlined"
-                disabled={closeTrade.isPending}
-                onClick={() => closeTrade.mutate(String(p.tradeId))}
-              >
-                Close
-              </Button>
-            </>
-          );
-        }}
+        cardActions={(p) => (
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>{renderActions(p)}</Box>
+        )}
         expandedContent={(p) => {
           const id = String(p._id);
           if (chartPositionId !== id) return null;
@@ -284,31 +358,11 @@ export function PortfolioPage() {
             key: 'actions',
             header: '',
             align: 'right',
-            render: (p) => {
-              const id = String(p._id);
-              const chartOpen = chartPositionId === id;
-              return (
-                <Box sx={{ display: 'flex', gap: 0.75, justifyContent: 'flex-end' }}>
-                  <Button
-                    size="sm"
-                    variant={chartOpen ? 'solid' : 'outlined'}
-                    color="neutral"
-                    onClick={() => setChartPositionId(chartOpen ? null : id)}
-                  >
-                    Chart
-                  </Button>
-                  <Button
-                    size="sm"
-                    color="warning"
-                    variant="outlined"
-                    disabled={closeTrade.isPending}
-                    onClick={() => closeTrade.mutate(String(p.tradeId))}
-                  >
-                    Close
-                  </Button>
-                </Box>
-              );
-            },
+            render: (p) => (
+              <Box sx={{ display: 'flex', gap: 0.75, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                {renderActions(p)}
+              </Box>
+            ),
           },
         ]}
       />

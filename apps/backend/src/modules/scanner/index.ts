@@ -222,6 +222,23 @@ class ScannerService {
     return run;
   }
 
+  /**
+   * Analyze one symbol and return opportunities even if a position is already open.
+   * Used by trade copy — does not auto-execute signals.
+   */
+  async analyzeUserSymbol(userId: string, symbol: string): Promise<Opportunity[]> {
+    const settings = await getRawSettings(userId);
+    if (settings.scanner?.enabled === false) return [];
+
+    const deny = new Set(settings.scanner?.symbolsDenyList ?? []);
+    if (deny.has(symbol)) return [];
+
+    return this.collectSymbolOpportunities(userId, symbol, settings, {
+      persist: true,
+      notifyAndAuto: false,
+    });
+  }
+
   private async runScanUserSymbol(userId: string, symbol: string): Promise<void> {
     const settings = await getRawSettings(userId);
     if (settings.scanner?.enabled === false) return;
@@ -236,6 +253,18 @@ class ScannerService {
     });
     if (stillOpen) return;
 
+    await this.collectSymbolOpportunities(userId, symbol, settings, {
+      persist: true,
+      notifyAndAuto: true,
+    });
+  }
+
+  private async collectSymbolOpportunities(
+    userId: string,
+    symbol: string,
+    settings: Awaited<ReturnType<typeof getRawSettings>>,
+    opts: { persist: boolean; notifyAndAuto: boolean },
+  ): Promise<Opportunity[]> {
     const timeframes = (settings.scanner?.timeframes ?? ['15m', '1h', '4h']) as Timeframe[];
     const rsEnabled = settings.scanner?.btcRelativeStrengthEnabled !== false;
     const locationGate = settings.scanner?.locationGateEnabled !== false;
@@ -279,13 +308,14 @@ class ScannerService {
       }
     }
 
+    if (!opts.persist) return opportunities;
+
     const items = await persistSymbolOpportunities(userId, symbol, opportunities);
-    // Full active list so live WS clients are not wiped down to this symbol only.
     const allActive = await listOpportunities(userId);
     gatewayBroadcast(userId, 'opportunities', allActive);
     gatewayBroadcast(userId, 'scanner.status', this.getStatus());
 
-    if (items.length) {
+    if (opts.notifyAndAuto && items.length) {
       const triggered = items.filter((o) => !isWatching(o));
       const byRank = [...triggered].sort(
         (a, b) => (a.rank ?? Number.POSITIVE_INFINITY) - (b.rank ?? Number.POSITIVE_INFINITY),
@@ -299,6 +329,8 @@ class ScannerService {
         await processAutoSignals(userId, byRank);
       }
     }
+
+    return items.length ? items : opportunities;
   }
 
   async analyze(

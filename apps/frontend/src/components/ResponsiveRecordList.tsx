@@ -34,6 +34,8 @@ type Props<T> = {
   cardActions?: (row: T) => ReactNode;
   expandedContent?: (row: T) => ReactNode | null | undefined;
   cardsOnly?: boolean;
+  /** Desktop table fills the sheet width (columns stretch). */
+  stretch?: boolean;
 };
 
 export function ResponsiveRecordList<T>({
@@ -48,6 +50,7 @@ export function ResponsiveRecordList<T>({
   cardActions,
   expandedContent,
   cardsOnly = false,
+  stretch = false,
 }: Props<T>) {
   const fields: CardField<T>[] =
     cardFields ?? columns.map((c) => ({ label: c.header, render: c.render }));
@@ -125,8 +128,9 @@ export function ResponsiveRecordList<T>({
           <Table
             stickyHeader
             sx={{
-              tableLayout: 'auto',
-              minWidth: 1180,
+              width: '100%',
+              tableLayout: stretch ? 'fixed' : 'auto',
+              minWidth: stretch ? '100%' : 1180,
               '& th, & td': { whiteSpace: 'nowrap' },
             }}
           >

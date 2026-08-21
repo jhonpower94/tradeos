@@ -108,6 +108,7 @@ export function SignalsPage() {
         </Alert>
       )}
       <ResponsiveRecordList
+        stretch
         rows={rows}
         getRowKey={(s) => String(s._id)}
         emptyTitle={view === 'ranked' ? 'No active signals right now.' : 'No signal history yet.'}
