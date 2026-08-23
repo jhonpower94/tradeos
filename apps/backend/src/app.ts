@@ -102,6 +102,8 @@ export async function start() {
   startPositionWorker();
   if (config.env !== 'test') {
     startScannerWorker();
+    const { startSubscriptionWatcher } = await import('./modules/subscription/watcher.js');
+    startSubscriptionWatcher();
   }
 
   app.log.info(`Trading OS API on http://${config.host}:${config.port}`);

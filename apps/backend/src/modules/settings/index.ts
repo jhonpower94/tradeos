@@ -130,6 +130,12 @@ export async function updateSettings(userId: string, body: unknown) {
   const { strategies: strategiesPatch, ...rest } = parsed;
   const set = flattenUpdate(rest as Record<string, unknown>);
 
+  if (set['trading.mode'] === 'live') {
+    const { assertCanUseLive } = await import('../subscription/entitlement.js');
+    await assertCanUseLive(userId);
+  }
+  const { enforcePaperIfLiveLapsed } = await import('../subscription/entitlement.js');
+  await enforcePaperIfLiveLapsed(userId);
   // Replace the whole strategies map as a POJO — dotted Map $set often fails to
   // persist nested { enabled, params } and JSON would serialize Map as {}.
   if (strategiesPatch) {

@@ -27,11 +27,16 @@ import {
   strategyPackPatch,
   type ScannerEntryStyle,
 } from '@trading-os/shared';
-import { notificationsApi, portfolioApi, settingsApi } from '../api';import { disableWebPush, enableWebPush, getActivePushEndpoint, isIosDevice, isPushApiAvailable, isStandaloneDisplay } from '../lib/webPush';
+import { Link as RouterLink } from 'react-router-dom';
+import Link from '@mui/joy/Link';
+import { authApi, notificationsApi, portfolioApi, settingsApi } from '../api';
+import { disableWebPush, enableWebPush, getActivePushEndpoint, isIosDevice, isPushApiAvailable, isStandaloneDisplay } from '../lib/webPush';
 import { PageHeader } from '../components/PageHeader';
+import { PasswordField } from '../components/PasswordField';
 import { KeyValueList } from '../components/ResponsiveRecordList';
 import { formatDateTime } from '../utils/format';
 import { monoSx } from '../theme/theme';
+import { useAuthStore } from '../stores/authStore';
 
 function errMsg(err: unknown): string {
   if (axios.isAxiosError(err)) {
@@ -129,6 +134,19 @@ export function SettingsPage() {
   const [note, setNote] = useState('');
   const [msg, setMsg] = useState('');
   const [pushEnabled, setPushEnabled] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [mfaSecret, setMfaSecret] = useState('');
+  const [mfaOtpauth, setMfaOtpauth] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaDisablePassword, setMfaDisablePassword] = useState('');
+  const [mfaDisableCode, setMfaDisableCode] = useState('');
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const user = useAuthStore((s) => s.user);
+  const token = useAuthStore((s) => s.token);
+  const refreshToken = useAuthStore((s) => s.refreshToken);
+  const setAuth = useAuthStore((s) => s.setAuth);
+  const canUseLive = user?.role === 'admin' || Boolean(user?.subscription?.active);
   const qc = useQueryClient();
   const { data } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
   const isPaper = (data?.trading?.mode ?? 'paper') === 'paper';
@@ -137,6 +155,12 @@ export function SettingsPage() {
     queryFn: portfolioApi.ledger,
     enabled: isPaper && tab === 3,
   });
+
+  useEffect(() => {
+    void authApi.me().then((me) => {
+      if (token) setAuth(token, me, refreshToken);
+    }).catch(() => undefined);
+  }, [token, refreshToken, setAuth]);
 
   useEffect(() => {
     void getActivePushEndpoint().then((ep) => setPushEnabled(Boolean(ep)));
@@ -240,10 +264,53 @@ export function SettingsPage() {
     },
     onError: (e: unknown) => setMsg((e as Error)?.message ?? 'Failed to disable Web Push'),
   });
+  const changePassword = useMutation({
+    mutationFn: () => authApi.changePassword(oldPassword, newPassword),
+    onSuccess: () => {
+      setOldPassword('');
+      setNewPassword('');
+      setMsg('Password changed');
+    },
+    onError: (e: unknown) => setMsg(errMsg(e)),
+  });
+  const mfaSetup = useMutation({
+    mutationFn: authApi.mfaSetup,
+    onSuccess: (r) => {
+      setMfaSecret(r.secret ?? '');
+      setMfaOtpauth(r.otpauthUrl ?? '');
+      setMsg('Scan the secret in your authenticator app, then confirm with a code');
+    },
+    onError: (e: unknown) => setMsg(errMsg(e)),
+  });
+  const mfaEnable = useMutation({
+    mutationFn: () => authApi.mfaEnable(mfaCode.trim()),
+    onSuccess: async (r) => {
+      setBackupCodes(r.backupCodes ?? []);
+      setMfaCode('');
+      setMsg('MFA enabled — store backup codes somewhere safe');
+      const me = await authApi.me();
+      if (token) setAuth(token, me, refreshToken);
+    },
+    onError: (e: unknown) => setMsg(errMsg(e)),
+  });
+  const mfaDisable = useMutation({
+    mutationFn: () => authApi.mfaDisable(mfaDisablePassword, mfaDisableCode.trim()),
+    onSuccess: async () => {
+      setMfaDisablePassword('');
+      setMfaDisableCode('');
+      setMfaSecret('');
+      setMfaOtpauth('');
+      setBackupCodes([]);
+      setMsg('MFA disabled');
+      const me = await authApi.me();
+      if (token) setAuth(token, me, refreshToken);
+    },
+    onError: (e: unknown) => setMsg(errMsg(e)),
+  });
 
   return (
     <Box>
-      <PageHeader title="Settings" subtitle="Exchange, risk, paper funding, scanner, and alerts" />
+      <PageHeader title="Settings" subtitle="Exchange, risk, paper funding, scanner, alerts, and account" />
       <Snackbar
         open={Boolean(msg)}
         autoHideDuration={4000}
@@ -267,7 +334,8 @@ export function SettingsPage() {
             gridTemplateColumns: {
               xs: 'repeat(2, 1fr)',
               sm: 'repeat(3, 1fr)',
-              md: 'repeat(6, 1fr)',
+              md: 'repeat(4, 1fr)',
+              lg: 'repeat(7, 1fr)',
             },
             gap: 0.75,
             p: 0.75,
@@ -275,12 +343,17 @@ export function SettingsPage() {
             bgcolor: 'background.level1',
             borderRadius: 'lg',
             '--TabList-underlineThickness': '0px',
+            '--Tab-indicatorThickness': '0px',
+            boxShadow: 'none',
+            '&::before': { display: 'none' },
+            '&::after': { display: 'none' },
           }}
         >
-          {['Binance', 'Risk', 'Trading', 'Paper', 'Scanner', 'Notifications'].map((label, i) => (
+          {['Binance', 'Risk', 'Trading', 'Paper', 'Scanner', 'Notifications', 'Account'].map((label, i) => (
             <Tab
               key={label}
               value={i}
+              disableIndicator
               variant={tab === i ? 'solid' : 'plain'}
               color={tab === i ? 'primary' : 'neutral'}
               sx={{
@@ -290,6 +363,8 @@ export function SettingsPage() {
                 justifyContent: 'center',
                 px: 1,
                 fontWeight: tab === i ? 600 : 500,
+                '--Tab-indicatorThickness': '0px',
+                '&::after': { display: 'none' },
               }}
             >
               {label}
@@ -315,7 +390,7 @@ export function SettingsPage() {
           </FormControl>
           <FormControl>
             <FormLabel>API Secret</FormLabel>
-            <Input type="password" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} />
+            <PasswordField value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} autoComplete="off" />
           </FormControl>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             <Button onClick={() => saveBinance.mutate()} disabled={!apiKey || !apiSecret}>
@@ -384,12 +459,26 @@ export function SettingsPage() {
               value={data.trading?.mode ?? 'paper'}
               onChange={(_, value) => {
                 if (!value || value === data.trading?.mode) return;
+                if (value === 'live' && !canUseLive) {
+                  setMsg('Active USDT subscription required for live trading');
+                  return;
+                }
                 saveSettings.mutate({ trading: { mode: value } });
               }}
             >
               <Option value="paper">Paper</Option>
-              <Option value="live">Live</Option>
+              <Option value="live" disabled={!canUseLive}>
+                Live{!canUseLive ? ' (subscription required)' : ''}
+              </Option>
             </Select>
+            {!canUseLive && (
+              <Alert color="warning" variant="soft" sx={{ mt: 1.5 }}>
+                Live trading needs an active subscription.{' '}
+                <Link component={RouterLink} to="/subscription">
+                  View plans
+                </Link>
+              </Alert>
+            )}
           </FormControl>
           <FormControl>
             <FormLabel>Live execution venue</FormLabel>
@@ -765,6 +854,142 @@ export function SettingsPage() {
             </Alert>
           )}
         </Sheet>
+      )}
+
+      {tab === 6 && (
+        <Box sx={{ display: 'grid', gap: 3, maxWidth: 560 }}>
+          <Sheet variant="outlined" sx={panelSx}>
+            <Typography level="title-md">Change password</Typography>
+            <FormControl required>
+              <FormLabel>Current password</FormLabel>
+              <PasswordField
+                value={oldPassword}
+                onChange={(e) => setOldPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+            </FormControl>
+            <FormControl required>
+              <FormLabel>New password</FormLabel>
+              <PasswordField
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+              <FormHelperText>Min 8 characters</FormHelperText>
+            </FormControl>
+            <Button
+              disabled={!oldPassword || newPassword.length < 8 || changePassword.isPending}
+              loading={changePassword.isPending}
+              onClick={() => changePassword.mutate()}
+            >
+              Update password
+            </Button>
+          </Sheet>
+
+          <Sheet variant="outlined" sx={panelSx}>
+            <Typography level="title-md">Authenticator (TOTP)</Typography>
+            <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
+              Status: {user?.totpEnabled ? 'Enabled' : 'Disabled'}
+            </Typography>
+            {!user?.totpEnabled ? (
+              <>
+                <Button
+                  variant="outlined"
+                  loading={mfaSetup.isPending}
+                  onClick={() => mfaSetup.mutate()}
+                >
+                  Start MFA setup
+                </Button>
+                {mfaSecret && (
+                  <>
+                    <Alert color="neutral" variant="soft">
+                      <Typography level="body-sm" sx={{ mb: 1 }}>
+                        Add this secret in Google Authenticator (or similar), then enter a code.
+                      </Typography>
+                      <Typography level="body-sm" sx={{ ...monoSx, wordBreak: 'break-all' }}>
+                        {mfaSecret}
+                      </Typography>
+                      {mfaOtpauth && (
+                        <Typography level="body-xs" sx={{ mt: 1, wordBreak: 'break-all' }}>
+                          {mfaOtpauth}
+                        </Typography>
+                      )}
+                    </Alert>
+                    <FormControl required>
+                      <FormLabel>Confirmation code</FormLabel>
+                      <Input
+                        value={mfaCode}
+                        onChange={(e) => setMfaCode(e.target.value)}
+                        placeholder="123456"
+                        slotProps={{ input: { inputMode: 'numeric', autoComplete: 'one-time-code' } }}
+                      />
+                    </FormControl>
+                    <Button
+                      disabled={mfaCode.trim().length < 6 || mfaEnable.isPending}
+                      loading={mfaEnable.isPending}
+                      onClick={() => mfaEnable.mutate()}
+                    >
+                      Enable MFA
+                    </Button>
+                  </>
+                )}
+                {backupCodes.length > 0 && (
+                  <Alert color="warning" variant="soft">
+                    <Typography level="title-sm" sx={{ mb: 1 }}>
+                      Backup codes (shown once)
+                    </Typography>
+                    <Box component="ul" sx={{ m: 0, pl: 2.5, ...monoSx }}>
+                      {backupCodes.map((c) => (
+                        <li key={c}>{c}</li>
+                      ))}
+                    </Box>
+                  </Alert>
+                )}
+              </>
+            ) : (
+              <>
+                <FormControl required>
+                  <FormLabel>Password</FormLabel>
+                  <PasswordField
+                    value={mfaDisablePassword}
+                    onChange={(e) => setMfaDisablePassword(e.target.value)}
+                    autoComplete="current-password"
+                  />
+                </FormControl>
+                <FormControl required>
+                  <FormLabel>Authenticator or backup code</FormLabel>
+                  <Input
+                    value={mfaDisableCode}
+                    onChange={(e) => setMfaDisableCode(e.target.value)}
+                  />
+                </FormControl>
+                <Button
+                  color="danger"
+                  variant="outlined"
+                  disabled={!mfaDisablePassword || !mfaDisableCode || mfaDisable.isPending}
+                  loading={mfaDisable.isPending}
+                  onClick={() => mfaDisable.mutate()}
+                >
+                  Disable MFA
+                </Button>
+              </>
+            )}
+          </Sheet>
+
+          <Sheet variant="outlined" sx={panelSx}>
+            <Typography level="title-md">Subscription</Typography>
+            <Typography level="body-sm">
+              {user?.role === 'admin'
+                ? 'Admin — live trading unlocked'
+                : user?.subscription?.active
+                  ? `Active${user.subscription.endsAt ? ` until ${formatDateTime(user.subscription.endsAt)}` : ''}`
+                  : 'No active subscription'}
+            </Typography>
+            <Button component={RouterLink} to="/subscription" variant="outlined">
+              Manage subscription
+            </Button>
+          </Sheet>
+        </Box>
       )}
     </Box>
   );

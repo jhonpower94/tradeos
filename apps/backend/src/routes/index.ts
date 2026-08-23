@@ -1,6 +1,40 @@
 import type { FastifyInstance } from 'fastify';
 import { AppError } from '../utils/errors.js';
-import { getUserId, loginUser, registerUser, issueRefreshToken, rotateRefreshToken, clearRefreshToken } from '../modules/auth/index.js';
+import {
+  getUserId,
+  loginUser,
+  registerUser,
+  issueRefreshToken,
+  rotateRefreshToken,
+  clearRefreshToken,
+  forgotPassword,
+  resetPassword,
+  changePassword,
+  getMe,
+  setupMfa,
+  enableMfa,
+  disableMfa,
+  verifyMfaLogin,
+  publicUser,
+  requireAdmin,
+} from '../modules/auth/index.js';
+import {
+  listActivePlans,
+  createInvoice,
+  listMyInvoices,
+  submitInvoiceTx,
+  getUserSubscription,
+} from '../modules/subscription/index.js';
+import {
+  adminListUsers,
+  adminPatchUser,
+  adminOverview,
+  adminGetSubscriptionSettings,
+  adminUpdateSubscriptionSettings,
+  adminListInvoices,
+  adminConfirmInvoice,
+  adminRejectInvoice,
+} from '../modules/admin/index.js';
 import {
   getSettings,
   updateSettings,
@@ -58,7 +92,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post('/api/v1/auth/register', async (req, reply) => {
     const body = req.body as { email: string; password: string };
     const user = await registerUser(body.email, body.password);
-    const accessToken = app.jwt.sign({ sub: String(user._id), email: user.email });
+    const accessToken = app.jwt.sign({ sub: String(user._id), email: user.email, role: user.role });
     const refreshToken = await issueRefreshToken(String(user._id));
     return reply.code(201).send({
       accessToken,
@@ -70,16 +104,27 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post('/api/v1/auth/login', async (req) => {
     const body = req.body as { email: string; password: string };
     const user = await loginUser(body.email, body.password);
-    const accessToken = app.jwt.sign({ sub: String(user._id), email: user.email });
+    if (user.totpEnabled) {
+      const mfaToken = app.jwt.sign(
+        { sub: String(user._id), purpose: 'mfa' },
+        { expiresIn: '5m' },
+      );
+      return { mfaRequired: true, mfaToken };
+    }
+    const accessToken = app.jwt.sign({
+      sub: String(user._id),
+      email: user.email,
+      role: user.role,
+    });
     const refreshToken = await issueRefreshToken(String(user._id));
-    return { accessToken, refreshToken, user: { id: user._id, email: user.email } };
+    return { accessToken, refreshToken, user: publicUser(user, await getUserSubscription(String(user._id))) };
   });
 
   app.post('/api/v1/auth/refresh', async (req) => {
     const body = req.body as { refreshToken?: string };
     if (!body.refreshToken) throw new AppError('UNAUTHORIZED', 'Refresh token required', 401);
     const { user, refreshToken } = await rotateRefreshToken(body.refreshToken);
-    const accessToken = app.jwt.sign({ sub: String(user._id), email: user.email });
+    const accessToken = app.jwt.sign({ sub: String(user._id), email: user.email, role: user.role });
     return {
       accessToken,
       refreshToken,
@@ -100,9 +145,96 @@ export async function registerRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
-  app.get('/api/v1/auth/me', { preHandler: auth }, async (req) => {
-    const userId = getUserId(req);
-    return { id: userId, email: (req.user as { email?: string }).email };
+  app.get('/api/v1/auth/me', { preHandler: auth }, async (req) => getMe(getUserId(req)));
+
+  app.post('/api/v1/auth/forgot-password', async (req) => {
+    const body = req.body as { email?: string };
+    return forgotPassword(String(body.email ?? ''));
+  });
+  app.post('/api/v1/auth/reset-password', async (req) => {
+    const body = req.body as { token?: string; password?: string };
+    return resetPassword(String(body.token ?? ''), String(body.password ?? ''));
+  });
+  app.post('/api/v1/auth/change-password', { preHandler: auth }, async (req) => {
+    const body = req.body as { oldPassword?: string; newPassword?: string };
+    return changePassword(getUserId(req), String(body.oldPassword ?? ''), String(body.newPassword ?? ''));
+  });
+  app.post('/api/v1/auth/mfa/setup', { preHandler: auth }, async (req) => setupMfa(getUserId(req)));
+  app.post('/api/v1/auth/mfa/enable', { preHandler: auth }, async (req) => {
+    const body = req.body as { code?: string };
+    return enableMfa(getUserId(req), String(body.code ?? ''));
+  });
+  app.post('/api/v1/auth/mfa/disable', { preHandler: auth }, async (req) => {
+    const body = req.body as { password?: string; code?: string };
+    return disableMfa(getUserId(req), String(body.password ?? ''), String(body.code ?? ''));
+  });
+  app.post('/api/v1/auth/mfa/verify', async (req) => {
+    const body = req.body as { mfaToken?: string; code?: string };
+    let payload: { sub: string; purpose?: string };
+    try {
+      payload = app.jwt.verify(String(body.mfaToken ?? '')) as { sub: string; purpose?: string };
+    } catch {
+      throw new AppError('INVALID_MFA_TOKEN', 'Invalid or expired MFA token', 401);
+    }
+    const user = await verifyMfaLogin(payload, String(body.code ?? ''));
+    const accessToken = app.jwt.sign({ sub: String(user._id), email: user.email, role: user.role });
+    const refreshToken = await issueRefreshToken(String(user._id));
+    return { accessToken, refreshToken, user: publicUser(user, await getUserSubscription(String(user._id))) };
+  });
+
+  // Subscription (user)
+  app.get('/api/v1/subscription/status', { preHandler: auth }, async (req) =>
+    getUserSubscription(getUserId(req)),
+  );
+  app.get('/api/v1/subscription/plans', { preHandler: auth }, async () => listActivePlans());
+  app.post('/api/v1/subscription/invoices', { preHandler: auth }, async (req) => {
+    const body = req.body as { planId?: string; network?: 'trc20' | 'bep20' | 'erc20' };
+    return createInvoice(getUserId(req), String(body.planId ?? ''), body.network);
+  });
+  app.get('/api/v1/subscription/invoices/mine', { preHandler: auth }, async (req) =>
+    listMyInvoices(getUserId(req)),
+  );
+  app.post('/api/v1/subscription/invoices/:id/submit-tx', { preHandler: auth }, async (req) => {
+    const body = req.body as { txHash?: string };
+    return submitInvoiceTx(getUserId(req), (req.params as { id: string }).id, String(body.txHash ?? ''));
+  });
+
+  // Admin / manager
+  app.get('/api/v1/admin/overview', { preHandler: auth }, async (req) => {
+    await requireAdmin(req);
+    return adminOverview();
+  });
+  app.get('/api/v1/admin/users', { preHandler: auth }, async (req) => {
+    await requireAdmin(req);
+    const q = (req.query as { q?: string }).q;
+    return { items: await adminListUsers(q) };
+  });
+  app.patch('/api/v1/admin/users/:id', { preHandler: auth }, async (req) => {
+    await requireAdmin(req);
+    return adminPatchUser((req.params as { id: string }).id, (req.body ?? {}) as never);
+  });
+  app.get('/api/v1/admin/subscription/settings', { preHandler: auth }, async (req) => {
+    await requireAdmin(req);
+    return adminGetSubscriptionSettings();
+  });
+  app.put('/api/v1/admin/subscription/settings', { preHandler: auth }, async (req) => {
+    await requireAdmin(req);
+    return adminUpdateSubscriptionSettings((req.body ?? {}) as never);
+  });
+  app.get('/api/v1/admin/subscription/invoices', { preHandler: auth }, async (req) => {
+    await requireAdmin(req);
+    const status = (req.query as { status?: string }).status;
+    return { items: await adminListInvoices(status ? { status } : undefined) };
+  });
+  app.post('/api/v1/admin/subscription/invoices/:id/confirm', { preHandler: auth }, async (req) => {
+    await requireAdmin(req);
+    const body = (req.body ?? {}) as { txHash?: string };
+    return adminConfirmInvoice((req.params as { id: string }).id, body.txHash);
+  });
+  app.post('/api/v1/admin/subscription/invoices/:id/reject', { preHandler: auth }, async (req) => {
+    await requireAdmin(req);
+    const body = (req.body ?? {}) as { note?: string };
+    return adminRejectInvoice((req.params as { id: string }).id, body.note);
   });
 
   // Settings

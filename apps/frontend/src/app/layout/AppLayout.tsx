@@ -23,6 +23,8 @@ import ScienceOutlined from '@mui/icons-material/ScienceOutlined';
 import LogoutOutlined from '@mui/icons-material/LogoutOutlined';
 import MenuOutlined from '@mui/icons-material/MenuOutlined';
 import MoreHoriz from '@mui/icons-material/MoreHoriz';
+import CardMembershipOutlined from '@mui/icons-material/CardMembershipOutlined';
+import AdminPanelSettingsOutlined from '@mui/icons-material/AdminPanelSettingsOutlined';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useWebSocket } from '../../hooks/useWebSocket';
@@ -42,15 +44,14 @@ const primaryNav: NavItem[] = [
   { to: '/portfolio', label: 'Portfolio', icon: <AccountBalanceWalletOutlined /> },
 ];
 
-const moreNav: NavItem[] = [
+const moreNavBase: NavItem[] = [
   { to: '/charts', label: 'Charts', icon: <CandlestickChartOutlined /> },
   { to: '/journal', label: 'Journal', icon: <MenuBookOutlined /> },
   { to: '/analytics', label: 'Analytics', icon: <InsightsOutlined /> },
   { to: '/backtest', label: 'Backtest', icon: <ScienceOutlined /> },
+  { to: '/subscription', label: 'Subscription', icon: <CardMembershipOutlined /> },
   { to: '/settings', label: 'Settings', icon: <SettingsOutlined /> },
 ];
-
-const allNav = [...primaryNav, ...moreNav];
 
 function isActive(pathname: string, to: string) {
   if (to === '/') return pathname === '/';
@@ -97,6 +98,13 @@ export function AppLayout() {
   const [moreOpen, setMoreOpen] = useState(false);
   useWebSocket();
 
+  const moreNav: NavItem[] = [
+    ...moreNavBase,
+    ...(user?.role === 'admin'
+      ? [{ to: '/manager', label: 'Manager', icon: <AdminPanelSettingsOutlined /> } satisfies NavItem]
+      : []),
+  ];
+  const allNav = [...primaryNav, ...moreNav];
   const moreActive = moreNav.some((item) => isActive(location.pathname, item.to));
 
   async function onLogout() {

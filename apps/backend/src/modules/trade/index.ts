@@ -258,6 +258,10 @@ export async function executeOpportunity(
 ) {
   const settings = await getRawSettings(userId);
   const mode = settings.trading?.mode === TradingMode.LIVE ? TradingMode.LIVE : TradingMode.PAPER;
+  if (mode === TradingMode.LIVE) {
+    const { assertCanUseLive } = await import('../subscription/entitlement.js');
+    await assertCanUseLive(userId);
+  }
   const executionVenue = settings.trading?.executionVenue ?? ExecutionVenue.MARGIN;
   const { equity, freeQuote } = await estimateEquity(userId, mode, executionVenue);
 

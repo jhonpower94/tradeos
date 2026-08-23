@@ -12,6 +12,50 @@ export const authApi = {
   logout: (refreshToken?: string | null) =>
     api.post('/auth/logout', { refreshToken: refreshToken ?? undefined }).then((r) => r.data),
   me: () => api.get('/auth/me').then((r) => r.data),
+  forgotPassword: (email: string) =>
+    api.post('/auth/forgot-password', { email }).then((r) => r.data),
+  resetPassword: (token: string, newPassword: string) =>
+    api.post('/auth/reset-password', { token, newPassword }).then((r) => r.data),
+  changePassword: (oldPassword: string, newPassword: string) =>
+    api.post('/auth/change-password', { oldPassword, newPassword }).then((r) => r.data),
+  mfaSetup: () => api.post('/auth/mfa/setup').then((r) => r.data),
+  mfaEnable: (code: string) => api.post('/auth/mfa/enable', { code }).then((r) => r.data),
+  mfaDisable: (password: string, code: string) =>
+    api.post('/auth/mfa/disable', { password, code }).then((r) => r.data),
+  mfaVerify: (mfaToken: string, code: string) =>
+    api.post('/auth/mfa/verify', { mfaToken, code }).then((r) => r.data),
+};
+
+export const subscriptionApi = {
+  status: () => api.get('/subscription/status').then((r) => r.data),
+  plans: () => api.get('/subscription/plans').then((r) => r.data),
+  createInvoice: (body: { planId: string; network: string }) =>
+    api.post('/subscription/invoices', body).then((r) => r.data),
+  submitTx: (id: string, txHash: string) =>
+    api.post(`/subscription/invoices/${id}/submit-tx`, { txHash }).then((r) => r.data),
+  myInvoices: () => api.get('/subscription/invoices/mine').then((r) => r.data),
+};
+
+export const adminApi = {
+  overview: () => api.get('/admin/overview').then((r) => r.data),
+  listUsers: (params?: Record<string, unknown>) =>
+    api.get('/admin/users', { params }).then((r) => r.data),
+  patchUser: (id: string, body: unknown) =>
+    api.patch(`/admin/users/${id}`, body).then((r) => r.data),
+  getSubscriptionSettings: () =>
+    api.get('/admin/subscription/settings').then((r) => r.data),
+  updateSubscriptionSettings: (body: unknown) =>
+    api.put('/admin/subscription/settings', body).then((r) => r.data),
+  listInvoices: (params?: { status?: string }) =>
+    api.get('/admin/subscription/invoices', { params }).then((r) => r.data),
+  confirmInvoice: (id: string, body?: { txHash?: string }) =>
+    api.post(`/admin/subscription/invoices/${id}/confirm`, body ?? {}).then((r) => r.data),
+  rejectInvoice: (id: string, body?: { note?: string }) =>
+    api.post(`/admin/subscription/invoices/${id}/reject`, body ?? {}).then((r) => r.data),
+  grantSubscription: (userId: string, body: { days: number; planId?: string }) =>
+    api.patch(`/admin/users/${userId}`, { grantDays: body.days }).then((r) => r.data),
+  revokeSubscription: (userId: string) =>
+    api.patch(`/admin/users/${userId}`, { revokeSubscription: true }).then((r) => r.data),
 };
 
 export const settingsApi = {

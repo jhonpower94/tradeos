@@ -72,4 +72,9 @@ export const config = {
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY || undefined,
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || undefined,
   vapidSubject: process.env.VAPID_SUBJECT || 'mailto:trading-os@localhost',
+  frontendUrl: process.env.FRONTEND_URL ?? process.env.CORS_ORIGIN ?? 'http://localhost:5173',
+  bootstrapAdminEmail: (process.env.BOOTSTRAP_ADMIN_EMAIL ?? '').toLowerCase().trim() || undefined,
+  trongridApiKey: process.env.TRONGRID_API_KEY || undefined,
+  etherscanApiKey: process.env.ETHERSCAN_API_KEY || undefined,
+  bscscanApiKey: process.env.BSCSCAN_API_KEY || undefined,
 };
