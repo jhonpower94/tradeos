@@ -8,6 +8,8 @@ import {
   Timeframe,
   TradeStatus,
   TradingMode,
+  ExecutionVenue,
+  TradeVenue,
   type Opportunity,
   type StrategyId,
 } from '@trading-os/shared';
@@ -16,7 +18,7 @@ import { Position } from '../../models/Position.js';
 import { Signal } from '../../models/Signal.js';
 import { getRawSettings, getBinanceCredentials } from '../settings/index.js';
 import { softPrecheck, validateRisk } from '../risk/index.js';
-import { exchangeService } from '../exchange/index.js';
+import { exchangeService, type MarginSideEffect } from '../exchange/index.js';
 import { getTickerPrice, marketDataService, setTickerPrice } from '../market-data/index.js';
 import { computeAllIndicators, lastValid } from '../indicators/index.js';
 import { AppError } from '../../utils/errors.js';
@@ -31,13 +33,125 @@ import {
   fillPriceFromOrder,
   resolveLiveExitPrice,
 } from './pricing.js';
-import { entryDriftExceeded, reanchorRiskLevels, buildCloneOpportunity, CloneLevelsError } from './levels.js';
+import { entryDriftExceeded, reanchorRiskLevels, buildCloneOpportunity, CloneLevelsError, buildFlipOpportunity } from './levels.js';
 
 /**
  * Resolve settlement price for a close.
  * - Caller-supplied exitPrice (auto exits): soft-close on that tick if live order fails.
  * - No exitPrice (manual close): require live mark; LIVE requires a successful fill.
  */
+
+function resolveTradeVenue(
+  mode: TradingMode,
+  executionVenue: string | undefined,
+  existing?: string | null,
+): TradeVenue {
+  if (existing === TradeVenue.SPOT || existing === TradeVenue.MARGIN || existing === TradeVenue.PAPER) {
+    return existing;
+  }
+  if (mode !== TradingMode.LIVE) return TradeVenue.PAPER;
+  return executionVenue === ExecutionVenue.SPOT ? TradeVenue.SPOT : TradeVenue.MARGIN;
+}
+
+async function ensureMarginCollateral(symbol: string, notionalUsdt: number): Promise<void> {
+  await exchangeService.ensureIsolatedAccount(symbol);
+  const pairs = await exchangeService.getIsolatedMarginAccount(symbol);
+  const pair = pairs.find((a) => a.symbol === symbol.toUpperCase());
+  const freeIso = pair?.quote.asset === 'USDT' ? pair.quote.free : 0;
+  const need = Math.max(0, notionalUsdt * 1.02 - freeIso);
+  if (need > 1) {
+    const spot = await exchangeService.getBalances();
+    const usdt = spot.find((b) => b.asset === 'USDT')?.free ?? 0;
+    if (usdt < need) {
+      throw new AppError(
+        'INSUFFICIENT_MARGIN',
+        `Need ~${need.toFixed(2)} USDT in isolated margin for ${symbol}; spot free ${usdt.toFixed(2)}`,
+        400,
+      );
+    }
+    await exchangeService.transferIsolatedMargin({
+      asset: 'USDT',
+      symbol,
+      amount: Number(need.toFixed(8)),
+      direction: 'to_isolated',
+    });
+  }
+}
+
+async function placeLiveEntryOrder(input: {
+  venue: TradeVenue;
+  symbol: string;
+  side: Side;
+  qty: number;
+  orderType: OrderType;
+  limitPrice?: number;
+}): Promise<{ order: Awaited<ReturnType<typeof exchangeService.placeOrder>>; sideEffect?: MarginSideEffect }> {
+  if (input.venue !== TradeVenue.MARGIN) {
+    const order = await exchangeService.placeOrder({
+      symbol: input.symbol,
+      side: input.side,
+      type: input.orderType,
+      quantity: input.qty,
+      price: input.limitPrice,
+    });
+    return { order };
+  }
+
+  let px = input.limitPrice ?? 0;
+  if (!(px > 0)) {
+    try {
+      const t = await exchangeService.getTicker(input.symbol);
+      px = t.price;
+    } catch {
+      px = 0;
+    }
+  }
+  if (px > 0) {
+    const collateral = input.side === Side.BUY ? input.qty * px : input.qty * px * 0.5;
+    await ensureMarginCollateral(input.symbol, collateral);
+  } else {
+    await exchangeService.ensureIsolatedAccount(input.symbol);
+  }
+
+  const sideEffect: MarginSideEffect =
+    input.side === Side.SELL ? 'AUTO_BORROW_REPAY' : 'NO_SIDE_EFFECT';
+  const order = await exchangeService.placeMarginOrder({
+    symbol: input.symbol,
+    side: input.side,
+    type: input.orderType,
+    quantity: input.qty,
+    price: input.limitPrice,
+    sideEffectType: sideEffect,
+  });
+  return { order, sideEffect };
+}
+
+async function placeLiveCloseOrder(input: {
+  venue: TradeVenue;
+  symbol: string;
+  positionSide: Side;
+  qty: number;
+}): Promise<Awaited<ReturnType<typeof exchangeService.placeOrder>>> {
+  const closeSide = input.positionSide === Side.BUY ? Side.SELL : Side.BUY;
+  if (input.venue !== TradeVenue.MARGIN) {
+    return exchangeService.placeOrder({
+      symbol: input.symbol,
+      side: closeSide,
+      type: OrderType.MARKET,
+      quantity: input.qty,
+    });
+  }
+  const sideEffect: MarginSideEffect =
+    input.positionSide === Side.SELL ? 'AUTO_REPAY' : 'NO_SIDE_EFFECT';
+  return exchangeService.placeMarginOrder({
+    symbol: input.symbol,
+    side: closeSide,
+    type: OrderType.MARKET,
+    quantity: input.qty,
+    sideEffectType: sideEffect,
+  });
+}
+
 async function settleClosePrice(input: {
   userId: string;
   symbol: string;
@@ -45,6 +159,7 @@ async function settleClosePrice(input: {
   qty: number;
   mode: TradingMode;
   exitPrice?: number;
+  venue?: TradeVenue;
 }): Promise<{ price: number; orderId?: string }> {
   const requireLiveSettlement = input.exitPrice == null;
 
@@ -72,14 +187,14 @@ async function settleClosePrice(input: {
   }
 
   exchangeService.setCredentials(creds);
-  const closeSide = input.side === Side.BUY ? Side.SELL : Side.BUY;
+  const venue = input.venue ?? TradeVenue.SPOT;
 
   try {
-    const order = await exchangeService.placeOrder({
+    const order = await placeLiveCloseOrder({
+      venue,
       symbol: input.symbol,
-      side: closeSide,
-      type: OrderType.MARKET,
-      quantity: input.qty,
+      positionSide: input.side,
+      qty: input.qty,
     });
     const fill = fillPriceFromOrder(order);
     if (fill != null) {
@@ -104,12 +219,24 @@ async function settleClosePrice(input: {
   }
 }
 
-async function estimateEquity(userId: string, mode: TradingMode): Promise<{ equity: number; freeQuote: number }> {
+async function estimateEquity(
+  userId: string,
+  mode: TradingMode,
+  executionVenue?: string,
+): Promise<{ equity: number; freeQuote: number }> {
   if (mode === TradingMode.LIVE) {
     try {
       const creds = await getBinanceCredentials(userId);
       if (creds) {
         exchangeService.setCredentials(creds);
+        if (executionVenue !== ExecutionVenue.SPOT) {
+          try {
+            const q = await exchangeService.getMarginSizingQuote();
+            return { equity: q.freeQuote, freeQuote: q.freeQuote };
+          } catch {
+            // fall back to spot balances
+          }
+        }
         const balances = await exchangeService.getBalances();
         const usdt = balances.find((b) => b.asset === 'USDT');
         const free = usdt?.free ?? 0;
@@ -131,7 +258,8 @@ export async function executeOpportunity(
 ) {
   const settings = await getRawSettings(userId);
   const mode = settings.trading?.mode === TradingMode.LIVE ? TradingMode.LIVE : TradingMode.PAPER;
-  const { equity, freeQuote } = await estimateEquity(userId, mode);
+  const executionVenue = settings.trading?.executionVenue ?? ExecutionVenue.MARGIN;
+  const { equity, freeQuote } = await estimateEquity(userId, mode, executionVenue);
 
   let spreadBps: number | undefined;
   let volume24h: number | undefined;
@@ -233,19 +361,31 @@ export async function executeOpportunity(
   let binanceOrderIds: string[] = [];
   let fees = 0;
 
+  const tradeVenue = resolveTradeVenue(mode, executionVenue);
+  let marginSideEffect: string | undefined;
+  let borrowedAsset: string | undefined;
+  let borrowedQty: number | undefined;
+
   if (mode === TradingMode.PAPER) {
     fees = entryPrice * qty * feeRate;
   } else {
     const creds = await getBinanceCredentials(userId);
     if (!creds) throw new AppError('NO_KEYS', 'Binance keys required for live trading', 400);
     exchangeService.setCredentials(creds);
-    const order = await exchangeService.placeOrder({
+    const placed = await placeLiveEntryOrder({
+      venue: tradeVenue,
       symbol: opportunity.symbol,
       side: opportunity.side,
-      type: opts?.orderType ?? OrderType.MARKET,
-      quantity: qty,
-      price: opts?.limitPrice,
+      qty,
+      orderType: opts?.orderType ?? OrderType.MARKET,
+      limitPrice: opts?.limitPrice,
     });
+    const order = placed.order;
+    marginSideEffect = placed.sideEffect;
+    if (opportunity.side === Side.SELL && tradeVenue === TradeVenue.MARGIN) {
+      borrowedAsset = opportunity.symbol.replace(/USDT$/, '') || opportunity.symbol;
+      borrowedQty = qty;
+    }
     binanceOrderIds = [order.orderId];
     entryPrice =
       order.executedQty > 0
@@ -264,11 +404,11 @@ export async function executeOpportunity(
     // Live fill already happened — flatten immediately so oversized risk is not held.
     if (mode === TradingMode.LIVE && binanceOrderIds.length > 0) {
       try {
-        await exchangeService.placeOrder({
+        await placeLiveCloseOrder({
+          venue: tradeVenue,
           symbol: opportunity.symbol,
-          side: opportunity.side === Side.BUY ? Side.SELL : Side.BUY,
-          type: OrderType.MARKET,
-          quantity: qty,
+          positionSide: opportunity.side,
+          qty,
         });
       } catch {
         // best-effort flatten; still reject the open
@@ -289,6 +429,10 @@ export async function executeOpportunity(
     userId,
     signalId,
     mode,
+    venue: tradeVenue,
+    borrowedAsset,
+    borrowedQty,
+    marginSideEffect,
     symbol: opportunity.symbol,
     side: opportunity.side,
     orderType: opts?.orderType ?? OrderType.MARKET,
@@ -436,6 +580,7 @@ export async function partialClosePosition(
     qty,
     mode: trade.mode as TradingMode,
     exitPrice,
+    venue: (trade.venue as TradeVenue | undefined) ?? TradeVenue.SPOT,
   });
   const price = settled.price;
   if (settled.orderId) {
@@ -480,6 +625,7 @@ export async function closePosition(
   positionId: string,
   reason: string,
   exitPrice?: number,
+  opts?: { skipRescan?: boolean },
 ) {
   const position = await Position.findOne({ _id: positionId, userId, status: PositionStatus.OPEN });
   if (!position) throw new AppError('NOT_FOUND', 'Position not found', 404);
@@ -497,6 +643,7 @@ export async function closePosition(
     qty: position.qty,
     mode: trade.mode as TradingMode,
     exitPrice,
+    venue: (trade.venue as TradeVenue | undefined) ?? TradeVenue.SPOT,
   });
   const price = settled.price;
   if (settled.orderId) {
@@ -539,9 +686,11 @@ export async function closePosition(
   });
 
   const freedSymbol = position.symbol;
-  void import('../scanner/index.js')
-    .then(({ scannerService }) => scannerService.scanUserSymbol(userId, freedSymbol))
-    .catch((e) => console.error('Post-close rescan failed', e));
+  if (!opts?.skipRescan) {
+    void import('../scanner/index.js')
+      .then(({ scannerService }) => scannerService.scanUserSymbol(userId, freedSymbol))
+      .catch((e) => console.error('Post-close rescan failed', e));
+  }
 
   return trade;
 }
@@ -621,6 +770,138 @@ export async function copyTrade(
 
   return {
     trade,
+    opportunity: {
+      symbol: opportunity.symbol,
+      side: opportunity.side,
+      timeframe: opportunity.timeframe,
+      confidence: opportunity.confidence,
+      entry: opportunity.entry,
+      stopLoss: opportunity.stopLoss,
+      takeProfit: opportunity.takeProfit,
+      riskReward: opportunity.riskReward,
+      primaryStrategy: opportunity.primaryStrategy,
+    },
+  };
+}
+
+/**
+ * Fully close an open trade then open the opposite side with mirrored SL/TP distances.
+ * Qty is re-sized via risk validation inside executeOpportunity.
+ */
+export async function flipTrade(
+  userId: string,
+  tradeId: string,
+  opts?: { orderType?: OrderType; limitPrice?: number },
+) {
+  const source = await Trade.findOne({ _id: tradeId, userId });
+  if (!source) throw new AppError('NOT_FOUND', 'Trade not found', 404);
+
+  const position = await Position.findOne({
+    tradeId: source._id,
+    userId,
+    status: PositionStatus.OPEN,
+  });
+  if (!position) throw new AppError('NOT_FOUND', 'Open position not found', 404);
+
+  const settings = await getRawSettings(userId);
+  const mode = settings.trading?.mode === TradingMode.LIVE ? TradingMode.LIVE : TradingMode.PAPER;
+  const executionVenue = settings.trading?.executionVenue ?? ExecutionVenue.MARGIN;
+  const venue = resolveTradeVenue(mode, executionVenue, source.venue as string | undefined);
+  const newSide = source.side === Side.BUY ? Side.SELL : Side.BUY;
+
+  if (mode === TradingMode.LIVE && venue === TradeVenue.SPOT && newSide === Side.SELL) {
+    throw new AppError(
+      'INVALID_TRADE',
+      'Cannot flip a live spot long to short — set Live execution venue to Margin first',
+      400,
+    );
+  }
+
+  let timeframe = Timeframe.H1;
+  let primaryStrategy: StrategyId = 'breakout';
+  let strategyIds: StrategyId[] = ['breakout'];
+  let confidence = 80;
+  let regime = MarketRegime.UNKNOWN;
+
+  if (source.signalId) {
+    const sig = await Signal.findById(source.signalId).lean();
+    if (sig) {
+      if (sig.timeframe) timeframe = sig.timeframe as Timeframe;
+      if (sig.primaryStrategy) primaryStrategy = sig.primaryStrategy as StrategyId;
+      if (Array.isArray(sig.strategyIds) && sig.strategyIds.length) {
+        strategyIds = sig.strategyIds as StrategyId[];
+      }
+      if (typeof sig.confidence === 'number') confidence = sig.confidence;
+      if (sig.regime) regime = sig.regime as MarketRegime;
+    }
+  }
+
+  let liveEntry = Number(source.entryPrice) || 0;
+  const cached = getTickerPrice(source.symbol);
+  if (cached != null && cached > 0) {
+    liveEntry = cached;
+  } else {
+    try {
+      const ticker = await exchangeService.getTicker(source.symbol);
+      if (ticker.price > 0) {
+        liveEntry = ticker.price;
+        setTickerPrice(source.symbol, ticker.price);
+      }
+    } catch {
+      // fall back to source entry
+    }
+  }
+
+  let opportunity;
+  try {
+    opportunity = buildFlipOpportunity(source, liveEntry, {
+      timeframe,
+      primaryStrategy,
+      strategyIds,
+      confidence,
+      regime,
+      sourceTradeId: String(source._id),
+    });
+  } catch (e) {
+    if (e instanceof CloneLevelsError) {
+      throw new AppError('INVALID_TRADE', e.message, 400);
+    }
+    throw e;
+  }
+
+  const closed = await closePosition(
+    userId,
+    String(position._id),
+    `Flip to ${newSide}`,
+    undefined,
+    { skipRescan: true },
+  );
+
+  let opened;
+  try {
+    opened = await executeOpportunity(userId, opportunity, undefined, {
+      orderType: opts?.orderType,
+      limitPrice: opts?.limitPrice,
+    });
+  } catch (e) {
+    void import('../scanner/index.js')
+      .then(({ scannerService }) => scannerService.scanUserSymbol(userId, source.symbol))
+      .catch((err) => console.error('Post-flip rescan failed', err));
+    const msg = e instanceof Error ? e.message : 'Flip re-entry failed';
+    throw new AppError(
+      'FLIP_REENTRY_FAILED',
+      `Closed ${source.side} ${source.symbol} but could not open ${newSide}: ${msg}`,
+      502,
+    );
+  }
+
+  void import('../scanner/index.js')
+    .then(({ scannerService }) => scannerService.scanUserSymbol(userId, source.symbol))
+    .catch((err) => console.error('Post-flip rescan failed', err));
+
+  return {
+    closed,
+    opened,
     opportunity: {
       symbol: opportunity.symbol,
       side: opportunity.side,

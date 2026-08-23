@@ -48,6 +48,18 @@ export enum TradingMode {
   LIVE = 'live',
 }
 
+export enum ExecutionVenue {
+  SPOT = 'spot',
+  MARGIN = 'margin',
+}
+
+/** How a trade was settled on the exchange (paper is synthetic). */
+export enum TradeVenue {
+  PAPER = 'paper',
+  SPOT = 'spot',
+  MARGIN = 'margin',
+}
+
 export enum ApprovalMode {
   MANUAL = 'manual',
   SEMI = 'semi',

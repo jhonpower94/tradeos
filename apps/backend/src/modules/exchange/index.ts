@@ -43,6 +43,33 @@ export interface PlaceOrderParams {
   newClientOrderId?: string;
 }
 
+export type MarginSideEffect = 'NO_SIDE_EFFECT' | 'MARGIN_BUY' | 'AUTO_REPAY' | 'AUTO_BORROW_REPAY';
+
+export interface PlaceMarginOrderParams extends PlaceOrderParams {
+  /** Isolated margin only for this integration. */
+  isIsolated?: boolean;
+  sideEffectType?: MarginSideEffect;
+}
+
+export interface IsolatedMarginAssetBalance {
+  asset: string;
+  free: number;
+  locked: number;
+  borrowed: number;
+  interest: number;
+  netAsset: number;
+}
+
+export interface IsolatedMarginPairAccount {
+  symbol: string;
+  base: IsolatedMarginAssetBalance;
+  quote: IsolatedMarginAssetBalance;
+  marginLevel: number;
+  liquidatePrice: number;
+  liquidateRate: number;
+  enabled: boolean;
+}
+
 export interface OrderResult {
   orderId: string;
   symbol: string;
@@ -347,6 +374,163 @@ export class ExchangeService {
     const fixed = Number(rounded.toFixed(precision));
     return Math.max(fixed, minQty === 0 ? fixed : 0);
   }
+
+  /** Enable isolated margin for a symbol if not already enabled. */
+  async ensureIsolatedAccount(symbol: string): Promise<void> {
+    const sym = symbol.toUpperCase();
+    try {
+      const acct = await this.getIsolatedMarginAccount(sym);
+      if (acct.some((a) => a.symbol === sym && a.enabled)) return;
+    } catch {
+      // create below
+    }
+    const base = this.baseAsset(sym);
+    try {
+      await this.request('POST', '/sapi/v1/margin/isolated/create', { base, quote: 'USDT' }, true);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/already|exist/i.test(msg)) throw e;
+    }
+  }
+
+  private baseAsset(symbol: string): string {
+    const sym = symbol.toUpperCase();
+    const cached = this.symbolCache?.find((s) => s.symbol === sym);
+    if (cached?.baseAsset) return cached.baseAsset;
+    if (sym.endsWith('USDT')) return sym.slice(0, -4);
+    return sym;
+  }
+
+  async transferIsolatedMargin(input: {
+    asset: string;
+    symbol: string;
+    amount: number;
+    /** spot → isolated = 'to_isolated'; isolated → spot = 'to_spot' */
+    direction: 'to_isolated' | 'to_spot';
+  }): Promise<void> {
+    await this.request(
+      'POST',
+      '/sapi/v1/margin/isolated/transfer',
+      {
+        asset: input.asset.toUpperCase(),
+        symbol: input.symbol.toUpperCase(),
+        transFrom: input.direction === 'to_isolated' ? 'SPOT' : 'ISOLATED_MARGIN',
+        transTo: input.direction === 'to_isolated' ? 'ISOLATED_MARGIN' : 'SPOT',
+        amount: input.amount,
+      },
+      true,
+    );
+  }
+
+  async getIsolatedMarginAccount(symbol?: string): Promise<IsolatedMarginPairAccount[]> {
+    const params: Record<string, string | number | boolean | undefined> = {};
+    if (symbol) params.symbols = symbol.toUpperCase();
+    const data = await this.request<{
+      assets: Array<{
+        symbol: string;
+        marginLevel: string;
+        liquidatePrice: string;
+        liquidateRate: string;
+        enabled: boolean;
+        baseAsset: {
+          asset: string;
+          free: string;
+          locked: string;
+          borrowed: string;
+          interest: string;
+          netAsset: string;
+        };
+        quoteAsset: {
+          asset: string;
+          free: string;
+          locked: string;
+          borrowed: string;
+          interest: string;
+          netAsset: string;
+        };
+      }>;
+    }>('GET', '/sapi/v1/margin/isolated/account', params, true);
+
+    const mapAsset = (a: {
+      asset: string;
+      free: string;
+      locked: string;
+      borrowed: string;
+      interest: string;
+      netAsset: string;
+    }): IsolatedMarginAssetBalance => ({
+      asset: a.asset,
+      free: Number(a.free),
+      locked: Number(a.locked),
+      borrowed: Number(a.borrowed),
+      interest: Number(a.interest),
+      netAsset: Number(a.netAsset),
+    });
+
+    return (data.assets ?? []).map((row) => ({
+      symbol: row.symbol,
+      base: mapAsset(row.baseAsset),
+      quote: mapAsset(row.quoteAsset),
+      marginLevel: Number(row.marginLevel),
+      liquidatePrice: Number(row.liquidatePrice),
+      liquidateRate: Number(row.liquidateRate),
+      enabled: Boolean(row.enabled),
+    }));
+  }
+
+  /** Spot USDT free + isolated USDT free across pairs (for sizing). */
+  async getMarginSizingQuote(): Promise<{ spotFree: number; isolatedFree: number; freeQuote: number }> {
+    const spot = await this.getBalances();
+    const usdt = spot.find((b) => b.asset === 'USDT');
+    const spotFree = usdt?.free ?? 0;
+    let isolatedFree = 0;
+    try {
+      const pairs = await this.getIsolatedMarginAccount();
+      for (const p of pairs) {
+        if (p.quote.asset === 'USDT') isolatedFree += p.quote.free;
+      }
+    } catch {
+      // margin account may be empty / disabled
+    }
+    return { spotFree, isolatedFree, freeQuote: spotFree + isolatedFree };
+  }
+
+  async placeMarginOrder(params: PlaceMarginOrderParams): Promise<OrderResult> {
+    const body: Record<string, string | number | boolean | undefined> = {
+      symbol: params.symbol.toUpperCase(),
+      side: params.side,
+      type: params.type,
+      quantity: params.quantity,
+      isIsolated: 'TRUE',
+      sideEffectType: params.sideEffectType ?? 'NO_SIDE_EFFECT',
+    };
+    if (params.type === 'LIMIT') {
+      body.price = params.price;
+      body.timeInForce = params.timeInForce ?? 'GTC';
+    }
+    if (params.newClientOrderId) body.newClientOrderId = params.newClientOrderId;
+    const data = await this.request<{
+      orderId: number;
+      symbol: string;
+      status: string;
+      side: string;
+      type: string;
+      price: string;
+      executedQty: string;
+      cummulativeQuoteQty: string;
+    }>('POST', '/sapi/v1/margin/order', body, true);
+    return {
+      orderId: String(data.orderId),
+      symbol: data.symbol,
+      status: data.status,
+      side: data.side,
+      type: data.type,
+      price: Number(data.price),
+      executedQty: Number(data.executedQty),
+      cummulativeQuoteQty: Number(data.cummulativeQuoteQty),
+    };
+  }
+
 }
 
 export const exchangeService = new ExchangeService();

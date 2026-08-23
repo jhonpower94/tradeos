@@ -135,3 +135,69 @@ export function buildCloneOpportunity(
     regime: meta?.regime ?? MarketRegime.UNKNOWN,
   };
 }
+
+
+/**
+ * Opposite-side opportunity preserving SL/TP distances from the source fill.
+ */
+export function buildFlipOpportunity(
+  source: {
+    symbol: string;
+    side: Side | string;
+    entryPrice?: number | null;
+    stopLoss?: number | null;
+    takeProfit?: number | null;
+  },
+  liveEntry: number,
+  meta?: {
+    timeframe?: Timeframe;
+    primaryStrategy?: StrategyId;
+    strategyIds?: StrategyId[];
+    confidence?: number;
+    regime?: MarketRegime;
+    sourceTradeId?: string;
+  },
+): Opportunity {
+  const entry = Number(source.entryPrice);
+  const stopLoss = Number(source.stopLoss);
+  const takeProfit = Number(source.takeProfit);
+  if (!(entry > 0) || !(stopLoss > 0) || !(takeProfit > 0)) {
+    throw new CloneLevelsError('Source trade missing entry/SL/TP to flip');
+  }
+  if (!(liveEntry > 0)) {
+    throw new CloneLevelsError('No live price to flip against');
+  }
+
+  const newSide = source.side === Side.BUY ? Side.SELL : Side.BUY;
+  const slDist = Math.abs(entry - stopLoss);
+  const tpDist = Math.abs(takeProfit - entry);
+  const mirroredSl = newSide === Side.BUY ? liveEntry - slDist : liveEntry + slDist;
+  const mirroredTp = newSide === Side.BUY ? liveEntry + tpDist : liveEntry - tpDist;
+  const levels = reanchorRiskLevels(newSide, liveEntry, liveEntry, mirroredSl, mirroredTp);
+  const primaryStrategy = meta?.primaryStrategy ?? ('breakout' as StrategyId);
+  const strategyIds = meta?.strategyIds?.length ? meta.strategyIds : [primaryStrategy];
+
+  return {
+    symbol: source.symbol,
+    timeframe: meta?.timeframe ?? Timeframe.H1,
+    side: newSide,
+    confidence: meta?.confidence ?? 80,
+    entry: liveEntry,
+    stopLoss: levels.stopLoss,
+    takeProfit: levels.takeProfit,
+    riskReward: levels.riskReward,
+    strategyIds,
+    primaryStrategy,
+    evidence: [
+      {
+        source: 'flip',
+        label: meta?.sourceTradeId
+          ? `Flip of trade ${meta.sourceTradeId} to ${newSide}`
+          : `Flip to ${newSide}`,
+        weight: 1,
+      },
+    ],
+    regime: meta?.regime ?? MarketRegime.UNKNOWN,
+  };
+}
+

@@ -1,5 +1,5 @@
 import mongoose, { Schema, type InferSchemaType } from 'mongoose';
-import { ApprovalMode, STRATEGY_IDS, Timeframe, TradingMode } from '@trading-os/shared';
+import { ApprovalMode, STRATEGY_IDS, Timeframe, TradingMode, ExecutionVenue } from '@trading-os/shared';
 
 const settingsSchema = new Schema(
   {
@@ -24,10 +24,11 @@ const settingsSchema = new Schema(
     },
     trading: {
       mode: { type: String, enum: Object.values(TradingMode), default: TradingMode.PAPER },
+      executionVenue: { type: String, enum: Object.values(ExecutionVenue), default: ExecutionVenue.MARGIN },
       approval: { type: String, enum: Object.values(ApprovalMode), default: ApprovalMode.MANUAL },
       useSoftwareExits: { type: Boolean, default: true },
       feeRate: { type: Number, default: 0.001 },
-      paperStartingBalance: { type: Number, default: 10_000 },
+      paperStartingBalance: { type: Number, default: 0 },
       partialTpEnabled: { type: Boolean, default: true },
       partialTpFraction: { type: Number, default: 0.33 },
       partialTpAtR: { type: Number, default: 1.5 },

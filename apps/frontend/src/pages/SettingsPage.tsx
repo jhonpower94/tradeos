@@ -15,7 +15,8 @@ import Tab from '@mui/joy/Tab';
 import TabList from '@mui/joy/TabList';
 import Tabs from '@mui/joy/Tabs';
 import ToggleButtonGroup from '@mui/joy/ToggleButtonGroup';
-import Typography from '@mui/joy/Typography';import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Typography from '@mui/joy/Typography';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import {
   TIMEFRAMES,
@@ -306,6 +307,7 @@ export function SettingsPage() {
             Test calls Binance account API. If you see ENOTFOUND / unreachable, api.binance.com may be
             blocked on your network — use a VPN or set BINANCE_REST_URL in .env (e.g.
             https://api1.binance.com).
+            For live margin/shorts, enable Spot &amp; Margin Trading and Universal Transfer on the API key.
           </Typography>
           <FormControl>
             <FormLabel>API Key</FormLabel>
@@ -390,6 +392,23 @@ export function SettingsPage() {
             </Select>
           </FormControl>
           <FormControl>
+            <FormLabel>Live execution venue</FormLabel>
+            <Select
+              value={data.trading?.executionVenue ?? 'margin'}
+              onChange={(_, value) => {
+                if (!value || value === data.trading?.executionVenue) return;
+                saveSettings.mutate({ trading: { executionVenue: value } });
+              }}
+            >
+              <Option value="margin">Isolated margin (shorts + flip)</Option>
+              <Option value="spot">Spot only (rollback)</Option>
+            </Select>
+            <Typography level="body-xs" sx={{ color: 'text.tertiary', mt: 0.5 }}>
+              Margin requires API key permissions: Enable Spot &amp; Margin Trading and Universal
+              Transfer. Interest accrues on borrowed assets while shorts are open.
+            </Typography>
+          </FormControl>
+          <FormControl>
             <FormLabel>Approval mode</FormLabel>
             <Select
               value={data.trading?.approval ?? 'manual'}
@@ -403,13 +422,6 @@ export function SettingsPage() {
               <Option value="auto">Automatic</Option>
             </Select>
           </FormControl>
-          <SettingsNumberField
-            label="Paper starting balance (USDT)"
-            value={Number(data.trading?.paperStartingBalance ?? 10000)}
-            min={0}
-            onSave={(n) => saveSettings.mutate({ trading: { paperStartingBalance: n } })}
-            helperText="Baseline paper funding. Realized PnL and deposits/withdrawals stack on top."
-          />
           <SwitchRow
             label="Partial take profit"
             checked={data.trading?.partialTpEnabled ?? true}
@@ -505,8 +517,8 @@ export function SettingsPage() {
               <Sheet variant="outlined" sx={panelSx}>
                 <Typography level="title-md">Fund paper account</Typography>
                 <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                  Deposits and withdrawals adjust equity on top of starting balance and realized
-                  trade PnL. Starting balance is set on the Trading tab.
+                  Paper equity starts at 0. Deposit USDT here to fund simulated trading. Withdrawals
+                  and the ledger apply in paper mode only.
                 </Typography>
                 <FormControl>
                   <FormLabel>Amount (USDT)</FormLabel>

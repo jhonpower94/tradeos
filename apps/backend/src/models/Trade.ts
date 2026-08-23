@@ -1,11 +1,15 @@
 import mongoose, { Schema, type InferSchemaType } from 'mongoose';
-import { OrderType, Side, TradeStatus, TradingMode } from '@trading-os/shared';
+import { OrderType, Side, TradeStatus, TradingMode, TradeVenue } from '@trading-os/shared';
 
 const tradeSchema = new Schema(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     signalId: { type: Schema.Types.ObjectId, ref: 'Signal' },
     mode: { type: String, enum: Object.values(TradingMode), required: true },
+    venue: { type: String, enum: Object.values(TradeVenue), default: TradeVenue.PAPER },
+    borrowedAsset: String,
+    borrowedQty: Number,
+    marginSideEffect: String,
     symbol: { type: String, required: true },
     side: { type: String, enum: Object.values(Side), required: true },
     orderType: { type: String, enum: Object.values(OrderType), default: OrderType.MARKET },

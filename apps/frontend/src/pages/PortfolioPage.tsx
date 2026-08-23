@@ -68,6 +68,8 @@ export function PortfolioPage() {
   const [chartPositionId, setChartPositionId] = useState<string | null>(null);
   const [copyInfo, setCopyInfo] = useState<string | null>(null);
 
+  const isPaper = (summary?.mode ?? settings?.trading?.mode ?? 'paper') === 'paper';
+
   const invalidateTradeQueries = () => {
     qc.invalidateQueries({ queryKey: ['positions'] });
     qc.invalidateQueries({ queryKey: ['positions-context'] });
@@ -103,6 +105,19 @@ export function PortfolioPage() {
       );
     },
   });
+  const flipTrade = useMutation({
+    mutationFn: (tradeId: string) => tradesApi.flip(tradeId),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['positions'] });
+      qc.invalidateQueries({ queryKey: ['trades'] });
+      qc.invalidateQueries({ queryKey: ['portfolio'] });
+      setCopyInfo(
+        `Flipped to ${data?.opportunity?.side ?? data?.opened?.side ?? 'opposite'} @ ${
+          data?.opportunity?.entry ?? data?.opened?.entryPrice ?? '—'
+        }`,
+      );
+    },
+  });
 
   const openPositions = ((positions?.items ?? []) as Array<Record<string, unknown>>).filter(
     (p) => p.status === 'open',
@@ -115,11 +130,13 @@ export function PortfolioPage() {
   const actionError =
     (closeTrade.isError && errMsg(closeTrade.error)) ||
     (copyTrade.isError && errMsg(copyTrade.error)) ||
+    (flipTrade.isError && errMsg(flipTrade.error)) ||
     null;
 
   const clearActionError = () => {
     closeTrade.reset();
     copyTrade.reset();
+    flipTrade.reset();
   };
 
   const renderActions = (p: Record<string, unknown>) => {
@@ -147,6 +164,25 @@ export function PortfolioPage() {
         >
           Copy
         </Button>
+      <Button
+        size="sm"
+        variant="outlined"
+        color="warning"
+        disabled={flipTrade.isPending}
+        onClick={() => {
+          if (
+            !window.confirm(
+              'Fully close this position and open the opposite side at market (size auto-calculated)?',
+            )
+          ) {
+            return;
+          }
+          setCopyInfo(null);
+          flipTrade.mutate(String(p.tradeId));
+        }}
+      >
+        Flip
+      </Button>
         <Button
           size="sm"
           color="warning"
@@ -163,6 +199,16 @@ export function PortfolioPage() {
   return (
     <Box>
       <PageHeader title="Portfolio" subtitle="Balances and open spots" />
+      {(summary as { executionVenue?: string; marginLevel?: number } | undefined)?.executionVenue ===
+        'margin' && (
+        <Typography level="body-sm" sx={{ mb: 2, color: 'text.tertiary' }}>
+          Live isolated margin: borrowed assets accrue interest. Margin level{' '}
+          {(summary as { marginLevel?: number }).marginLevel != null
+            ? Number((summary as { marginLevel?: number }).marginLevel).toFixed(2)
+            : '—'}
+          .
+        </Typography>
+      )}
       <Box
         sx={{
           display: 'grid',
@@ -186,7 +232,14 @@ export function PortfolioPage() {
           value={formatNumber(rPnl)}
           tone={rPnl > 0 ? 'positive' : rPnl < 0 ? 'negative' : 'neutral'}
         />
-        <StatCard label="Starting balance" value={formatNumber(summary?.startingBalance ?? 0)} />
+        {isPaper && (
+          <StatCard
+            label="Funded (net)"
+            value={formatNumber(
+              (summary as { adjustmentsNet?: number } | undefined)?.adjustmentsNet ?? 0,
+            )}
+          />
+        )}
         <StatCard label="Mode" value={summary?.mode ?? 'paper'} />
       </Box>
 

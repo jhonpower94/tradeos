@@ -4,6 +4,7 @@ import {
   Side,
   Timeframe,
   TradingMode,
+  ExecutionVenue,
   STRATEGY_IDS,
 } from '../constants/index.js';
 
@@ -34,10 +35,11 @@ export const riskSettingsSchema = z.object({
 
 export const tradingSettingsSchema = z.object({
   mode: z.nativeEnum(TradingMode).default(TradingMode.PAPER),
+  executionVenue: z.nativeEnum(ExecutionVenue).default(ExecutionVenue.MARGIN),
   approval: z.nativeEnum(ApprovalMode).default(ApprovalMode.MANUAL),
   useSoftwareExits: z.boolean().default(true),
   feeRate: z.number().min(0).max(0.01).default(0.001),
-  paperStartingBalance: z.number().min(0).default(10_000),
+  paperStartingBalance: z.number().min(0).default(0),
   partialTpEnabled: z.boolean().default(true),
   partialTpFraction: z.number().min(0.05).max(0.95).default(0.33),
   partialTpAtR: z.number().min(0.25).max(5).default(1.5),
@@ -159,6 +161,9 @@ export const copyTradeSchema = z.object({
   orderType: z.enum(['MARKET', 'LIMIT']).default('MARKET'),
   limitPrice: z.number().positive().optional(),
 });
+
+/** Flip closes then opens opposite side; body mirrors copy. */
+export const flipTradeSchema = copyTradeSchema;
 
 export const updatePositionLevelsSchema = z.object({
   stopLoss: z.number().positive().optional(),
