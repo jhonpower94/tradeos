@@ -342,15 +342,7 @@ export async function registerRoutes(app: FastifyInstance) {
       items as Array<Record<string, unknown> & { symbol: string }>,
       ctx,
     );
-    const minNotional = Number(ctx.risk?.minNotionalPerTrade ?? 1000);
-    const filtered =
-      minNotional > 0
-        ? previewed.filter((row) => {
-            const n = row.sizePreview?.notional;
-            return !(typeof n === 'number' && Number.isFinite(n) && n + 1e-9 < minNotional);
-          })
-        : previewed;
-    return { items: filtered, view: 'ranked' };
+    return { items: previewed, view: 'ranked' };
   });
   app.get('/api/v1/signals/:id', { preHandler: auth }, async (req) => {
     const item = await Signal.findOne({ _id: (req.params as { id: string }).id, userId: getUserId(req) }).lean();
