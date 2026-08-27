@@ -1,5 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
+import {
+  acquireCandleStream,
+  parseCandleChannel,
+  releaseCandleChannels,
+  releaseCandleStream,
+} from './candle-streams.js';
 
 interface Client {
   userId: string;
@@ -15,6 +21,33 @@ export function gatewayBroadcast(userId: string, channel: string, data: unknown)
     if (client.userId === userId && (client.channels.has(channel) || client.channels.has('*'))) {
       if (client.socket.readyState === 1) client.socket.send(payload);
     }
+  }
+}
+
+export function gatewayBroadcastChannel(channel: string, data: unknown) {
+  const payload = JSON.stringify({ channel, data, ts: Date.now() });
+  for (const client of clients.values()) {
+    if (client.channels.has(channel) && client.socket.readyState === 1) {
+      client.socket.send(payload);
+    }
+  }
+}
+
+function handleSubscribe(client: Client, channel: string) {
+  const added = !client.channels.has(channel);
+  client.channels.add(channel);
+  if (added) {
+    const parsed = parseCandleChannel(channel);
+    if (parsed) acquireCandleStream(parsed.symbol, parsed.interval);
+  }
+}
+
+function handleUnsubscribe(client: Client, channel: string) {
+  const had = client.channels.has(channel);
+  client.channels.delete(channel);
+  if (had) {
+    const parsed = parseCandleChannel(channel);
+    if (parsed) releaseCandleStream(parsed.symbol, parsed.interval);
   }
 }
 
@@ -54,8 +87,8 @@ export async function registerGateway(app: FastifyInstance) {
           action?: string;
           channel?: string;
         };
-        if (msg.action === 'subscribe' && msg.channel) client.channels.add(msg.channel);
-        if (msg.action === 'unsubscribe' && msg.channel) client.channels.delete(msg.channel);
+        if (msg.action === 'subscribe' && msg.channel) handleSubscribe(client, msg.channel);
+        if (msg.action === 'unsubscribe' && msg.channel) handleUnsubscribe(client, msg.channel);
       } catch {
         // ignore
       }
@@ -63,6 +96,7 @@ export async function registerGateway(app: FastifyInstance) {
 
     socket.on('close', () => {
       clearInterval(heartbeat);
+      releaseCandleChannels(client.channels);
       clients.delete(socket as unknown as WebSocket);
     });
   });

@@ -3,6 +3,19 @@ import { config } from '../config/index.js';
 import { marketDataService, setTickerPrice } from '../modules/market-data/index.js';
 import type { Candle } from '@trading-os/shared';
 
+type KlineHandler = (input: {
+  symbol: string;
+  interval: string;
+  candle: Candle;
+  isClosed: boolean;
+}) => void;
+
+let klineHandler: KlineHandler | null = null;
+
+export function setKlineHandler(handler: KlineHandler | null) {
+  klineHandler = handler;
+}
+
 type MessageHandler = (msg: unknown) => void;
 
 export class BinanceWsClient {
@@ -98,6 +111,12 @@ export class BinanceWsClient {
       };
       setTickerPrice(String(payload.s), candle.close);
       marketDataService.updateCandle(String(payload.s), String(k.i), candle);
+      klineHandler?.({
+        symbol: String(payload.s).toUpperCase(),
+        interval: String(k.i),
+        candle,
+        isClosed: Boolean(k.x),
+      });
     }
   }
 

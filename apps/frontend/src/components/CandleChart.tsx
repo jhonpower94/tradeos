@@ -13,6 +13,13 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { marketApi } from '../api';
 import { monoSx } from '../theme/theme';
+import { useCandleStream } from '../hooks/useCandleStream';
+import {
+  mergeCandleTail,
+  toChartBar,
+  toChartBars,
+  type RawCandle,
+} from './candleChartUtils';
 
 export type CandleChartProps = {
   symbol: string;
@@ -68,22 +75,30 @@ export function CandleChart({
   const { mode, systemMode } = useColorScheme();
   const isDark = (mode === 'system' ? systemMode : mode) === 'dark';
   const colors = chartColors(isDark);
+  const livePatch = useCandleStream(symbol, interval);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const linesRef = useRef<IPriceLine[]>([]);
+  const loadedKeyRef = useRef<string | null>(null);
+  const lastBarTimeRef = useRef<number | null>(null);
+  const lastLiveTsRef = useRef(0);
 
   const { data, isError, isLoading } = useQuery({
     queryKey: ['candles', symbol, interval, limit],
     queryFn: () => marketApi.candles(symbol, interval, limit),
     enabled: Boolean(symbol && interval),
-    refetchInterval: 30_000,
+    refetchInterval: 300_000,
   });
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+
+    loadedKeyRef.current = null;
+    lastBarTimeRef.current = null;
+    lastLiveTsRef.current = 0;
 
     const chart = createChart(el, {
       layout: {
@@ -158,42 +173,64 @@ export function CandleChart({
     const chart = chartRef.current;
     if (!series || !chart || !data?.candles?.length) return;
 
-    const candles = data.candles as {
-      openTime: number;
-      open: number;
-      high: number;
-      low: number;
-      close: number;
-    }[];
+    const candles = data.candles as RawCandle[];
+    const key = `${symbol}:${interval}`;
     const lastClose = candles[candles.length - 1]?.close ?? 0;
     series.applyOptions({ priceFormat: priceFormatFor(lastClose) });
 
-    series.setData(
-      candles.map((c) => ({
-        time: Math.floor(c.openTime / 1000) as unknown as import('lightweight-charts').UTCTimestamp,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      })),
-    );
+    const visibleRange = chart.timeScale().getVisibleLogicalRange();
+    const isInitial = loadedKeyRef.current !== key;
+    const merge = mergeCandleTail(lastBarTimeRef.current, candles);
 
-    const el = containerRef.current;
-    if (el && el.clientWidth > 0) {
-      chart.applyOptions({ width: el.clientWidth });
-      chart.timeScale().fitContent();
-    } else {
-      requestAnimationFrame(() => {
-        if (containerRef.current && chartRef.current) {
-          const w = containerRef.current.clientWidth;
-          if (w > 0) {
-            chartRef.current.applyOptions({ width: w });
-            chartRef.current.timeScale().fitContent();
+    if (isInitial || merge.kind === 'initial') {
+      const bars = toChartBars(candles);
+      series.setData(bars);
+      lastBarTimeRef.current = bars[bars.length - 1]?.time ?? null;
+      loadedKeyRef.current = key;
+
+      const el = containerRef.current;
+      if (el && el.clientWidth > 0) {
+        chart.applyOptions({ width: el.clientWidth });
+        chart.timeScale().fitContent();
+      } else {
+        requestAnimationFrame(() => {
+          if (containerRef.current && chartRef.current) {
+            const w = containerRef.current.clientWidth;
+            if (w > 0) {
+              chartRef.current.applyOptions({ width: w });
+              chartRef.current.timeScale().fitContent();
+            }
           }
-        }
-      });
+        });
+      }
+      return;
     }
-  }, [data, isDark]);
+
+    if (merge.kind === 'update') {
+      series.update(merge.bar);
+      lastBarTimeRef.current = merge.bar.time;
+      if (visibleRange) {
+        chart.timeScale().setVisibleLogicalRange(visibleRange);
+      }
+    }
+  }, [data, symbol, interval]);
+
+  useEffect(() => {
+    const series = seriesRef.current;
+    const chart = chartRef.current;
+    if (!series || !chart || !livePatch) return;
+    if (loadedKeyRef.current !== `${symbol}:${interval}`) return;
+    if (livePatch.ts <= lastLiveTsRef.current) return;
+
+    lastLiveTsRef.current = livePatch.ts;
+    const visibleRange = chart.timeScale().getVisibleLogicalRange();
+    const bar = toChartBar(livePatch.candle);
+    series.update(bar);
+    lastBarTimeRef.current = bar.time;
+    if (visibleRange) {
+      chart.timeScale().setVisibleLogicalRange(visibleRange);
+    }
+  }, [livePatch, symbol, interval]);
 
   useEffect(() => {
     const series = seriesRef.current;

@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../stores/authStore';
-import { useLiveStore } from '../stores/liveStore';
+import { useLiveStore, type CandlePatch } from '../stores/liveStore';
+import { candleChannelKey } from '../components/candleChartUtils';
+import { replayChannelSubscriptions, setWsSend } from './wsChannels';
 
 const MAX_BACKOFF_MS = 15_000;
 const BASE_BACKOFF_MS = 500;
@@ -12,11 +14,13 @@ export function useWebSocket() {
   const setConnectionStatus = useLiveStore((s) => s.setConnectionStatus);
   const setOpportunities = useLiveStore((s) => s.setOpportunities);
   const setPositions = useLiveStore((s) => s.setPositions);
+  const applyCandlePatch = useLiveStore((s) => s.applyCandlePatch);
   const attemptRef = useRef(0);
 
   useEffect(() => {
     if (!token) {
       setConnectionStatus('disconnected');
+      setWsSend(null);
       return;
     }
 
@@ -53,6 +57,12 @@ export function useWebSocket() {
         if (!alive || intentionalClose) return;
         attemptRef.current = 0;
         setConnectionStatus('connected');
+        setWsSend((msg) => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify(msg));
+          }
+        });
+        replayChannelSubscriptions();
       };
 
       socket.onmessage = (ev) => {
@@ -61,11 +71,27 @@ export function useWebSocket() {
           const msg = JSON.parse(ev.data) as { channel: string; data: unknown };
           if (msg.channel === 'opportunities' && Array.isArray(msg.data)) {
             setOpportunities(msg.data);
-            // Signals page uses the same active rows via REST; keep it in sync with live updates.
             void queryClient.invalidateQueries({ queryKey: ['signals'] });
             void queryClient.invalidateQueries({ queryKey: ['opportunities'] });
           }
           if (msg.channel === 'positions' && Array.isArray(msg.data)) setPositions(msg.data);
+          if (msg.channel.startsWith('candles:') && msg.data && typeof msg.data === 'object') {
+            const payload = msg.data as {
+              symbol?: string;
+              interval?: string;
+              candle?: CandlePatch['candle'];
+              isClosed?: boolean;
+            };
+            if (payload.symbol && payload.interval && payload.candle) {
+              applyCandlePatch(candleChannelKey(payload.symbol, payload.interval), {
+                symbol: payload.symbol.toUpperCase(),
+                interval: payload.interval,
+                candle: payload.candle,
+                isClosed: Boolean(payload.isClosed),
+                ts: Date.now(),
+              });
+            }
+          }
         } catch {
           // ignore malformed frames
         }
@@ -76,6 +102,7 @@ export function useWebSocket() {
       };
 
       socket.onclose = () => {
+        setWsSend(null);
         if (!alive || intentionalClose) return;
         setConnectionStatus('disconnected');
         if (!useAuthStore.getState().token) return;
@@ -94,10 +121,10 @@ export function useWebSocket() {
       alive = false;
       intentionalClose = true;
       clearReconnect();
+      setWsSend(null);
       const socket = ws;
       ws = null;
       if (!socket) return;
-      // Avoid close() while CONNECTING — browsers log a noisy warning.
       if (socket.readyState === WebSocket.CONNECTING) {
         socket.onopen = () => {
           try {
@@ -119,5 +146,5 @@ export function useWebSocket() {
         }
       }
     };
-  }, [token, queryClient, setConnectionStatus, setOpportunities, setPositions]);
+  }, [token, queryClient, setConnectionStatus, setOpportunities, setPositions, applyCandlePatch]);
 }

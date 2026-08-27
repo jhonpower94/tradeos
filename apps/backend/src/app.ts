@@ -8,8 +8,9 @@ import { AppError } from './utils/errors.js';
 import { registerRoutes } from './routes/index.js';
 import { registerGateway } from './websocket/gateway.js';
 import { setNotificationBroadcast } from './modules/notifications/index.js';
-import { gatewayBroadcast } from './websocket/gateway.js';
-import { startMarketStreams } from './websocket/binance.js';
+import { gatewayBroadcast, gatewayBroadcastChannel } from './websocket/gateway.js';
+import { startMarketStreams, setKlineHandler } from './websocket/binance.js';
+import { candleChannel } from './websocket/candle-streams.js';
 import { startPositionWorker } from './workers/position.worker.js';
 import { startScannerWorker } from './workers/scanner.worker.js';
 import { StrategyDef } from './models/StrategyDef.js';
@@ -98,6 +99,14 @@ export async function start() {
   const app = await buildApp();
   await app.listen({ port: config.port, host: config.host });
 
+  setKlineHandler(({ symbol, interval, candle, isClosed }) => {
+    gatewayBroadcastChannel(candleChannel(symbol, interval), {
+      symbol,
+      interval,
+      candle,
+      isClosed,
+    });
+  });
   startMarketStreams();
   startPositionWorker();
   if (config.env !== 'test') {
