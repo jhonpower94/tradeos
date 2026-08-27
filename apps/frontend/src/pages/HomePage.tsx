@@ -8,6 +8,7 @@ import { Link as RouterLink } from 'react-router-dom';
 import { analyticsApi, portfolioApi, scannerApi, settingsApi, tradesApi } from '../api';
 import { useLiveStore } from '../stores/liveStore';
 import { PageHeader } from '../components/PageHeader';
+import { EnableNotificationsBanner } from '../components/EnableNotificationsBanner';
 import { StatCard } from '../components/StatCard';
 import { SideChip } from '../components/SideChip';
 import { StatusChip } from '../components/StatusChip';
@@ -42,6 +43,8 @@ export function HomePage() {
   return (
     <Box>
       <PageHeader title="Home" subtitle="Spot terminal overview" />
+
+      <EnableNotificationsBanner />
 
       {showBinanceAlert && (
         <Sheet
