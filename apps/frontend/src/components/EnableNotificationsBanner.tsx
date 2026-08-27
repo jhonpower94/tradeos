@@ -16,6 +16,7 @@ import {
   isStandaloneDisplay,
   pushUnsupportedReason,
 } from '../lib/webPush';
+import { InstallAppButton } from './InstallAppButton';
 import { useAuthStore } from '../stores/authStore';
 
 function dismissKey(userId: string) {
@@ -126,7 +127,7 @@ export function EnableNotificationsBanner() {
   };
 
   const body = needsIosInstall
-    ? 'On iPhone/iPad, add Trading OS to your Home Screen, then enable notifications from Settings.'
+    ? 'On iPhone/iPad, add Trading OS to your Home Screen, then enable notifications.'
     : unsupported
       ? unsupported
       : 'Get trade and signal alerts even when this tab is closed.';
@@ -186,6 +187,7 @@ export function EnableNotificationsBanner() {
               display: 'flex',
               gap: 1,
               flexShrink: 0,
+              flexWrap: 'wrap',
               alignSelf: { xs: 'flex-start', sm: 'center' },
               pl: { xs: 6.5, sm: 0 },
             }}
@@ -206,6 +208,8 @@ export function EnableNotificationsBanner() {
               >
                 Enable
               </Button>
+            ) : needsIosInstall ? (
+              <InstallAppButton size="sm" variant="soft" color="primary" />
             ) : (
               <Button
                 component={RouterLink}

@@ -29,15 +29,13 @@ import {
 } from '@trading-os/shared';
 import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import Link from '@mui/joy/Link';
-import IosShareOutlined from '@mui/icons-material/IosShareOutlined';
-import AddToHomeScreenOutlined from '@mui/icons-material/AddToHomeScreenOutlined';
-import TouchAppOutlined from '@mui/icons-material/TouchAppOutlined';
-import NotificationsActiveOutlined from '@mui/icons-material/NotificationsActiveOutlined';
 import { authApi, notificationsApi, portfolioApi, settingsApi } from '../api';
-import { disableWebPush, enableWebPush, getActivePushEndpoint, isIosDevice, isPushApiAvailable, isStandaloneDisplay } from '../lib/webPush';
+import { disableWebPush, enableWebPush, getActivePushEndpoint, isIosDevice, isPushApiAvailable } from '../lib/webPush';
 import { PageHeader } from '../components/PageHeader';
 import { PasswordField } from '../components/PasswordField';
 import { KeyValueList } from '../components/ResponsiveRecordList';
+import { InstallAppButton } from '../components/InstallAppButton';
+import { usePwaInstall } from '../hooks/usePwaInstall';
 import { formatDateTime } from '../utils/format';
 import { monoSx } from '../theme/theme';
 import { useAuthStore } from '../stores/authStore';
@@ -158,6 +156,7 @@ export function SettingsPage() {
   const setAuth = useAuthStore((s) => s.setAuth);
   const canUseLive = user?.role === 'admin' || Boolean(user?.subscription?.active);
   const qc = useQueryClient();
+  const pwaInstall = usePwaInstall();
   const { data } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
   const isPaper = (data?.trading?.mode ?? 'paper') === 'paper';
   const { data: ledger } = useQuery({
@@ -826,107 +825,40 @@ export function SettingsPage() {
             <code>npm run setup:vapid</code> once). Alerts fire when an open trade&apos;s uPnL sets a
             new high at least $1 above its previous peak.
           </Typography>
-          {isIosDevice() && !isStandaloneDisplay() && (
+
+          {pwaInstall.showInstallCta && (
             <Sheet
               variant="soft"
-              color="warning"
+              color={pwaInstall.needsIosGuide ? 'warning' : 'primary'}
               sx={{
                 p: { xs: 1.75, sm: 2 },
                 borderRadius: 'lg',
                 display: 'grid',
-                gap: 1.75,
+                gap: 1.5,
               }}
             >
               <Box>
                 <Typography level="title-sm" sx={{ mb: 0.25 }}>
-                  Add to Home Screen first
+                  {pwaInstall.needsIosGuide ? 'Install on Home Screen' : 'Install Trading OS'}
                 </Typography>
                 <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                  iPhone and iPad only allow Web Push from the installed Home Screen app — not a
-                  normal browser tab.
+                  {pwaInstall.needsIosGuide
+                    ? 'iPhone and iPad only allow Web Push from the Home Screen app. Tap below for a short install guide, then enable notifications.'
+                    : 'Install the app for a full-screen experience and reliable notifications with the tab closed.'}
                 </Typography>
               </Box>
-              <Box
-                sx={{
-                  display: 'grid',
-                  gap: 1.25,
-                  gridTemplateColumns: {
-                    xs: '1fr',
-                    sm: '1fr 1fr',
-                  },
-                }}
-              >
-                {(
-                  [
-                    {
-                      step: 1,
-                      icon: <IosShareOutlined fontSize="small" />,
-                      title: 'Tap Share',
-                      detail: 'In Safari or Chrome, open the share sheet.',
-                    },
-                    {
-                      step: 2,
-                      icon: <AddToHomeScreenOutlined fontSize="small" />,
-                      title: 'Add to Home Screen',
-                      detail: 'Choose Add to Home Screen, then Add.',
-                    },
-                    {
-                      step: 3,
-                      icon: <TouchAppOutlined fontSize="small" />,
-                      title: 'Open the app icon',
-                      detail: 'Launch Trading OS from your Home Screen.',
-                    },
-                    {
-                      step: 4,
-                      icon: <NotificationsActiveOutlined fontSize="small" />,
-                      title: 'Enable Web Push',
-                      detail: 'Come back here and tap Enable Web Push.',
-                    },
-                  ] as const
-                ).map((item) => (
-                  <Sheet
-                    key={item.step}
-                    variant="outlined"
-                    sx={{
-                      p: 1.5,
-                      borderRadius: 'md',
-                      bgcolor: 'background.surface',
-                      display: 'flex',
-                      gap: 1.25,
-                      alignItems: 'flex-start',
-                      minWidth: 0,
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        flexShrink: 0,
-                        width: 36,
-                        height: 36,
-                        borderRadius: 'md',
-                        display: 'grid',
-                        placeItems: 'center',
-                        bgcolor: 'warning.softBg',
-                        color: 'warning.plainColor',
-                      }}
-                    >
-                      {item.icon}
-                    </Box>
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography level="body-xs" sx={{ color: 'text.tertiary', mb: 0.15 }}>
-                        Step {item.step}
-                      </Typography>
-                      <Typography level="title-sm" sx={{ mb: 0.25 }}>
-                        {item.title}
-                      </Typography>
-                      <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                        {item.detail}
-                      </Typography>
-                    </Box>
-                  </Sheet>
-                ))}
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                <InstallAppButton size="md" variant="solid" color="primary" />
               </Box>
             </Sheet>
           )}
+
+          {pwaInstall.isInstalled && (
+            <Alert color="success" variant="soft">
+              Running as an installed app on this device.
+            </Alert>
+          )}
+
           {!isIosDevice() && !isPushApiAvailable() && (
             <Alert color="neutral" variant="soft">
               Web Push is not available in this browser. Use a current Chrome, Edge, Firefox, or
