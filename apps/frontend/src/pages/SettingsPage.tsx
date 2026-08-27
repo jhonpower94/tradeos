@@ -29,6 +29,10 @@ import {
 } from '@trading-os/shared';
 import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import Link from '@mui/joy/Link';
+import IosShareOutlined from '@mui/icons-material/IosShareOutlined';
+import AddToHomeScreenOutlined from '@mui/icons-material/AddToHomeScreenOutlined';
+import TouchAppOutlined from '@mui/icons-material/TouchAppOutlined';
+import NotificationsActiveOutlined from '@mui/icons-material/NotificationsActiveOutlined';
 import { authApi, notificationsApi, portfolioApi, settingsApi } from '../api';
 import { disableWebPush, enableWebPush, getActivePushEndpoint, isIosDevice, isPushApiAvailable, isStandaloneDisplay } from '../lib/webPush';
 import { PageHeader } from '../components/PageHeader';
@@ -816,10 +820,6 @@ export function SettingsPage() {
 
       {tab === 5 && (
         <Sheet variant="outlined" sx={panelSx}>
-          <Typography level="body-sm">
-            Configure Telegram / Discord / Email via environment and settings API. Browser
-            notifications are enabled by default.
-          </Typography>
           <Typography level="title-sm">Web Push (per-trade profit highs)</Typography>
           <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
             Works with the tab closed. Requires HTTPS or localhost, and VAPID keys (
@@ -827,21 +827,105 @@ export function SettingsPage() {
             new high at least $1 above its previous peak.
           </Typography>
           {isIosDevice() && !isStandaloneDisplay() && (
-            <Alert color="warning" variant="soft">
-              <Typography level="title-sm" sx={{ mb: 0.5 }}>
-                Install on your Home Screen (required on iPhone)
-              </Typography>
-              <Typography level="body-sm" component="ol" sx={{ m: 0, pl: 2.5 }}>
-                <li>Tap Share in Safari or Chrome</li>
-                <li>Choose Add to Home Screen</li>
-                <li>Open Trading OS from the new Home Screen icon</li>
-                <li>Return here and tap Enable Web Push</li>
-              </Typography>
-              <Typography level="body-xs" sx={{ mt: 1, color: 'text.secondary' }}>
-                iOS only exposes push notifications inside the installed Home Screen app, not in a
-                normal browser tab.
-              </Typography>
-            </Alert>
+            <Sheet
+              variant="soft"
+              color="warning"
+              sx={{
+                p: { xs: 1.75, sm: 2 },
+                borderRadius: 'lg',
+                display: 'grid',
+                gap: 1.75,
+              }}
+            >
+              <Box>
+                <Typography level="title-sm" sx={{ mb: 0.25 }}>
+                  Add to Home Screen first
+                </Typography>
+                <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
+                  iPhone and iPad only allow Web Push from the installed Home Screen app — not a
+                  normal browser tab.
+                </Typography>
+              </Box>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gap: 1.25,
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    sm: '1fr 1fr',
+                  },
+                }}
+              >
+                {(
+                  [
+                    {
+                      step: 1,
+                      icon: <IosShareOutlined fontSize="small" />,
+                      title: 'Tap Share',
+                      detail: 'In Safari or Chrome, open the share sheet.',
+                    },
+                    {
+                      step: 2,
+                      icon: <AddToHomeScreenOutlined fontSize="small" />,
+                      title: 'Add to Home Screen',
+                      detail: 'Choose Add to Home Screen, then Add.',
+                    },
+                    {
+                      step: 3,
+                      icon: <TouchAppOutlined fontSize="small" />,
+                      title: 'Open the app icon',
+                      detail: 'Launch Trading OS from your Home Screen.',
+                    },
+                    {
+                      step: 4,
+                      icon: <NotificationsActiveOutlined fontSize="small" />,
+                      title: 'Enable Web Push',
+                      detail: 'Come back here and tap Enable Web Push.',
+                    },
+                  ] as const
+                ).map((item) => (
+                  <Sheet
+                    key={item.step}
+                    variant="outlined"
+                    sx={{
+                      p: 1.5,
+                      borderRadius: 'md',
+                      bgcolor: 'background.surface',
+                      display: 'flex',
+                      gap: 1.25,
+                      alignItems: 'flex-start',
+                      minWidth: 0,
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        flexShrink: 0,
+                        width: 36,
+                        height: 36,
+                        borderRadius: 'md',
+                        display: 'grid',
+                        placeItems: 'center',
+                        bgcolor: 'warning.softBg',
+                        color: 'warning.plainColor',
+                      }}
+                    >
+                      {item.icon}
+                    </Box>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography level="body-xs" sx={{ color: 'text.tertiary', mb: 0.15 }}>
+                        Step {item.step}
+                      </Typography>
+                      <Typography level="title-sm" sx={{ mb: 0.25 }}>
+                        {item.title}
+                      </Typography>
+                      <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
+                        {item.detail}
+                      </Typography>
+                    </Box>
+                  </Sheet>
+                ))}
+              </Box>
+            </Sheet>
           )}
           {!isIosDevice() && !isPushApiAvailable() && (
             <Alert color="neutral" variant="soft">
