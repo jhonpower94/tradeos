@@ -105,19 +105,6 @@ export function PortfolioPage() {
       );
     },
   });
-  const flipTrade = useMutation({
-    mutationFn: (tradeId: string) => tradesApi.flip(tradeId),
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['positions'] });
-      qc.invalidateQueries({ queryKey: ['trades'] });
-      qc.invalidateQueries({ queryKey: ['portfolio'] });
-      setCopyInfo(
-        `Flipped to ${data?.opportunity?.side ?? data?.opened?.side ?? 'opposite'} @ ${
-          data?.opportunity?.entry ?? data?.opened?.entryPrice ?? '—'
-        }`,
-      );
-    },
-  });
 
   const openPositions = ((positions?.items ?? []) as Array<Record<string, unknown>>).filter(
     (p) => p.status === 'open',
@@ -130,13 +117,11 @@ export function PortfolioPage() {
   const actionError =
     (closeTrade.isError && errMsg(closeTrade.error)) ||
     (copyTrade.isError && errMsg(copyTrade.error)) ||
-    (flipTrade.isError && errMsg(flipTrade.error)) ||
     null;
 
   const clearActionError = () => {
     closeTrade.reset();
     copyTrade.reset();
-    flipTrade.reset();
   };
 
   const renderActions = (p: Record<string, unknown>) => {
@@ -164,25 +149,6 @@ export function PortfolioPage() {
         >
           Copy
         </Button>
-      <Button
-        size="sm"
-        variant="outlined"
-        color="warning"
-        disabled={flipTrade.isPending}
-        onClick={() => {
-          if (
-            !window.confirm(
-              'Fully close this position and open the opposite side at market (size auto-calculated)?',
-            )
-          ) {
-            return;
-          }
-          setCopyInfo(null);
-          flipTrade.mutate(String(p.tradeId));
-        }}
-      >
-        Flip
-      </Button>
         <Button
           size="sm"
           color="warning"

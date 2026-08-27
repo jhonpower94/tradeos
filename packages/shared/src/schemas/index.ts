@@ -76,6 +76,7 @@ export const scannerSettingsSchema = z.object({
   locationGateEnabled: z.boolean().default(true),
   locationProximityAtr: z.number().min(0.25).max(5).default(1.5),
   btcRelativeStrengthEnabled: z.boolean().default(true),
+  hideAfterManualLoss: z.boolean().default(true),
 });
 
 export const notificationSettingsSchema = z.object({
@@ -161,9 +162,6 @@ export const copyTradeSchema = z.object({
   orderType: z.enum(['MARKET', 'LIMIT']).default('MARKET'),
   limitPrice: z.number().positive().optional(),
 });
-
-/** Flip closes then opens opposite side; body mirrors copy. */
-export const flipTradeSchema = copyTradeSchema;
 
 export const updatePositionLevelsSchema = z.object({
   stopLoss: z.number().positive().optional(),

@@ -33,7 +33,14 @@ import {
   fillPriceFromOrder,
   resolveLiveExitPrice,
 } from './pricing.js';
-import { entryDriftExceeded, reanchorRiskLevels, buildCloneOpportunity, CloneLevelsError, buildFlipOpportunity } from './levels.js';
+import { entryDriftExceeded, reanchorRiskLevels, buildCloneOpportunity, CloneLevelsError } from './levels.js';
+import { gatewayBroadcast } from '../../websocket/gateway.js';
+import { listOpportunities } from '../ranking/index.js';
+import {
+  createSuppression,
+  expireSymbolSignals,
+  shouldSuppressManualLoss,
+} from '../scanner/symbol-suppression.js';
 
 /**
  * Resolve settlement price for a close.
@@ -689,6 +696,14 @@ export async function closePosition(
     payload: { tradeId: trade._id, pnl: slicePnl },
   });
 
+  if (
+    shouldSuppressManualLoss(reason, slicePnl, settings.scanner?.hideAfterManualLoss)
+  ) {
+    await createSuppression(userId, position.symbol, position.side as Side);
+    await expireSymbolSignals(userId, position.symbol);
+    gatewayBroadcast(userId, 'opportunities', await listOpportunities(userId));
+  }
+
   const freedSymbol = position.symbol;
   if (!opts?.skipRescan) {
     void import('../scanner/index.js')
@@ -774,138 +789,6 @@ export async function copyTrade(
 
   return {
     trade,
-    opportunity: {
-      symbol: opportunity.symbol,
-      side: opportunity.side,
-      timeframe: opportunity.timeframe,
-      confidence: opportunity.confidence,
-      entry: opportunity.entry,
-      stopLoss: opportunity.stopLoss,
-      takeProfit: opportunity.takeProfit,
-      riskReward: opportunity.riskReward,
-      primaryStrategy: opportunity.primaryStrategy,
-    },
-  };
-}
-
-/**
- * Fully close an open trade then open the opposite side with mirrored SL/TP distances.
- * Qty is re-sized via risk validation inside executeOpportunity.
- */
-export async function flipTrade(
-  userId: string,
-  tradeId: string,
-  opts?: { orderType?: OrderType; limitPrice?: number },
-) {
-  const source = await Trade.findOne({ _id: tradeId, userId });
-  if (!source) throw new AppError('NOT_FOUND', 'Trade not found', 404);
-
-  const position = await Position.findOne({
-    tradeId: source._id,
-    userId,
-    status: PositionStatus.OPEN,
-  });
-  if (!position) throw new AppError('NOT_FOUND', 'Open position not found', 404);
-
-  const settings = await getRawSettings(userId);
-  const mode = settings.trading?.mode === TradingMode.LIVE ? TradingMode.LIVE : TradingMode.PAPER;
-  const executionVenue = settings.trading?.executionVenue ?? ExecutionVenue.MARGIN;
-  const venue = resolveTradeVenue(mode, executionVenue, source.venue as string | undefined);
-  const newSide = source.side === Side.BUY ? Side.SELL : Side.BUY;
-
-  if (mode === TradingMode.LIVE && venue === TradeVenue.SPOT && newSide === Side.SELL) {
-    throw new AppError(
-      'INVALID_TRADE',
-      'Cannot flip a live spot long to short — set Live execution venue to Margin first',
-      400,
-    );
-  }
-
-  let timeframe = Timeframe.H1;
-  let primaryStrategy: StrategyId = 'breakout';
-  let strategyIds: StrategyId[] = ['breakout'];
-  let confidence = 80;
-  let regime = MarketRegime.UNKNOWN;
-
-  if (source.signalId) {
-    const sig = await Signal.findById(source.signalId).lean();
-    if (sig) {
-      if (sig.timeframe) timeframe = sig.timeframe as Timeframe;
-      if (sig.primaryStrategy) primaryStrategy = sig.primaryStrategy as StrategyId;
-      if (Array.isArray(sig.strategyIds) && sig.strategyIds.length) {
-        strategyIds = sig.strategyIds as StrategyId[];
-      }
-      if (typeof sig.confidence === 'number') confidence = sig.confidence;
-      if (sig.regime) regime = sig.regime as MarketRegime;
-    }
-  }
-
-  let liveEntry = Number(source.entryPrice) || 0;
-  const cached = getTickerPrice(source.symbol);
-  if (cached != null && cached > 0) {
-    liveEntry = cached;
-  } else {
-    try {
-      const ticker = await exchangeService.getTicker(source.symbol);
-      if (ticker.price > 0) {
-        liveEntry = ticker.price;
-        setTickerPrice(source.symbol, ticker.price);
-      }
-    } catch {
-      // fall back to source entry
-    }
-  }
-
-  let opportunity;
-  try {
-    opportunity = buildFlipOpportunity(source, liveEntry, {
-      timeframe,
-      primaryStrategy,
-      strategyIds,
-      confidence,
-      regime,
-      sourceTradeId: String(source._id),
-    });
-  } catch (e) {
-    if (e instanceof CloneLevelsError) {
-      throw new AppError('INVALID_TRADE', e.message, 400);
-    }
-    throw e;
-  }
-
-  const closed = await closePosition(
-    userId,
-    String(position._id),
-    `Flip to ${newSide}`,
-    undefined,
-    { skipRescan: true },
-  );
-
-  let opened;
-  try {
-    opened = await executeOpportunity(userId, opportunity, undefined, {
-      orderType: opts?.orderType,
-      limitPrice: opts?.limitPrice,
-    });
-  } catch (e) {
-    void import('../scanner/index.js')
-      .then(({ scannerService }) => scannerService.scanUserSymbol(userId, source.symbol))
-      .catch((err) => console.error('Post-flip rescan failed', err));
-    const msg = e instanceof Error ? e.message : 'Flip re-entry failed';
-    throw new AppError(
-      'FLIP_REENTRY_FAILED',
-      `Closed ${source.side} ${source.symbol} but could not open ${newSide}: ${msg}`,
-      502,
-    );
-  }
-
-  void import('../scanner/index.js')
-    .then(({ scannerService }) => scannerService.scanUserSymbol(userId, source.symbol))
-    .catch((err) => console.error('Post-flip rescan failed', err));
-
-  return {
-    closed,
-    opened,
     opportunity: {
       symbol: opportunity.symbol,
       side: opportunity.side,

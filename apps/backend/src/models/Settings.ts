@@ -59,6 +59,7 @@ const settingsSchema = new Schema(
       locationGateEnabled: { type: Boolean, default: true },
       locationProximityAtr: { type: Number, default: 1.5 },
       btcRelativeStrengthEnabled: { type: Boolean, default: true },
+      hideAfterManualLoss: { type: Boolean, default: true },
     },
     strategies: {
       type: Map,

@@ -1,5 +1,5 @@
 import { Position } from '../../models/Position.js';
-import { MarketRegime, PositionStatus, Timeframe, filterStrategiesForRegime } from '@trading-os/shared';
+import { MarketRegime, PositionStatus, Side, Timeframe, filterStrategiesForRegime } from '@trading-os/shared';
 import { gatewayBroadcast } from '../../websocket/gateway.js';
 import { notify } from '../notifications/index.js';
 import { NotificationType } from '@trading-os/shared';
@@ -28,6 +28,11 @@ import {
   relativeStrengthAligned,
   watchingSide,
 } from '../location/index.js';
+import {
+  clearSuppression,
+  getActiveSuppression,
+  hasOppositeTriggeredRelease,
+} from './symbol-suppression.js';
 
 export interface ScannerStatus {
   running: boolean;
@@ -236,6 +241,7 @@ class ScannerService {
     return this.collectSymbolOpportunities(userId, symbol, settings, {
       persist: true,
       notifyAndAuto: false,
+      bypassSuppression: true,
     });
   }
 
@@ -263,7 +269,7 @@ class ScannerService {
     userId: string,
     symbol: string,
     settings: Awaited<ReturnType<typeof getRawSettings>>,
-    opts: { persist: boolean; notifyAndAuto: boolean },
+    opts: { persist: boolean; notifyAndAuto: boolean; bypassSuppression?: boolean },
   ): Promise<Opportunity[]> {
     const timeframes = (settings.scanner?.timeframes ?? ['15m', '1h', '4h']) as Timeframe[];
     const rsEnabled = settings.scanner?.btcRelativeStrengthEnabled !== false;
@@ -309,6 +315,22 @@ class ScannerService {
     }
 
     if (!opts.persist) return opportunities;
+
+    const hideAfterManualLoss = settings.scanner?.hideAfterManualLoss !== false;
+    if (hideAfterManualLoss && !opts.bypassSuppression) {
+      const suppression = await getActiveSuppression(userId, symbol);
+      if (suppression) {
+        if (hasOppositeTriggeredRelease(opportunities, suppression.losingSide as Side)) {
+          await clearSuppression(userId, symbol);
+        } else {
+          await persistSymbolOpportunities(userId, symbol, []);
+          const allActive = await listOpportunities(userId);
+          gatewayBroadcast(userId, 'opportunities', allActive);
+          gatewayBroadcast(userId, 'scanner.status', this.getStatus());
+          return [];
+        }
+      }
+    }
 
     const items = await persistSymbolOpportunities(userId, symbol, opportunities);
     const allActive = await listOpportunities(userId);

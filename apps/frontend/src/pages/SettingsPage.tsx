@@ -489,7 +489,7 @@ export function SettingsPage() {
                 saveSettings.mutate({ trading: { executionVenue: value } });
               }}
             >
-              <Option value="margin">Isolated margin (shorts + flip)</Option>
+              <Option value="margin">Isolated margin (shorts)</Option>
               <Option value="spot">Spot only (rollback)</Option>
             </Select>
             <Typography level="body-xs" sx={{ color: 'text.tertiary', mt: 0.5 }}>
@@ -787,6 +787,12 @@ export function SettingsPage() {
             checked={data.scanner?.btcRelativeStrengthEnabled !== false}
             onChange={(checked) => saveSettings.mutate({ scanner: { btcRelativeStrengthEnabled: checked } })}
             hint="Longs must outperform BTC over 24h; shorts must underperform. Missing BTC data does not block."
+          />
+          <SwitchRow
+            label="Hide symbol after manual loss until opposite momentum"
+            checked={data.scanner?.hideAfterManualLoss !== false}
+            onChange={(checked) => saveSettings.mutate({ scanner: { hideAfterManualLoss: checked } })}
+            hint="After you manually close a losing trade, that symbol stays hidden from signals until a triggered opportunity appears on the opposite side."
           />
         </Sheet>
       )}

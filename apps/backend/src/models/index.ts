@@ -1,6 +1,7 @@
 export { User } from './User.js';
 export { Settings } from './Settings.js';
 export { Signal } from './Signal.js';
+export { SymbolSuppression } from './SymbolSuppression.js';
 export { Trade } from './Trade.js';
 export { Position } from './Position.js';
 export { JournalEntry } from './JournalEntry.js';
