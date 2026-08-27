@@ -97,6 +97,10 @@ const settingsSchema = new Schema(
     regime: {
       enabled: { type: Boolean, default: true },
     },
+    onboarding: {
+      // Set explicitly false on register; omit on legacy docs (treated as chosen).
+      tradingPathChosen: { type: Boolean },
+    },
   },
   { timestamps: true },
 );

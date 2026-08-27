@@ -102,9 +102,17 @@ export async function getSettings(userId: string) {
 
 function sanitizeSettings(doc: InstanceType<typeof Settings>) {
   const o = doc.toObject({ flattenMaps: true });
+  // Legacy docs without onboarding → treat as already chosen (no forced chooser).
+  const tradingPathChosen =
+    o.onboarding && typeof o.onboarding === 'object' && 'tradingPathChosen' in o.onboarding
+      ? Boolean((o.onboarding as { tradingPathChosen?: boolean }).tradingPathChosen)
+      : true;
   return {
     ...o,
     strategies: strategiesToPlain(o.strategies ?? doc.strategies),
+    onboarding: {
+      tradingPathChosen,
+    },
     binance: {
       configured: o.binance?.configured ?? false,
       testnet: o.binance?.testnet ?? false,
@@ -127,6 +135,21 @@ function sanitizeSettings(doc: InstanceType<typeof Settings>) {
 
 export async function updateSettings(userId: string, body: unknown) {
   const parsed = updateSettingsSchema.parse(body);
+  // Stale @trading-os/shared dist can strip unknown keys; keep onboarding if sent.
+  if (
+    !parsed.onboarding &&
+    body &&
+    typeof body === 'object' &&
+    'onboarding' in body &&
+    (body as { onboarding?: unknown }).onboarding &&
+    typeof (body as { onboarding: unknown }).onboarding === 'object'
+  ) {
+    const tp = (body as { onboarding: { tradingPathChosen?: unknown } }).onboarding
+      .tradingPathChosen;
+    if (typeof tp === 'boolean') {
+      parsed.onboarding = { tradingPathChosen: tp };
+    }
+  }
   const { strategies: strategiesPatch, ...rest } = parsed;
   const set = flattenUpdate(rest as Record<string, unknown>);
 
@@ -228,3 +251,4 @@ export async function getRawSettings(userId: string) {
   else doc = await upgradeLegacyAsymmetryDefaults(doc);
   return doc;
 }
+

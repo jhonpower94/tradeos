@@ -1,11 +1,14 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import type { ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../stores/authStore';
+import { settingsApi } from '../api';
 import { AppLayout } from './layout/AppLayout';
 import { LoginPage } from '../pages/LoginPage';
 import { RegisterPage } from '../pages/RegisterPage';
 import { ForgotPasswordPage } from '../pages/ForgotPasswordPage';
 import { ResetPasswordPage } from '../pages/ResetPasswordPage';
+import { GetStartedPage } from '../pages/GetStartedPage';
 import { HomePage } from '../pages/HomePage';
 import { ScannerPage } from '../pages/ScannerPage';
 import { ChartsPage } from '../pages/ChartsPage';
@@ -36,6 +39,22 @@ function AdminRoute({ children }: { children: ReactNode }) {
   return children;
 }
 
+/** Blocks the app shell until a new user finishes Demo vs Live onboarding. */
+function OnboardingGate({ children }: { children: ReactNode }) {
+  const { data: settings, isLoading, isError } = useQuery({
+    queryKey: ['settings'],
+    queryFn: settingsApi.get,
+  });
+
+  if (isLoading) return null;
+  // Fail open so a settings blip does not trap the user on a blank screen.
+  if (isError) return children;
+  if (settings?.onboarding?.tradingPathChosen === false) {
+    return <Navigate to="/get-started" replace />;
+  }
+  return children;
+}
+
 export function AppRouter() {
   return (
     <Routes>
@@ -44,10 +63,20 @@ export function AppRouter() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route
+        path="/get-started"
+        element={
+          <PrivateRoute>
+            <GetStartedPage />
+          </PrivateRoute>
+        }
+      />
+      <Route
         path="/"
         element={
           <PrivateRoute>
-            <AppLayout />
+            <OnboardingGate>
+              <AppLayout />
+            </OnboardingGate>
           </PrivateRoute>
         }
       >

@@ -28,7 +28,7 @@ export function RegisterPage() {
     try {
       const data = await authApi.register(email, password);
       setAuth(data.accessToken, data.user, data.refreshToken);
-      navigate('/');
+      navigate('/get-started');
     } catch (err: unknown) {
       setError(
         (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
@@ -40,7 +40,7 @@ export function RegisterPage() {
   }
 
   return (
-    <AuthShell title="Create account" subtitle="Start paper trading in minutes">
+    <AuthShell title="Create account" subtitle="Pick demo or live trading after you sign up">
       {error && (
         <Alert color="danger" sx={{ mb: 2 }}>
           {error}

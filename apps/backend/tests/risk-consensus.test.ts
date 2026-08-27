@@ -2,9 +2,12 @@ import { describe, it, expect } from 'vitest';
 import {
   alreadyOpenOnSymbolReason,
   hasOpenPositionOnSymbol,
+  meetsMinRiskReward,
+  previewRiskSize,
   slotTargetNotional,
   softPrecheck,
   validateRisk,
+  withSizePreview,
 } from '../src/modules/risk/index.js';
 import { buildConsensus, detectRegime } from '../src/modules/consensus/index.js';
 import { Decision, MarketRegime, Side, type StrategyResult } from '@trading-os/shared';
@@ -122,6 +125,124 @@ describe('risk', () => {
     });
     expect(result.ok).toBe(false);
     expect(result.reasons.some((r) => r.includes('RR'))).toBe(true);
+  });
+
+  it('meetsMinRiskReward allows float noise just under min', () => {
+    expect(meetsMinRiskReward(2, 2)).toBe(true);
+    expect(meetsMinRiskReward(1.999999999, 2)).toBe(true);
+    expect(meetsMinRiskReward(1.99, 2)).toBe(false);
+  });
+
+  it('accepts RR that displays as min after float noise', async () => {
+    const result = await validateRisk({
+      userId: '000000000000000000000001',
+      equity: 10000,
+      freeQuote: 10000,
+      risk: { ...baseRisk, atrSlMultiplierMin: 0.01, atrSlMultiplierMax: 100 },
+      opportunity: {
+        symbol: 'BTCUSDT',
+        timeframe: '1h' as never,
+        side: Side.BUY,
+        confidence: 80,
+        entry: 100,
+        stopLoss: 98,
+        takeProfit: 104,
+        riskReward: 1.999999999,
+        strategyIds: ['breakout'],
+        primaryStrategy: 'breakout',
+        evidence: [],
+        regime: MarketRegime.TRENDING_BULL,
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.reasons.some((r) => r.includes('RR'))).toBe(false);
+  });
+
+  it('softPrecheck accepts RR float noise at min', async () => {
+    setTickerPrice('BTCUSDT', 100);
+    const result = await softPrecheck(
+      '000000000000000000000001',
+      {
+        symbol: 'BTCUSDT',
+        timeframe: '1h' as never,
+        side: Side.BUY,
+        confidence: 80,
+        entry: 100,
+        stopLoss: 98,
+        takeProfit: 104,
+        riskReward: 1.999999999,
+        strategyIds: ['breakout'],
+        primaryStrategy: 'breakout',
+        evidence: [],
+        regime: MarketRegime.TRENDING_BULL,
+      },
+      baseRisk as never,
+      10_000,
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('previewRiskSize rejects when notional below min per trade', () => {
+    const result = previewRiskSize({
+      equity: 2_100,
+      freeQuote: 2_100,
+      openCount: 0,
+      risk: {
+        ...baseRisk,
+        maxOpenPositions: 2,
+        minNotionalPerTrade: 1_000,
+        atrSlMultiplierMin: 0.01,
+        atrSlMultiplierMax: 100,
+      } as never,
+      opportunity: {
+        symbol: 'BTCUSDT',
+        entry: 100,
+        stopLoss: 95,
+        riskReward: 2,
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.notional).toBeDefined();
+    expect(result.reasons.some((r) => r.includes('below min per trade'))).toBe(true);
+  });
+
+  it('previewRiskSize passes when notional meets min per trade', () => {
+    const result = previewRiskSize({
+      equity: 2_100,
+      freeQuote: 2_100,
+      openCount: 0,
+      risk: {
+        ...baseRisk,
+        maxOpenPositions: 2,
+        minNotionalPerTrade: 1_000,
+        atrSlMultiplierMin: 0.01,
+        atrSlMultiplierMax: 100,
+      } as never,
+      opportunity: {
+        symbol: 'BTCUSDT',
+        entry: 100,
+        stopLoss: 98,
+        riskReward: 2,
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.notional ?? 0).toBeGreaterThanOrEqual(1_000);
+    expect(result.qty).toBeDefined();
+  });
+
+  it('withSizePreview attaches sizePreview to each item', () => {
+    const items = withSizePreview(
+      [{ symbol: 'BTCUSDT', entry: 100, stopLoss: 98, riskReward: 2, _id: 'a' }],
+      {
+        equity: 10_000,
+        freeQuote: 10_000,
+        openCount: 0,
+        risk: { ...baseRisk, atrSlMultiplierMin: 0.01, atrSlMultiplierMax: 100 } as never,
+      },
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0]!.sizePreview.ok).toBe(true);
+    expect(items[0]!.sizePreview.notional).toBeGreaterThan(0);
   });
 
   it('rejects stop loss outside ATR band', async () => {

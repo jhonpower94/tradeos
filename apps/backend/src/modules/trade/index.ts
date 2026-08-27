@@ -226,7 +226,7 @@ async function settleClosePrice(input: {
   }
 }
 
-async function estimateEquity(
+export async function estimateEquity(
   userId: string,
   mode: TradingMode,
   executionVenue?: string,

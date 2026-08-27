@@ -27,7 +27,7 @@ import {
   strategyPackPatch,
   type ScannerEntryStyle,
 } from '@trading-os/shared';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import Link from '@mui/joy/Link';
 import { authApi, notificationsApi, portfolioApi, settingsApi } from '../api';
 import { disableWebPush, enableWebPush, getActivePushEndpoint, isIosDevice, isPushApiAvailable, isStandaloneDisplay } from '../lib/webPush';
@@ -127,7 +127,13 @@ const panelSx = {
 } as const;
 
 export function SettingsPage() {
-  const [tab, setTab] = useState(0);
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState(() => {
+    const raw = searchParams.get('tab');
+    if (raw === 'binance' || raw === '0') return 0;
+    const n = Number(raw);
+    return Number.isInteger(n) && n >= 0 && n <= 6 ? n : 0;
+  });
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
   const [amount, setAmount] = useState('');
@@ -155,6 +161,17 @@ export function SettingsPage() {
     queryFn: portfolioApi.ledger,
     enabled: isPaper && tab === 3,
   });
+
+  useEffect(() => {
+    const raw = searchParams.get('tab');
+    if (raw === 'binance' || raw === '0') {
+      setTab(0);
+      return;
+    }
+    if (raw == null) return;
+    const n = Number(raw);
+    if (Number.isInteger(n) && n >= 0 && n <= 6) setTab(n);
+  }, [searchParams]);
 
   useEffect(() => {
     void authApi.me().then((me) => {
@@ -415,7 +432,7 @@ export function SettingsPage() {
             min={0.001}
             max={0.1}
             onSave={(n) => saveSettings.mutate({ risk: { maxRiskPerTrade: n } })}
-            helperText="Fraction of equity (0.01 = 1%, 0.09 = 9%)."
+            helperText="Fraction of equity (0.01 = 1%). Position size ≈ (equity × risk) / stop distance. Raise this or lower min notional if signals show Size below the floor."
           />
           <SettingsNumberField
             label="Max daily loss"
@@ -431,7 +448,7 @@ export function SettingsPage() {
             min={1}
             max={50}
             onSave={(n) => saveSettings.mutate({ risk: { maxOpenPositions: n } })}
-            helperText="Free USDT is split equally across remaining slots."
+            helperText="Free USDT is split equally across remaining slots. Fewer slots → larger size per trade."
           />
           <SettingsNumberField
             label="Min risk/reward"
@@ -446,7 +463,7 @@ export function SettingsPage() {
             min={0}
             max={1_000_000}
             onSave={(n) => saveSettings.mutate({ risk: { minNotionalPerTrade: n } })}
-            helperText="Floor per entry (e.g. 2100 with 2 slots → ~1050 each). Size is also capped by max risk per trade. 0 disables the floor."
+            helperText="Approve is blocked when estimated size is below this floor. Size is capped by max risk per trade and free USDT / slots. If signals are blocked, raise max risk % or lower this floor. 0 disables."
           />
         </Sheet>
       )}

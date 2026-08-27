@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import argon2 from 'argon2';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { registerSchema, loginSchema, STRATEGY_IDS } from '@trading-os/shared';
+import { registerSchema, loginSchema, STRATEGY_IDS, Timeframe, TradingMode, applyScannerPreset } from '@trading-os/shared';
 import { User, type UserDoc } from '../../models/User.js';
 import { AuthToken } from '../../models/AuthToken.js';
 import { Settings } from '../../models/Settings.js';
@@ -59,9 +59,20 @@ export async function registerUser(email: string, password: string) {
   const passwordHash = await argon2.hash(parsed.password);
   let user = await User.create({ email: parsed.email, passwordHash });
   user = await maybeBootstrapAdmin(user);
+  const early = applyScannerPreset('early');
   const strategies: Record<string, { enabled: boolean; params: object }> = {};
   for (const id of STRATEGY_IDS) strategies[id] = { enabled: true, params: {} };
-  await Settings.create({ userId: user._id, strategies });
+  await Settings.create({
+    userId: user._id,
+    onboarding: { tradingPathChosen: false },
+    trading: { mode: TradingMode.PAPER, paperStartingBalance: 2100 },
+    risk: { maxRiskPerTrade: 0.05, maxOpenPositions: 2 },
+    scanner: {
+      ...early.scanner,
+      timeframes: [Timeframe.H1, Timeframe.H4],
+    },
+    strategies,
+  });
   return user;
 }
 

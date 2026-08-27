@@ -88,6 +88,8 @@ export interface Opportunity {
 export interface RiskValidationResult {
   ok: boolean;
   qty?: number;
+  /** Estimated position notional (qty × entry), always set when sizing ran. */
+  notional?: number;
   riskAmount?: number;
   reasons: string[];
 }

@@ -148,7 +148,11 @@ export function SignalsPage() {
               {view === 'ranked' && (s.status === 'ranked' || s.status === 'watching') && (
                 <>
                   {s.status === 'ranked' && (
-                    <Button color="success" onClick={() => approve.mutate(id)}>
+                    <Button
+                      color="success"
+                      disabled={approve.isPending}
+                      onClick={() => approve.mutate(id)}
+                    >
                       Approve
                     </Button>
                   )}
@@ -230,7 +234,12 @@ export function SignalsPage() {
                   {view === 'ranked' && (s.status === 'ranked' || s.status === 'watching') && (
                     <>
                       {s.status === 'ranked' && (
-                        <Button size="sm" color="success" onClick={() => approve.mutate(id)}>
+                        <Button
+                          size="sm"
+                          color="success"
+                          disabled={approve.isPending}
+                          onClick={() => approve.mutate(id)}
+                        >
                           Approve
                         </Button>
                       )}

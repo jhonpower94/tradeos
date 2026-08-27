@@ -127,6 +127,10 @@ export const regimeSettingsSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
+export const onboardingSettingsSchema = z.object({
+  tradingPathChosen: z.boolean(),
+});
+
 export const updateSettingsSchema = z.object({
   risk: riskSettingsSchema.partial().optional(),
   trading: tradingSettingsSchema.partial().optional(),
@@ -134,6 +138,7 @@ export const updateSettingsSchema = z.object({
   notifications: notificationSettingsSchema.partial().optional(),
   strategies: strategiesSettingsSchema.optional(),
   regime: regimeSettingsSchema.partial().optional(),
+  onboarding: onboardingSettingsSchema.partial().optional(),
 });
 
 export const candlesQuerySchema = z.object({

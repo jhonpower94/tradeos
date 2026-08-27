@@ -40,6 +40,7 @@ import {
   updateSettings,
   updateBinanceKeys,
   testBinanceConnection,
+  getRawSettings,
 } from '../modules/settings/index.js';
 import { exchangeService } from '../modules/exchange/index.js';
 import { marketDataService } from '../modules/market-data/index.js';
@@ -54,6 +55,7 @@ import {
   closePosition,
   executeOpportunity,
   copyTrade,
+  estimateEquity,
 } from '../modules/trade/index.js';
 import { listPositions, updatePositionLevels } from '../modules/position/index.js';
 import {
@@ -72,9 +74,33 @@ import {
   getVapidPublicKey,
   isWebPushConfigured,
 } from '../modules/notifications/index.js';
-import { NotificationType, Side, OrderType, SignalStatus, type Opportunity } from '@trading-os/shared';
+import {
+  NotificationType,
+  Side,
+  OrderType,
+  SignalStatus,
+  TradingMode,
+  ExecutionVenue,
+  type Opportunity,
+  type RiskSettings,
+} from '@trading-os/shared';
 import { runBacktest, listBacktests, getBacktest } from '../modules/backtest/index.js';
 import { strategyRegistry } from '../modules/strategies/index.js';
+import { countOpenPositions, withSizePreview } from '../modules/risk/index.js';
+
+async function sizePreviewContext(userId: string) {
+  const settings = await getRawSettings(userId);
+  const mode = settings.trading?.mode === TradingMode.LIVE ? TradingMode.LIVE : TradingMode.PAPER;
+  const executionVenue = settings.trading?.executionVenue ?? ExecutionVenue.MARGIN;
+  const { equity, freeQuote } = await estimateEquity(userId, mode, executionVenue);
+  const openCount = await countOpenPositions(userId);
+  return {
+    equity,
+    freeQuote,
+    risk: settings.risk as RiskSettings,
+    openCount,
+  };
+}
 
 async function auth(req: { jwtVerify: () => Promise<void> }) {
   await req.jwtVerify();
@@ -281,7 +307,8 @@ export async function registerRoutes(app: FastifyInstance) {
       side: q.side,
       search: q.search,
     });
-    return { items };
+    const ctx = await sizePreviewContext(userId);
+    return { items: withSizePreview(items as Array<Record<string, unknown> & { symbol: string }>, ctx) };
   });
   app.get('/api/v1/scanner/status', { preHandler: auth }, async () => scannerService.getStatus());
   app.post('/api/v1/scanner/start', { preHandler: auth }, async () => {
@@ -310,7 +337,20 @@ export async function registerRoutes(app: FastifyInstance) {
     const items = await listOpportunities(userId, {
       minConfidence: q.minConfidence ? Number(q.minConfidence) : undefined,
     });
-    return { items, view: 'ranked' };
+    const ctx = await sizePreviewContext(userId);
+    const previewed = withSizePreview(
+      items as Array<Record<string, unknown> & { symbol: string }>,
+      ctx,
+    );
+    const minNotional = Number(ctx.risk?.minNotionalPerTrade ?? 1000);
+    const filtered =
+      minNotional > 0
+        ? previewed.filter((row) => {
+            const n = row.sizePreview?.notional;
+            return !(typeof n === 'number' && Number.isFinite(n) && n + 1e-9 < minNotional);
+          })
+        : previewed;
+    return { items: filtered, view: 'ranked' };
   });
   app.get('/api/v1/signals/:id', { preHandler: auth }, async (req) => {
     const item = await Signal.findOne({ _id: (req.params as { id: string }).id, userId: getUserId(req) }).lean();

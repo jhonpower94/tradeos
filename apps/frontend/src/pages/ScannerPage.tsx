@@ -22,6 +22,23 @@ import { isWatchingRow, sortTriggeredThenNewest } from '../utils/sort';
 import { StatusChip } from '../components/StatusChip';
 import { monoSx } from '../theme/theme';
 
+type SizePreview = {
+  ok?: boolean;
+  notional?: number;
+  reasons?: string[];
+};
+
+function getSizePreview(row: Record<string, unknown>): SizePreview | undefined {
+  const p = row.sizePreview;
+  if (!p || typeof p !== 'object') return undefined;
+  return p as SizePreview;
+}
+
+function formatNotional(preview: SizePreview | undefined): string {
+  if (preview?.notional == null || !Number.isFinite(preview.notional)) return '—';
+  return `$${preview.notional.toFixed(0)}`;
+}
+
 export function ScannerPage() {
   const [minConfidence, setMinConfidence] = useState(75);
   const [timeframe, setTimeframe] = useState('');
@@ -198,6 +215,21 @@ export function ScannerPage() {
           { label: 'Confidence', render: (o) => <ConfidenceBar value={Number(o.confidence)} /> },
           { label: 'RR', render: (o) => <Typography sx={monoSx}>{Number(o.riskReward).toFixed(2)}</Typography> },
           { label: 'Entry', render: (o) => <Typography sx={monoSx}>{formatPrice(Number(o.entry))}</Typography> },
+          {
+            label: 'Size',
+            render: (o) => {
+              const preview = getSizePreview(o);
+              return (
+                <Typography
+                  sx={monoSx}
+                  title={preview?.ok === false ? preview.reasons?.[0] : undefined}
+                  color={preview?.ok === false ? 'warning' : undefined}
+                >
+                  {formatNotional(preview)}
+                </Typography>
+              );
+            },
+          },
           { label: 'SL', render: (o) => <Typography sx={monoSx}>{formatPrice(Number(o.stopLoss))}</Typography> },
           { label: 'TP', render: (o) => <Typography sx={monoSx}>{formatPrice(Number(o.takeProfit))}</Typography> },
           { label: 'TF', render: (o) => String(o.timeframe) },
@@ -227,6 +259,24 @@ export function ScannerPage() {
           { key: 'rs', header: 'RS', numeric: true, render: (o) => formatRelativeStrength(o.relativeStrength) },
           { key: 'conf', header: 'Confidence', numeric: true, render: (o) => `${Number(o.confidence).toFixed(1)}%` },
           { key: 'entry', header: 'Entry', numeric: true, render: (o) => formatPrice(Number(o.entry)) },
+          {
+            key: 'size',
+            header: 'Size',
+            numeric: true,
+            render: (o) => {
+              const preview = getSizePreview(o);
+              return (
+                <Typography
+                  component="span"
+                  sx={monoSx}
+                  title={preview?.ok === false ? preview.reasons?.[0] : undefined}
+                  color={preview?.ok === false ? 'warning' : undefined}
+                >
+                  {formatNotional(preview)}
+                </Typography>
+              );
+            },
+          },
           { key: 'sl', header: 'SL', numeric: true, render: (o) => formatPrice(Number(o.stopLoss)) },
           { key: 'tp', header: 'TP', numeric: true, render: (o) => formatPrice(Number(o.takeProfit)) },
           { key: 'rr', header: 'RR', numeric: true, render: (o) => Number(o.riskReward).toFixed(2) },

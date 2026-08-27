@@ -1,8 +1,11 @@
 import Box from '@mui/joy/Box';
+import Button from '@mui/joy/Button';
 import Chip from '@mui/joy/Chip';
+import Sheet from '@mui/joy/Sheet';
 import Typography from '@mui/joy/Typography';
 import { useQuery } from '@tanstack/react-query';
-import { analyticsApi, portfolioApi, scannerApi, tradesApi } from '../api';
+import { Link as RouterLink } from 'react-router-dom';
+import { analyticsApi, portfolioApi, scannerApi, settingsApi, tradesApi } from '../api';
 import { useLiveStore } from '../stores/liveStore';
 import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
@@ -20,6 +23,7 @@ export function HomePage() {
   const { data: analytics } = useQuery({ queryKey: ['analytics'], queryFn: analyticsApi.overview });
   const { data: oppsData } = useQuery({ queryKey: ['opportunities'], queryFn: () => scannerApi.opportunities() });
   const { data: tradesData } = useQuery({ queryKey: ['trades'], queryFn: tradesApi.list });
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
   const { data: status } = useQuery({
     queryKey: ['scanner-status'],
     queryFn: scannerApi.status,
@@ -32,10 +36,52 @@ export function HomePage() {
   ).slice(0, 5);
   const trades = (tradesData?.items ?? []) as Array<Record<string, unknown>>;
   const todayPnl = Number(portfolio?.todayPnl ?? 0);
+  const isLive = (settings?.trading?.mode ?? 'paper') === 'live';
+  const showBinanceAlert = Boolean(settings) && isLive && !settings?.binance?.configured;
 
   return (
     <Box>
       <PageHeader title="Home" subtitle="Spot terminal overview" />
+
+      {showBinanceAlert && (
+        <Sheet
+          variant="outlined"
+          sx={{
+            mb: 3,
+            px: { xs: 2, sm: 2.5 },
+            py: { xs: 1.75, sm: 2 },
+            borderRadius: 'lg',
+            borderLeft: '3px solid',
+            borderLeftColor: 'primary.500',
+            bgcolor: 'background.level1',
+            display: 'flex',
+            flexDirection: { xs: 'column', sm: 'row' },
+            alignItems: { xs: 'stretch', sm: 'center' },
+            justifyContent: 'space-between',
+            gap: 1.5,
+          }}
+        >
+          <Box sx={{ minWidth: 0 }}>
+            <Typography level="title-sm" sx={{ mb: 0.25 }}>
+              Connect Binance
+            </Typography>
+            <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
+              Live mode needs Binance API keys for market data and execution.
+            </Typography>
+          </Box>
+          <Button
+            component={RouterLink}
+            to="/settings?tab=binance"
+            size="sm"
+            variant="soft"
+            color="primary"
+            sx={{ flexShrink: 0, alignSelf: { xs: 'flex-start', sm: 'center' } }}
+          >
+            Open Settings
+          </Button>
+        </Sheet>
+      )}
+
       <Box
         sx={{
           display: 'grid',
