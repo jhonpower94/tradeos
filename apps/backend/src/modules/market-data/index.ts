@@ -4,7 +4,7 @@ import { exchangeService } from '../exchange/index.js';
 import { config } from '../../config/index.js';
 
 const memoryCache = new Map<string, { candles: Candle[]; at: number }>();
-const TTL_MS = 30_000;
+const TTL_MS = 60_000;
 
 function cacheKey(symbol: string, interval: string) {
   return `${symbol}:${interval}`;

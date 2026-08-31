@@ -2,7 +2,12 @@ import { createHmac } from 'node:crypto';
 import type { Candle, Timeframe } from '@trading-os/shared';
 import { LEVERAGED_TOKEN_DENYLIST } from '@trading-os/shared';
 import { config } from '../../config/index.js';
-import { RateLimiter } from '../../utils/rate-limiter.js';
+import {
+  WeightWindowLimiter,
+  binanceDepthWeight,
+  binanceKlinesWeight,
+  parseBinanceBanUntilMs,
+} from '../../utils/rate-limiter.js';
 import { AppError } from '../../utils/errors.js';
 
 export interface SymbolInfo {
@@ -84,11 +89,14 @@ export interface OrderResult {
 type Credentials = { apiKey: string; apiSecret: string };
 
 export class ExchangeService {
-  private limiter = new RateLimiter(1100, 20);
+  /** Stay under Binance IP REQUEST_WEIGHT (~6000/min) with headroom for UI/manual calls. */
+  private limiter = new WeightWindowLimiter(config.binanceWeightLimitPerMin, 60_000);
   private restUrl: string;
   private credentials?: Credentials;
   private symbolCache: SymbolInfo[] | null = null;
   private symbolCacheAt = 0;
+  private tickers24hrCache: { at: number; data: TickerPrice[] } | null = null;
+  private banUntilMs = 0;
 
   constructor(restUrl = config.binanceRestUrl) {
     this.restUrl = restUrl.replace(/\/$/, '');
@@ -106,13 +114,31 @@ export class ExchangeService {
     return this.restUrl;
   }
 
+  private async waitIfBanned(): Promise<void> {
+    const now = Date.now();
+    if (this.banUntilMs <= now) return;
+    const remaining = this.banUntilMs - now;
+    if (remaining > 15_000) {
+      throw new AppError(
+        'BINANCE_BANNED',
+        `Binance IP banned until ${new Date(this.banUntilMs).toISOString()}`,
+        418,
+        { banUntilMs: this.banUntilMs },
+      );
+    }
+    await new Promise((r) => setTimeout(r, remaining + 250));
+  }
+
   private async request<T>(
     method: string,
     path: string,
     params: Record<string, string | number | boolean | undefined> = {},
     signed = false,
+    weight = 1,
+    attempt = 0,
   ): Promise<T> {
-    await this.limiter.acquire(1);
+    await this.waitIfBanned();
+    await this.limiter.acquire(weight);
     const search = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) {
       if (v !== undefined && v !== null) search.set(k, String(v));
@@ -145,12 +171,39 @@ export class ExchangeService {
         { url: this.restUrl, detail },
       );
     }
+
+    const usedHdr =
+      res.headers.get('x-mbx-used-weight-1m') ?? res.headers.get('X-MBX-USED-WEIGHT-1M');
+    if (usedHdr) {
+      const used = Number(usedHdr);
+      if (Number.isFinite(used)) this.limiter.syncUsedWeight(used);
+    }
+
     if (!res.ok) {
       const body = await res.text();
-      if (res.status === 429) {
-        await new Promise((r) => setTimeout(r, 2000));
-        return this.request(method, path, params, signed);
+      const banUntil = parseBinanceBanUntilMs(body);
+      if (banUntil) this.banUntilMs = Math.max(this.banUntilMs, banUntil);
+
+      if (res.status === 418 || /banned until/i.test(body)) {
+        throw new AppError(
+          'BINANCE_BANNED',
+          `Binance IP banned${banUntil ? ` until ${new Date(banUntil).toISOString()}` : ''}: ${body}`,
+          418,
+          { banUntilMs: banUntil ?? this.banUntilMs, body },
+        );
       }
+
+      if (res.status === 429 && attempt < 1) {
+        const retryAfterSec = Number(res.headers.get('retry-after'));
+        const waitMs = Number.isFinite(retryAfterSec) && retryAfterSec > 0
+          ? Math.min(retryAfterSec * 1000, 60_000)
+          : banUntil
+            ? Math.min(Math.max(banUntil - Date.now(), 5_000), 60_000)
+            : 10_000;
+        await new Promise((r) => setTimeout(r, waitMs));
+        return this.request(method, path, params, signed, weight, attempt + 1);
+      }
+
       const status = res.status >= 400 && res.status < 600 ? res.status : 502;
       throw new AppError('BINANCE_ERROR', `Binance ${res.status}: ${body}`, status);
     }
@@ -169,7 +222,7 @@ export class ExchangeService {
         status: string;
         filters: Record<string, unknown>[];
       }>;
-    }>('GET', '/api/v3/exchangeInfo');
+    }>('GET', '/api/v3/exchangeInfo', {}, false, 20);
     this.symbolCache = data.symbols.map((s) => ({
       symbol: s.symbol,
       baseAsset: s.baseAsset,
@@ -195,11 +248,17 @@ export class ExchangeService {
   }
 
   async getCandles(symbol: string, interval: Timeframe | string, limit = 500): Promise<Candle[]> {
-    const raw = await this.request<unknown[][]>('GET', '/api/v3/klines', {
-      symbol: symbol.toUpperCase(),
-      interval,
-      limit,
-    });
+    const raw = await this.request<unknown[][]>(
+      'GET',
+      '/api/v3/klines',
+      {
+        symbol: symbol.toUpperCase(),
+        interval,
+        limit,
+      },
+      false,
+      binanceKlinesWeight(limit),
+    );
     return raw.map((k) => ({
       openTime: Number(k[0]),
       open: Number(k[1]),
@@ -220,13 +279,19 @@ export class ExchangeService {
     const all: Candle[] = [];
     let cursor = startTime;
     while (cursor < endTime) {
-      const raw = await this.request<unknown[][]>('GET', '/api/v3/klines', {
-        symbol: symbol.toUpperCase(),
-        interval,
-        startTime: cursor,
-        endTime,
-        limit: 1000,
-      });
+      const raw = await this.request<unknown[][]>(
+        'GET',
+        '/api/v3/klines',
+        {
+          symbol: symbol.toUpperCase(),
+          interval,
+          startTime: cursor,
+          endTime,
+          limit: 1000,
+        },
+        false,
+        binanceKlinesWeight(1000),
+      );
       if (!raw.length) break;
       for (const k of raw) {
         all.push({
@@ -253,7 +318,7 @@ export class ExchangeService {
       askPrice: string;
       quoteVolume: string;
       priceChangePercent: string;
-    }>('GET', '/api/v3/ticker/24hr', { symbol: symbol.toUpperCase() });
+    }>('GET', '/api/v3/ticker/24hr', { symbol: symbol.toUpperCase() }, false, 1);
     return {
       symbol: data.symbol,
       price: Number(data.lastPrice),
@@ -266,6 +331,10 @@ export class ExchangeService {
 
   /** All USDT 24hr tickers (volume + bid/ask) for universe ranking/filtering. */
   async getAllTickers24hr(): Promise<TickerPrice[]> {
+    const ttl = config.binanceTickersCacheMs;
+    if (this.tickers24hrCache && Date.now() - this.tickers24hrCache.at < ttl) {
+      return this.tickers24hrCache.data;
+    }
     const data = await this.request<
       Array<{
         symbol: string;
@@ -275,8 +344,8 @@ export class ExchangeService {
         quoteVolume: string;
         priceChangePercent: string;
       }>
-    >('GET', '/api/v3/ticker/24hr');
-    return data.map((t) => ({
+    >('GET', '/api/v3/ticker/24hr', {}, false, 40);
+    const mapped = data.map((t) => ({
       symbol: t.symbol,
       price: Number(t.lastPrice),
       bid: Number(t.bidPrice),
@@ -284,13 +353,15 @@ export class ExchangeService {
       volume24h: Number(t.quoteVolume),
       priceChangePercent: Number(t.priceChangePercent),
     }));
+    this.tickers24hrCache = { at: Date.now(), data: mapped };
+    return mapped;
   }
 
   async getOrderBook(symbol: string, limit = 20): Promise<OrderBook> {
     const data = await this.request<{
       bids: string[][];
       asks: string[][];
-    }>('GET', '/api/v3/depth', { symbol: symbol.toUpperCase(), limit });
+    }>('GET', '/api/v3/depth', { symbol: symbol.toUpperCase(), limit }, false, binanceDepthWeight(limit));
     return {
       bids: data.bids.map((b) => [Number(b[0]), Number(b[1])]),
       asks: data.asks.map((a) => [Number(a[0]), Number(a[1])]),
@@ -300,7 +371,7 @@ export class ExchangeService {
   async getBalances(): Promise<Balance[]> {
     const data = await this.request<{
       balances: Array<{ asset: string; free: string; locked: string }>;
-    }>('GET', '/api/v3/account', {}, true);
+    }>('GET', '/api/v3/account', {}, true, 20);
     return data.balances
       .map((b) => ({
         asset: b.asset,
@@ -331,7 +402,7 @@ export class ExchangeService {
       price: string;
       executedQty: string;
       cummulativeQuoteQty: string;
-    }>('POST', '/api/v3/order', body, true);
+    }>('POST', '/api/v3/order', body, true, 1);
     return {
       orderId: String(data.orderId),
       symbol: data.symbol,
@@ -345,7 +416,7 @@ export class ExchangeService {
   }
 
   async cancelOrder(symbol: string, orderId: string): Promise<void> {
-    await this.request('DELETE', '/api/v3/order', { symbol, orderId }, true);
+    await this.request('DELETE', '/api/v3/order', { symbol, orderId }, true, 1);
   }
 
   getLotSize(symbol: string): { stepSize: number; minQty: number; minNotional: number } {
@@ -386,7 +457,7 @@ export class ExchangeService {
     }
     const base = this.baseAsset(sym);
     try {
-      await this.request('POST', '/sapi/v1/margin/isolated/create', { base, quote: 'USDT' }, true);
+      await this.request('POST', '/sapi/v1/margin/isolated/create', { base, quote: 'USDT' }, true, 1);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (!/already|exist/i.test(msg)) throw e;
@@ -419,6 +490,7 @@ export class ExchangeService {
         amount: input.amount,
       },
       true,
+      1,
     );
   }
 
@@ -449,7 +521,7 @@ export class ExchangeService {
           netAsset: string;
         };
       }>;
-    }>('GET', '/sapi/v1/margin/isolated/account', params, true);
+    }>('GET', '/sapi/v1/margin/isolated/account', params, true, 10);
 
     const mapAsset = (a: {
       asset: string;
@@ -518,7 +590,7 @@ export class ExchangeService {
       price: string;
       executedQty: string;
       cummulativeQuoteQty: string;
-    }>('POST', '/sapi/v1/margin/order', body, true);
+    }>('POST', '/sapi/v1/margin/order', body, true, 6);
     return {
       orderId: String(data.orderId),
       symbol: data.symbol,

@@ -69,8 +69,10 @@ export const scannerSettingsSchema = z.object({
   minAlignedStrategies: z.number().int().min(1).max(STRATEGY_IDS.length).default(2),
   minAgreementRatio: z.number().min(0).max(1).default(0.6),
   symbolsDenyList: z.array(z.string()).default([]),
-  hotSetSize: z.number().int().min(10).max(500).default(50),
-  concurrency: z.number().int().min(1).max(20).default(5),
+  hotSetSize: z.number().int().min(10).max(500).default(40),
+  concurrency: z.number().int().min(1).max(20).default(3),
+  /** Seconds to wait after each full scan cycle before the next. */
+  scanIntervalSec: z.number().int().min(60).max(900).default(120),
   htfVetoEnabled: z.boolean().default(true),
   entryStyle: z.enum(['confirmed', 'early']).default('confirmed'),
   locationGateEnabled: z.boolean().default(true),

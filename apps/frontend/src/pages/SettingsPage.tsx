@@ -400,8 +400,10 @@ export function SettingsPage() {
           </Typography>
           <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
             Test calls Binance account API. If you see ENOTFOUND / unreachable, api.binance.com may be
-            blocked on your network — use a VPN or set BINANCE_REST_URL in .env (e.g.
-            https://api1.binance.com).
+            blocked on your network — use a VPN on the server or set BINANCE_REST_URL in .env (e.g.
+            https://api1.binance.com). If you see request weight / IP banned, wait for the ban to lift,
+            lower scanner hot set / concurrency, or raise scan interval — the app rate-limits Binance
+            weight but shared VPN IPs can still get banned.
             For live margin/shorts, enable Spot &amp; Margin Trading and Universal Transfer on the API key.
           </Typography>
           <FormControl>
@@ -769,13 +771,23 @@ export function SettingsPage() {
           />
           <SettingsNumberField
             label="Hot set size"
-            value={Number(data.scanner?.hotSetSize ?? 50)}
+            value={Number(data.scanner?.hotSetSize ?? 40)}
             onSave={(n) => saveSettings.mutate({ scanner: { hotSetSize: n } })}
+            helperText="Top liquid symbols scanned each cycle. Lower = less Binance weight."
           />
           <SettingsNumberField
             label="Concurrency"
-            value={Number(data.scanner?.concurrency ?? 5)}
+            value={Number(data.scanner?.concurrency ?? 3)}
             onSave={(n) => saveSettings.mutate({ scanner: { concurrency: n } })}
+            helperText="Parallel symbol workers. Keep low (2–3) to avoid IP weight bans."
+          />
+          <SettingsNumberField
+            label="Scan interval (seconds)"
+            value={Number(data.scanner?.scanIntervalSec ?? 120)}
+            min={60}
+            max={900}
+            onSave={(n) => saveSettings.mutate({ scanner: { scanIntervalSec: n } })}
+            helperText="Pause after each full scan before the next (min 60s). Higher = safer for Binance limits."
           />
           <SwitchRow
             label="Filter strategies by market regime"

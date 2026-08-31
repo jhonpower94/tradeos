@@ -58,7 +58,13 @@ export const config = {
   binanceTestnet: process.env.BINANCE_TESTNET === 'true',
   corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
   feeRate: Number(process.env.FEE_RATE ?? 0.001),
-  scannerConcurrency: Number(process.env.SCANNER_CONCURRENCY ?? 5),
+  scannerConcurrency: Number(process.env.SCANNER_CONCURRENCY ?? 3),
+  /** Pause between full scanner cycles (ms). */
+  scannerIntervalMs: Number(process.env.SCANNER_INTERVAL_MS ?? 120_000),
+  /** Soft cap under Binance IP REQUEST_WEIGHT (~6000/min). */
+  binanceWeightLimitPerMin: Number(process.env.BINANCE_WEIGHT_LIMIT_PER_MIN ?? 4800),
+  /** Cache for GET /api/v3/ticker/24hr (all symbols, weight 40). */
+  binanceTickersCacheMs: Number(process.env.BINANCE_TICKERS_CACHE_MS ?? 45_000),
   minConsensusScore: Number(process.env.MIN_CONSENSUS_SCORE ?? 75),
   smtp: {
     host: process.env.SMTP_HOST,

@@ -19,6 +19,7 @@ import { exchangeService } from '../exchange/index.js';
 import { User } from '../../models/User.js';
 import { detectRegime } from '../regime/index.js';
 import type { Opportunity } from '@trading-os/shared';
+import { config } from '../../config/index.js';
 import {
   buildWatchingOpportunity,
   computeRelativeStrength,
@@ -80,10 +81,29 @@ class ScannerService {
         this.status.errors++;
         console.error('Scanner loop error', e);
       }
+      const pauseMs = await this.resolveScanIntervalMs();
       await new Promise((r) => {
-        this.timer = setTimeout(r, 60_000);
+        this.timer = setTimeout(r, pauseMs);
       });
     }
+  }
+
+  /** Prefer per-user setting when a single user; else env/config floor. */
+  private async resolveScanIntervalMs(): Promise<number> {
+    const floor = Math.max(60_000, config.scannerIntervalMs);
+    try {
+      const users = await User.find().select('_id').lean();
+      if (users.length === 1) {
+        const settings = await getRawSettings(String(users[0]!._id));
+        const sec = Number(settings.scanner?.scanIntervalSec ?? 120);
+        if (Number.isFinite(sec) && sec >= 60) {
+          return Math.max(floor, Math.round(sec * 1000));
+        }
+      }
+    } catch {
+      // fall through
+    }
+    return floor;
   }
 
   async scanAllUsers() {
@@ -99,8 +119,8 @@ class ScannerService {
 
     const timeframes = (settings.scanner?.timeframes ?? ['15m', '1h', '4h']) as Timeframe[];
     const deny = new Set(settings.scanner?.symbolsDenyList ?? []);
-    const concurrency = settings.scanner?.concurrency ?? 5;
-    const hotSize = settings.scanner?.hotSetSize ?? 50;
+    const concurrency = settings.scanner?.concurrency ?? 3;
+    const hotSize = settings.scanner?.hotSetSize ?? 40;
     const minLiquidity = settings.risk?.minLiquidityUsdt ?? 1_000_000;
     const maxSpreadBps = settings.risk?.maxSpreadBps ?? 20;
 
