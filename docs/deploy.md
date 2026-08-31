@@ -28,7 +28,7 @@ Paste them into `.env.production`. Also set:
 
 | Variable | Notes |
 |----------|--------|
-| `CORS_ORIGIN` | Browser origin, e.g. `https://tradingos.tech` |
+| `CORS_ORIGIN` | Browser origin, e.g. `https://aitradebot.pro` |
 | `BINANCE_*` | Defaults are mainnet; set `BINANCE_TESTNET=true` only for testnet |
 | SMTP / Telegram / Discord | Optional notifications |
 
@@ -53,13 +53,13 @@ Services:
 
 ```bash
 # UI (HTTPS)
-curl -fsSI https://tradingos.tech/
+curl -fsSI https://aitradebot.pro/
 
 # API via nginx
-curl -fsS https://tradingos.tech/api/v1/health
+curl -fsS https://aitradebot.pro/api/v1/health
 
 # HTTP should redirect to HTTPS
-curl -fsSI http://tradingos.tech/
+curl -fsSI http://aitradebot.pro/
 
 # API container health
 docker compose -f docker-compose.prod.yml ps
@@ -103,19 +103,19 @@ mkdir -p /var/www/certbot
 docker compose -f docker-compose.prod.yml stop ui
 certbot certonly --standalone --non-interactive --agree-tos \
   --register-unsafely-without-email \
-  -d tradingos.tech -d www.tradingos.tech
+  -d aitradebot.pro -d www.aitradebot.pro
 
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-Set `CORS_ORIGIN=https://tradingos.tech` in `.env.production` and recreate `api`.
+Set `CORS_ORIGIN=https://aitradebot.pro` in `.env.production` and recreate `api`.
 
 Renewals use the HTTP-01 webroot (nginx keeps running):
 
 ```bash
 certbot certonly --webroot -w /var/www/certbot --non-interactive --agree-tos \
   --deploy-hook 'docker exec tradeos-ui-1 nginx -s reload' \
-  -d tradingos.tech -d www.tradingos.tech
+  -d aitradebot.pro -d www.aitradebot.pro
 ```
 
 Ubuntu’s `certbot.timer` handles the schedule. Persist the webroot + hook, for example in `/etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh`:
