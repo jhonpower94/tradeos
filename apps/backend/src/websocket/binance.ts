@@ -110,12 +110,15 @@ export class BinanceWsClient {
         closeTime: Number(k.T),
       };
       setTickerPrice(String(payload.s), candle.close);
-      marketDataService.updateCandle(String(payload.s), String(k.i), candle);
+      const isClosed = Boolean(k.x);
+      marketDataService.updateCandle(String(payload.s), String(k.i), candle, {
+        persist: isClosed,
+      });
       klineHandler?.({
         symbol: String(payload.s).toUpperCase(),
         interval: String(k.i),
         candle,
-        isClosed: Boolean(k.x),
+        isClosed,
       });
     }
   }
