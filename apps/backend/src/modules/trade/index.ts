@@ -719,9 +719,29 @@ export async function listTrades(userId: string) {
 }
 
 /**
- * Straight clone: re-enter using the source trade's side and SL/TP distances at live price.
- * Allows stacking on the same symbol when position slots remain.
+ * Copy a trade: clone+execute when position slots remain (stacking allowed).
+ * When max open positions is reached, or the source is a closed winner,
+ * rescan the symbol for Signals instead (no new trade).
  */
+function mapRescanResult(symbol: string, opportunities: Opportunity[]) {
+  return {
+    mode: 'rescan' as const,
+    symbol,
+    count: opportunities.length,
+    opportunities: opportunities.map((o) => ({
+      symbol: o.symbol,
+      side: o.side,
+      timeframe: o.timeframe,
+      confidence: o.confidence,
+      entry: o.entry,
+      stopLoss: o.stopLoss,
+      takeProfit: o.takeProfit,
+      riskReward: o.riskReward,
+      primaryStrategy: o.primaryStrategy,
+    })),
+  };
+}
+
 export async function copyTrade(
   userId: string,
   tradeId: string,
@@ -729,6 +749,22 @@ export async function copyTrade(
 ) {
   const source = await Trade.findOne({ _id: tradeId, userId }).lean();
   if (!source) throw new AppError('NOT_FOUND', 'Trade not found', 404);
+
+  const settings = await getRawSettings(userId);
+  const maxOpen = Number(settings.risk?.maxOpenPositions ?? 5);
+  const openCount = await Position.countDocuments({
+    userId,
+    status: PositionStatus.OPEN,
+  });
+
+  const isClosedWinner =
+    source.status === TradeStatus.CLOSED && Number(source.realizedPnl ?? 0) > 0;
+
+  if (isClosedWinner || openCount >= maxOpen) {
+    const { scannerService } = await import('../scanner/index.js');
+    const opportunities = await scannerService.analyzeUserSymbol(userId, source.symbol);
+    return mapRescanResult(source.symbol, opportunities);
+  }
 
   let timeframe = Timeframe.H1;
   let primaryStrategy: StrategyId = 'breakout';
@@ -788,6 +824,7 @@ export async function copyTrade(
   });
 
   return {
+    mode: 'clone' as const,
     trade,
     opportunity: {
       symbol: opportunity.symbol,

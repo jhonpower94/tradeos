@@ -2,7 +2,10 @@ import { useState } from 'react';
 import Alert from '@mui/joy/Alert';
 import Box from '@mui/joy/Box';
 import Button from '@mui/joy/Button';
+import FormControl from '@mui/joy/FormControl';
+import FormLabel from '@mui/joy/FormLabel';
 import IconButton from '@mui/joy/IconButton';
+import Input from '@mui/joy/Input';
 import Typography from '@mui/joy/Typography';
 import Close from '@mui/icons-material/Close';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -40,6 +43,13 @@ type PositionContext = {
   message: string;
 };
 
+type CopyResult = {
+  mode?: 'clone' | 'rescan';
+  symbol?: string;
+  count?: number;
+  opportunity?: { stopLoss?: number; takeProfit?: number; primaryStrategy?: string };
+};
+
 export function PortfolioPage() {
   const qc = useQueryClient();
   const { data: summary } = useQuery({
@@ -61,11 +71,19 @@ export function PortfolioPage() {
     queryKey: ['settings'],
     queryFn: settingsApi.get,
   });
+  const { data: tradesData } = useQuery({
+    queryKey: ['trades'],
+    queryFn: tradesApi.list,
+    refetchInterval: 10_000,
+  });
   const contextByPosition = new Map<string, PositionContext>(
     ((contexts?.items ?? []) as PositionContext[]).map((c) => [c.positionId, c]),
   );
 
   const [chartPositionId, setChartPositionId] = useState<string | null>(null);
+  const [editPositionId, setEditPositionId] = useState<string | null>(null);
+  const [editSl, setEditSl] = useState('');
+  const [editTp, setEditTp] = useState('');
   const [copyInfo, setCopyInfo] = useState<string | null>(null);
 
   const isPaper = (summary?.mode ?? settings?.trading?.mode ?? 'paper') === 'paper';
@@ -93,10 +111,17 @@ export function PortfolioPage() {
 
   const copyTrade = useMutation({
     mutationFn: (tradeId: string) => tradesApi.copy(tradeId),
-    onSuccess: (data: {
-      opportunity?: { stopLoss?: number; takeProfit?: number; primaryStrategy?: string };
-    }) => {
+    onSuccess: (data: CopyResult) => {
       invalidateTradeQueries();
+      if (data.mode === 'rescan') {
+        const n = data.count ?? 0;
+        setCopyInfo(
+          n > 0
+            ? `Rescanned ${data.symbol ?? ''} · ${n} signal${n === 1 ? '' : 's'}`
+            : `Rescanned ${data.symbol ?? ''} · no fresh signal`,
+        );
+        return;
+      }
       const o = data.opportunity;
       setCopyInfo(
         o
@@ -106,42 +131,90 @@ export function PortfolioPage() {
     },
   });
 
+  const updateLevels = useMutation({
+    mutationFn: (input: { id: string; stopLoss?: number; takeProfit?: number }) =>
+      positionsApi.update(input.id, { stopLoss: input.stopLoss, takeProfit: input.takeProfit }),
+    onSuccess: () => {
+      setEditPositionId(null);
+      invalidateTradeQueries();
+    },
+  });
+
   const openPositions = ((positions?.items ?? []) as Array<Record<string, unknown>>).filter(
     (p) => p.status === 'open',
   );
-  const maxOpen = Number(settings?.risk?.maxOpenPositions ?? 5);
-  const slotsFull = openPositions.length >= maxOpen;
+  const recentWinners = ((tradesData?.items ?? []) as Array<Record<string, unknown>>)
+    .filter((t) => t.status === 'closed' && Number(t.realizedPnl ?? 0) > 0)
+    .sort(
+      (a, b) =>
+        new Date(String(b.closedAt ?? b.updatedAt ?? 0)).getTime() -
+        new Date(String(a.closedAt ?? a.updatedAt ?? 0)).getTime(),
+    )
+    .slice(0, 10);
   const uPnl = Number(summary?.unrealizedPnl ?? 0);
   const rPnl = Number(summary?.realizedPnl ?? 0);
 
   const actionError =
     (closeTrade.isError && errMsg(closeTrade.error)) ||
     (copyTrade.isError && errMsg(copyTrade.error)) ||
+    (updateLevels.isError && errMsg(updateLevels.error)) ||
     null;
 
   const clearActionError = () => {
     closeTrade.reset();
     copyTrade.reset();
+    updateLevels.reset();
+  };
+
+  const startEdit = (p: Record<string, unknown>) => {
+    const id = String(p._id);
+    setChartPositionId(null);
+    setEditPositionId(id);
+    setEditSl(p.stopLoss != null ? String(p.stopLoss) : '');
+    setEditTp(p.takeProfit != null ? String(p.takeProfit) : '');
+  };
+
+  const saveEdit = () => {
+    if (!editPositionId) return;
+    const stopLoss = Number(editSl);
+    const takeProfit = Number(editTp);
+    const body: { id: string; stopLoss?: number; takeProfit?: number } = { id: editPositionId };
+    if (Number.isFinite(stopLoss) && stopLoss > 0) body.stopLoss = stopLoss;
+    if (Number.isFinite(takeProfit) && takeProfit > 0) body.takeProfit = takeProfit;
+    if (body.stopLoss == null && body.takeProfit == null) return;
+    updateLevels.mutate(body);
   };
 
   const renderActions = (p: Record<string, unknown>) => {
     const id = String(p._id);
     const chartOpen = chartPositionId === id;
+    const editing = editPositionId === id;
     return (
       <>
         <Button
           size="sm"
           variant={chartOpen ? 'solid' : 'outlined'}
           color="neutral"
-          onClick={() => setChartPositionId(chartOpen ? null : id)}
+          onClick={() => {
+            setEditPositionId(null);
+            setChartPositionId(chartOpen ? null : id);
+          }}
         >
           Chart
         </Button>
         <Button
           size="sm"
+          variant={editing ? 'solid' : 'outlined'}
+          color="neutral"
+          onClick={() => (editing ? setEditPositionId(null) : startEdit(p))}
+        >
+          Edit
+        </Button>
+        <Button
+          size="sm"
           variant="outlined"
           color="neutral"
-          disabled={copyTrade.isPending || slotsFull}
+          disabled={copyTrade.isPending}
           onClick={() => {
             setCopyInfo(null);
             copyTrade.mutate(String(p.tradeId));
@@ -321,17 +394,68 @@ export function PortfolioPage() {
         )}
         expandedContent={(p) => {
           const id = String(p._id);
-          if (chartPositionId !== id) return null;
           const ctx = contextByPosition.get(id);
+          const editing = editPositionId === id;
+          const chartOpen = chartPositionId === id;
+          if (!editing && !chartOpen) return null;
           return (
-            <CandleChart
-              symbol={String(p.symbol)}
-              interval={ctx?.timeframe ?? '1h'}
-              height={280}
-              entry={Number(p.entryPrice)}
-              stopLoss={p.stopLoss != null ? Number(p.stopLoss) : undefined}
-              takeProfit={p.takeProfit != null ? Number(p.takeProfit) : undefined}
-            />
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {editing && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 1.5,
+                    alignItems: 'flex-end',
+                  }}
+                >
+                  <FormControl sx={{ minWidth: 140 }}>
+                    <FormLabel>Stop loss</FormLabel>
+                    <Input
+                      type="number"
+                      value={editSl}
+                      onChange={(e) => setEditSl(e.target.value)}
+                      slotProps={{ input: { step: 'any', min: 0 } }}
+                    />
+                  </FormControl>
+                  <FormControl sx={{ minWidth: 140 }}>
+                    <FormLabel>Take profit</FormLabel>
+                    <Input
+                      type="number"
+                      value={editTp}
+                      onChange={(e) => setEditTp(e.target.value)}
+                      slotProps={{ input: { step: 'any', min: 0 } }}
+                    />
+                  </FormControl>
+                  <Button
+                    size="sm"
+                    loading={updateLevels.isPending}
+                    disabled={updateLevels.isPending}
+                    onClick={saveEdit}
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="plain"
+                    color="neutral"
+                    onClick={() => setEditPositionId(null)}
+                  >
+                    Cancel
+                  </Button>
+                </Box>
+              )}
+              {chartOpen && (
+                <CandleChart
+                  symbol={String(p.symbol)}
+                  interval={ctx?.timeframe ?? '1h'}
+                  height={280}
+                  entry={Number(p.entryPrice)}
+                  stopLoss={p.stopLoss != null ? Number(p.stopLoss) : undefined}
+                  takeProfit={p.takeProfit != null ? Number(p.takeProfit) : undefined}
+                />
+              )}
+            </Box>
           );
         }}
         columns={[
@@ -381,6 +505,97 @@ export function PortfolioPage() {
               <Box sx={{ display: 'flex', gap: 0.75, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                 {renderActions(p)}
               </Box>
+            ),
+          },
+        ]}
+      />
+
+      <Typography level="title-md" sx={{ mb: 1.5, mt: 4 }}>
+        Recent winners
+      </Typography>
+      <ResponsiveRecordList
+        rows={recentWinners}
+        getRowKey={(t) => String(t._id)}
+        emptyTitle="No winning closed trades yet"
+        cardTitle={(t) => (
+          <Typography level="title-md" sx={monoSx}>
+            {String(t.symbol)}
+          </Typography>
+        )}
+        cardMeta={(t) => (
+          <>
+            <SideChip side={String(t.side)} />
+            <PnlText value={Number(t.realizedPnl ?? 0)} />
+          </>
+        )}
+        cardFields={[
+          {
+            label: 'Closed',
+            render: (t) => {
+              const raw = t.closedAt ?? t.updatedAt;
+              return raw ? new Date(String(raw)).toLocaleString() : '—';
+            },
+          },
+          {
+            label: 'Exit',
+            render: (t) => (
+              <Typography sx={monoSx}>
+                {t.exitPrice ? formatPrice(Number(t.exitPrice)) : '—'}
+              </Typography>
+            ),
+          },
+        ]}
+        cardActions={(t) => (
+          <Button
+            size="sm"
+            variant="outlined"
+            color="neutral"
+            disabled={copyTrade.isPending}
+            onClick={() => {
+              setCopyInfo(null);
+              copyTrade.mutate(String(t._id));
+            }}
+          >
+            Rescan
+          </Button>
+        )}
+        columns={[
+          {
+            key: 'symbol',
+            header: 'Symbol',
+            render: (t) => <Typography sx={monoSx}>{String(t.symbol)}</Typography>,
+          },
+          { key: 'side', header: 'Side', render: (t) => <SideChip side={String(t.side)} /> },
+          {
+            key: 'pnl',
+            header: 'PnL',
+            render: (t) => <PnlText value={Number(t.realizedPnl ?? 0)} />,
+          },
+          {
+            key: 'closed',
+            header: 'Closed',
+            render: (t) => {
+              const raw = t.closedAt ?? t.updatedAt;
+              return raw ? new Date(String(raw)).toLocaleString() : '—';
+            },
+          },
+          {
+            key: 'actions',
+            header: '',
+            align: 'right',
+            render: (t) => (
+              <Button
+                size="sm"
+                variant="outlined"
+                color="neutral"
+                disabled={copyTrade.isPending}
+                onClick={() => {
+                  setCopyInfo(null);
+                  copyTrade.mutate(String(t._id));
+                }}
+              >
+                Rescan
+              </Button>
             ),
           },
         ]}

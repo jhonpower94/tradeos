@@ -7,7 +7,7 @@ import Typography from '@mui/joy/Typography';
 import Close from '@mui/icons-material/Close';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
-import { positionsApi, settingsApi, tradesApi } from '../api';
+import { positionsApi, tradesApi } from '../api';
 import { BiasChip } from '../components/BiasChip';
 import { PageHeader } from '../components/PageHeader';
 import { PnlText } from '../components/PnlText';
@@ -33,6 +33,13 @@ type PositionContext = {
   message: string;
 };
 
+type CopyResult = {
+  mode?: 'clone' | 'rescan';
+  symbol?: string;
+  count?: number;
+  opportunity?: { stopLoss?: number; takeProfit?: number; primaryStrategy?: string };
+};
+
 export function TradesPage() {
   const qc = useQueryClient();
   const { data } = useQuery({ queryKey: ['trades'], queryFn: tradesApi.list, refetchInterval: 10_000 });
@@ -40,15 +47,6 @@ export function TradesPage() {
     queryKey: ['positions-context'],
     queryFn: positionsApi.context,
     refetchInterval: 30_000,
-  });
-  const { data: positions } = useQuery({
-    queryKey: ['positions'],
-    queryFn: positionsApi.list,
-    refetchInterval: 5_000,
-  });
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: settingsApi.get,
   });
   const contextByTrade = new Map<string, PositionContext>(
     ((contexts?.items ?? []) as PositionContext[]).map((c) => [c.tradeId, c]),
@@ -79,10 +77,17 @@ export function TradesPage() {
 
   const copyTrade = useMutation({
     mutationFn: (id: string) => tradesApi.copy(id),
-    onSuccess: (res: {
-      opportunity?: { stopLoss?: number; takeProfit?: number; primaryStrategy?: string };
-    }) => {
+    onSuccess: (res: CopyResult) => {
       invalidate();
+      if (res.mode === 'rescan') {
+        const n = res.count ?? 0;
+        setCopyInfo(
+          n > 0
+            ? `Rescanned ${res.symbol ?? ''} · ${n} signal${n === 1 ? '' : 's'}`
+            : `Rescanned ${res.symbol ?? ''} · no fresh signal`,
+        );
+        return;
+      }
       const o = res.opportunity;
       setCopyInfo(
         o
@@ -93,44 +98,60 @@ export function TradesPage() {
   });
 
   const rows = (data?.items ?? []) as Array<Record<string, unknown>>;
-  const openCount = ((positions?.items ?? []) as Array<Record<string, unknown>>).filter(
-    (p) => p.status === 'open',
-  ).length;
-  const maxOpen = Number(settings?.risk?.maxOpenPositions ?? 5);
-  const slotsFull = openCount >= maxOpen;
 
   const actionError =
     (close.isError && errMsg(close.error)) ||
     (copyTrade.isError && errMsg(copyTrade.error)) ||
     null;
 
-  const renderActions = (t: Record<string, unknown>) => (
-    <Box sx={{ display: 'flex', gap: 0.75, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-      <Button
-        size="sm"
-        variant="outlined"
-        color="neutral"
-        disabled={copyTrade.isPending || slotsFull}
-        onClick={() => {
-          setCopyInfo(null);
-          copyTrade.mutate(String(t._id));
-        }}
-      >
-        Copy
-      </Button>
-      {t.status === 'open' ? (
-        <Button
-          size="sm"
-          color="warning"
-          variant="outlined"
-          disabled={close.isPending}
-          onClick={() => close.mutate(String(t._id))}
-        >
-          Close
-        </Button>
-      ) : null}
-    </Box>
-  );
+  const renderActions = (t: Record<string, unknown>) => {
+    const isOpen = t.status === 'open';
+    const isClosedWinner = t.status === 'closed' && Number(t.realizedPnl ?? 0) > 0;
+
+    return (
+      <Box sx={{ display: 'flex', gap: 0.75, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        {isOpen ? (
+          <Button
+            size="sm"
+            variant="outlined"
+            color="neutral"
+            disabled={copyTrade.isPending}
+            onClick={() => {
+              setCopyInfo(null);
+              copyTrade.mutate(String(t._id));
+            }}
+          >
+            Copy
+          </Button>
+        ) : null}
+        {isClosedWinner ? (
+          <Button
+            size="sm"
+            variant="outlined"
+            color="neutral"
+            disabled={copyTrade.isPending}
+            onClick={() => {
+              setCopyInfo(null);
+              copyTrade.mutate(String(t._id));
+            }}
+          >
+            Rescan
+          </Button>
+        ) : null}
+        {isOpen ? (
+          <Button
+            size="sm"
+            color="warning"
+            variant="outlined"
+            disabled={close.isPending}
+            onClick={() => close.mutate(String(t._id))}
+          >
+            Close
+          </Button>
+        ) : null}
+      </Box>
+    );
+  };
 
   return (
     <Box>

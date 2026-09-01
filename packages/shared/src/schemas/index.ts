@@ -164,7 +164,10 @@ export const createTradeSchema = z.object({
   takeProfit: z.number().positive().optional(),
 });
 
-/** Copy opens from a fresh symbol rescan; levels are not client-supplied. */
+/**
+ * Copy: clone+execute when position slots remain; when slots are full the API
+ * rescans the symbol for Signals instead (no client-supplied levels).
+ */
 export const copyTradeSchema = z.object({
   orderType: z.enum(['MARKET', 'LIMIT']).default('MARKET'),
   limitPrice: z.number().positive().optional(),
