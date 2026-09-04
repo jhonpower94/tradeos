@@ -31,6 +31,11 @@ export const LAGGING_STRATEGY_PACK = [
 const EARLY_SET = new Set<string>(EARLY_STRATEGY_PACK);
 const LAGGING_SET = new Set<string>(LAGGING_STRATEGY_PACK);
 
+/** Strategies in neither Early nor Lagging pack (still scanned unless disabled). */
+export const OTHER_STRATEGY_PACK = STRATEGY_IDS.filter(
+  (id) => !EARLY_SET.has(id) && !LAGGING_SET.has(id),
+) as readonly StrategyId[];
+
 export function isEarlyPackStrategy(id: string): boolean {
   return EARLY_SET.has(id);
 }
@@ -117,10 +122,32 @@ export function strategyPackPatch(
   return out;
 }
 
+/** Build a strategies PATCH for a single strategy id. */
+export function strategySinglePatch(
+  id: StrategyId,
+  enabled: boolean,
+): Record<string, { enabled: boolean; params: Record<string, unknown> }> {
+  return { [id]: { enabled, params: {} } };
+}
+
 export function isPackFullyEnabled(
   strategies: Record<string, { enabled?: boolean } | undefined> | undefined,
   pack: readonly StrategyId[],
 ): boolean {
   if (!strategies) return true;
   return pack.every((id) => strategies[id]?.enabled !== false);
+}
+
+/** Count strategies that are On (absent from map counts as enabled). */
+export function countEnabledStrategies(
+  strategies: Record<string, { enabled?: boolean } | undefined> | undefined,
+  ids: readonly StrategyId[] = STRATEGY_IDS,
+): number {
+  return ids.filter((id) => strategies?.[id]?.enabled !== false).length;
+}
+
+/** Humanize strategy id for Settings labels (`order_block` → `Order block`). */
+export function formatStrategyLabel(id: string): string {
+  const s = id.replace(/_/g, ' ');
+  return s.length ? s.charAt(0).toUpperCase() + s.slice(1) : id;
 }

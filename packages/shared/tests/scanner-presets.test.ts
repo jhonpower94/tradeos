@@ -3,9 +3,13 @@ import { STRATEGY_IDS } from '../src/constants/index.js';
 import {
   applyScannerPreset,
   countEarlyPackVoters,
+  countEnabledStrategies,
   deriveEntryTiming,
   EARLY_STRATEGY_PACK,
+  formatStrategyLabel,
   LAGGING_STRATEGY_PACK,
+  OTHER_STRATEGY_PACK,
+  strategySinglePatch,
 } from '../src/constants/scanner-presets.js';
 
 describe('applyScannerPreset', () => {
@@ -50,6 +54,54 @@ describe('applyScannerPreset', () => {
         expect(payload.strategies[id].enabled).toBe(true);
       }
     }
+  });
+});
+
+describe('OTHER_STRATEGY_PACK', () => {
+  it('partitions STRATEGY_IDS into early, lagging, and other with no overlap', () => {
+    const early = new Set(EARLY_STRATEGY_PACK);
+    const lagging = new Set(LAGGING_STRATEGY_PACK);
+    const other = new Set(OTHER_STRATEGY_PACK);
+    expect(early.size + lagging.size + other.size).toBe(STRATEGY_IDS.length);
+    for (const id of STRATEGY_IDS) {
+      const inEarly = early.has(id);
+      const inLagging = lagging.has(id);
+      const inOther = other.has(id);
+      expect(Number(inEarly) + Number(inLagging) + Number(inOther)).toBe(1);
+    }
+    for (const id of OTHER_STRATEGY_PACK) {
+      expect(early.has(id)).toBe(false);
+      expect(lagging.has(id)).toBe(false);
+    }
+  });
+});
+
+describe('strategySinglePatch', () => {
+  it('returns a single-id strategies patch', () => {
+    expect(strategySinglePatch('order_block', true)).toEqual({
+      order_block: { enabled: true, params: {} },
+    });
+    expect(strategySinglePatch('resistance_rejection', false)).toEqual({
+      resistance_rejection: { enabled: false, params: {} },
+    });
+  });
+});
+
+describe('countEnabledStrategies', () => {
+  it('counts absent ids as enabled and respects explicit false', () => {
+    expect(countEnabledStrategies(undefined, ['order_block', 'breakout'])).toBe(2);
+    expect(
+      countEnabledStrategies(
+        { order_block: { enabled: true }, breakout: { enabled: false } },
+        ['order_block', 'breakout'],
+      ),
+    ).toBe(1);
+  });
+});
+
+describe('formatStrategyLabel', () => {
+  it('humanizes snake_case ids', () => {
+    expect(formatStrategyLabel('order_block')).toBe('Order block');
   });
 });
 

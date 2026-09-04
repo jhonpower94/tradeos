@@ -21,11 +21,15 @@ import axios from 'axios';
 import {
   TIMEFRAMES,
   applyScannerPreset,
+  countEnabledStrategies,
   EARLY_STRATEGY_PACK,
+  formatStrategyLabel,
   LAGGING_STRATEGY_PACK,
-  isPackFullyEnabled,
+  OTHER_STRATEGY_PACK,
   strategyPackPatch,
+  strategySinglePatch,
   type ScannerEntryStyle,
+  type StrategyId,
 } from '@trading-os/shared';
 import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import Link from '@mui/joy/Link';
@@ -115,6 +119,110 @@ function SwitchRow({
         <Typography level="body-xs" sx={{ color: 'text.tertiary', mt: 0.5 }}>
           {hint}
         </Typography>
+      )}
+    </Box>
+  );
+}
+
+function countPackEnabled(
+  strategies: Record<string, { enabled?: boolean } | undefined> | undefined,
+  pack: readonly StrategyId[],
+): number {
+  return pack.filter((id) => strategies?.[id]?.enabled !== false).length;
+}
+
+/** Collapsible group: pick strategies to watch (no confusing master switch). */
+function StrategyWatchGroup({
+  title,
+  description,
+  pack,
+  strategies,
+  defaultOpen,
+  onToggleOne,
+  onSetPack,
+}: {
+  title: string;
+  description: string;
+  pack: readonly StrategyId[];
+  strategies: Record<string, { enabled?: boolean } | undefined> | undefined;
+  defaultOpen: boolean;
+  onToggleOne: (id: StrategyId, enabled: boolean) => void;
+  onSetPack: (enabled: boolean) => void;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const onCount = countPackEnabled(strategies, pack);
+  const allOn = onCount === pack.length;
+  const allOff = onCount === 0;
+
+  return (
+    <Box
+      sx={{
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 'sm',
+        overflow: 'hidden',
+      }}
+    >
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          flexWrap: 'wrap',
+          px: 1.5,
+          py: 1.25,
+          bgcolor: 'background.level1',
+        }}
+      >
+        <Button
+          size="sm"
+          variant="plain"
+          color="neutral"
+          onClick={() => setOpen((v) => !v)}
+          sx={{ flex: 1, justifyContent: 'flex-start', minWidth: 0, px: 0.5 }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, flexWrap: 'wrap' }}>
+            <Typography level="title-sm">
+              {open ? '▾' : '▸'} {title}
+            </Typography>
+            <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
+              {onCount}/{pack.length} on
+            </Typography>
+          </Box>
+        </Button>
+        <Button
+          size="sm"
+          variant="outlined"
+          color="neutral"
+          disabled={allOn}
+          onClick={() => onSetPack(true)}
+        >
+          All on
+        </Button>
+        <Button
+          size="sm"
+          variant="outlined"
+          color="neutral"
+          disabled={allOff}
+          onClick={() => onSetPack(false)}
+        >
+          All off
+        </Button>
+      </Box>
+      {open && (
+        <Box sx={{ px: 1.5, py: 1.25, display: 'grid', gap: 1 }}>
+          <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
+            {description}
+          </Typography>
+          {pack.map((id) => (
+            <SwitchRow
+              key={id}
+              label={formatStrategyLabel(id)}
+              checked={strategies?.[id]?.enabled !== false}
+              onChange={(checked) => onToggleOne(id, checked)}
+            />
+          ))}
+        </Box>
       )}
     </Box>
   );
@@ -700,37 +808,85 @@ export function SettingsPage() {
             </FormHelperText>
           </FormControl>
           <Box>
-            <Typography level="title-sm" sx={{ mb: 1 }}>
-              Strategy packs
+            <Typography level="title-sm" sx={{ mb: 0.75 }}>
+              Strategies to watch
             </Typography>
-            <SwitchRow
-              label="Early pack (pullback / ignition)"
-              checked={isPackFullyEnabled(
-                data.strategies as Record<string, { enabled?: boolean }> | undefined,
-                EARLY_STRATEGY_PACK,
-              )}
-              onChange={(checked) =>
-                saveSettings.mutate({
-                  strategies: strategyPackPatch([...EARLY_STRATEGY_PACK], checked),
-                })
-              }
-              hint="ema_pullback, rsi_pullback, order_block, FVG, CHoCH, ADX ignition, BB squeeze, NR7, support/resistance, liquidity sweep."
-            />
-            <Box sx={{ mt: 1.5 }}>
-              <SwitchRow
-                label="Lagging pack (trend confirmation)"
-                checked={isPackFullyEnabled(
-                  data.strategies as Record<string, { enabled?: boolean }> | undefined,
-                  LAGGING_STRATEGY_PACK,
-                )}
-                onChange={(checked) =>
-                  saveSettings.mutate({
-                    strategies: strategyPackPatch([...LAGGING_STRATEGY_PACK], checked),
-                  })
-                }
-                hint="supertrend, ichimoku, trend_continuation, atr_trend, ema_cross, macd_momentum. Prefer off for Early entry."
-              />
-            </Box>
+            <Typography level="body-xs" sx={{ color: 'text.tertiary', mb: 1.5 }}>
+              The scanner only evaluates strategies that are On. Turn on any combination — one, a
+              few, or all. Match Min aligned strategies to how many you keep On.
+            </Typography>
+            {(() => {
+              const stratMap = data.strategies as
+                | Record<string, { enabled?: boolean } | undefined>
+                | undefined;
+              const enabledCount = countEnabledStrategies(stratMap);
+              const minAligned = Number(data.scanner?.minAlignedStrategies ?? 2);
+              const entryEarly =
+                (data.scanner?.entryStyle as ScannerEntryStyle | undefined) === 'early';
+              const watching = [
+                ...EARLY_STRATEGY_PACK,
+                ...LAGGING_STRATEGY_PACK,
+                ...OTHER_STRATEGY_PACK,
+              ].filter((id) => stratMap?.[id]?.enabled !== false);
+              const toggleOne = (id: StrategyId, checked: boolean) =>
+                saveSettings.mutate({ strategies: strategySinglePatch(id, checked) });
+              const setPack = (pack: readonly StrategyId[], enabled: boolean) =>
+                saveSettings.mutate({ strategies: strategyPackPatch([...pack], enabled) });
+
+              return (
+                <Box sx={{ display: 'grid', gap: 1.25 }}>
+                  <Typography level="body-sm">
+                    Watching{' '}
+                    <Typography component="span" sx={{ fontWeight: 'lg' }}>
+                      {enabledCount}
+                    </Typography>{' '}
+                    strateg{enabledCount === 1 ? 'y' : 'ies'}
+                    {watching.length > 0 && watching.length <= 6 ? (
+                      <Typography
+                        component="span"
+                        level="body-xs"
+                        sx={{ color: 'text.tertiary', display: 'block', mt: 0.5 }}
+                      >
+                        {watching.map(formatStrategyLabel).join(' · ')}
+                      </Typography>
+                    ) : null}
+                  </Typography>
+                  {enabledCount > 0 && enabledCount < minAligned ? (
+                    <Alert color="warning" variant="soft">
+                      Only {enabledCount} On, but Min aligned is {minAligned}. Lower Min aligned or
+                      enable more strategies.
+                    </Alert>
+                  ) : null}
+                  <StrategyWatchGroup
+                    title="Early setups"
+                    description="Pullbacks, structure, order blocks, sweeps — best for Early entry."
+                    pack={EARLY_STRATEGY_PACK}
+                    strategies={stratMap}
+                    defaultOpen
+                    onToggleOne={toggleOne}
+                    onSetPack={(enabled) => setPack(EARLY_STRATEGY_PACK, enabled)}
+                  />
+                  <StrategyWatchGroup
+                    title="Trend confirmation"
+                    description="Lagging trend tools. Usually off for Early entry; useful for Confirmed."
+                    pack={LAGGING_STRATEGY_PACK}
+                    strategies={stratMap}
+                    defaultOpen={!entryEarly}
+                    onToggleOne={toggleOne}
+                    onSetPack={(enabled) => setPack(LAGGING_STRATEGY_PACK, enabled)}
+                  />
+                  <StrategyWatchGroup
+                    title="Other"
+                    description="Everything else. Turn these off when you want a tight Early-only watchlist."
+                    pack={OTHER_STRATEGY_PACK}
+                    strategies={stratMap}
+                    defaultOpen={false}
+                    onToggleOne={toggleOne}
+                    onSetPack={(enabled) => setPack(OTHER_STRATEGY_PACK, enabled)}
+                  />
+                </Box>
+              );
+            })()}
           </Box>
           <FormControl>
             <FormLabel>Scan timeframes</FormLabel>
