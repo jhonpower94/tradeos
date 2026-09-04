@@ -7,6 +7,8 @@ import {
   locationBias,
   previousDayLevels,
   relativeStrengthAligned,
+  resolveWatchingStrategy,
+  watchingPrimaryStrategy,
   watchingSide,
 } from '../src/modules/location/index.js';
 
@@ -106,6 +108,7 @@ describe('watching vs triggered helpers', () => {
       minRR: 2,
       minConfidence: 75,
       regime: MarketRegime.RANGING,
+      primaryStrategy: 'support_bounce',
       relativeStrength: 1.5,
     });
     expect(opp.stage).toBe('watching');
@@ -113,6 +116,36 @@ describe('watching vs triggered helpers', () => {
     expect(opp.entry).toBe(2000);
     expect(opp.primaryStrategy).toBe('support_bounce');
     expect(opp.relativeStrength).toBe(1.5);
+  });
+
+  it('maps watching side to bounce strategy ids', () => {
+    expect(watchingPrimaryStrategy(Side.BUY)).toBe('support_bounce');
+    expect(watchingPrimaryStrategy(Side.SELL)).toBe('resistance_rejection');
+  });
+
+  it('blocks watching when the bounce strategy is disabled', () => {
+    expect(
+      resolveWatchingStrategy(Side.BUY, {
+        support_bounce: { enabled: false },
+        resistance_rejection: { enabled: true },
+      }),
+    ).toBeNull();
+    expect(
+      resolveWatchingStrategy(Side.SELL, {
+        support_bounce: { enabled: true },
+        resistance_rejection: { enabled: false },
+      }),
+    ).toBeNull();
+  });
+
+  it('allows watching when bounce strategy is on or absent from the map', () => {
+    expect(resolveWatchingStrategy(Side.BUY, {})).toBe('support_bounce');
+    expect(
+      resolveWatchingStrategy(Side.BUY, { support_bounce: { enabled: true } }),
+    ).toBe('support_bounce');
+    expect(
+      resolveWatchingStrategy(Side.SELL, { resistance_rejection: { enabled: true } }),
+    ).toBe('resistance_rejection');
   });
 });
 

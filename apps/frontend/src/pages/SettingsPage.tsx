@@ -796,15 +796,19 @@ export function SettingsPage() {
               value={(data.scanner?.entryStyle as ScannerEntryStyle | undefined) ?? 'confirmed'}
               onChange={(_, v) => {
                 if (!v || v === (data.scanner?.entryStyle ?? 'confirmed')) return;
-                saveSettings.mutate(applyScannerPreset(v as ScannerEntryStyle));
+                // Thresholds only — do not reset the Strategies to watch list.
+                saveSettings.mutate({
+                  scanner: applyScannerPreset(v as ScannerEntryStyle).scanner,
+                });
               }}
             >
               <Button value="confirmed">Confirmed</Button>
               <Button value="early">Early entry</Button>
             </ToggleButtonGroup>
             <FormHelperText>
-              Confirmed waits for multi-strategy agreement after the trend is clear. Early joins on
-              pullback / ignition while HTF stays aligned. Early is noisier — use paper first.
+              Sets agreement thresholds (min aligned, confidence, HTF veto). Does not change which
+              strategies are On — use Strategies to watch below. Confirmed waits for multi-strategy
+              agreement; Early is noisier — use paper first.
             </FormHelperText>
           </FormControl>
           <Box>
@@ -880,7 +884,7 @@ export function SettingsPage() {
                     description="Everything else. Turn these off when you want a tight Early-only watchlist."
                     pack={OTHER_STRATEGY_PACK}
                     strategies={stratMap}
-                    defaultOpen={false}
+                    defaultOpen={countEnabledStrategies(stratMap, OTHER_STRATEGY_PACK) > 0}
                     onToggleOne={toggleOne}
                     onSetPack={(enabled) => setPack(OTHER_STRATEGY_PACK, enabled)}
                   />

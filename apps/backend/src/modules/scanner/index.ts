@@ -27,6 +27,7 @@ import {
   locationEvidence,
   previousDayLevels,
   relativeStrengthAligned,
+  resolveWatchingStrategy,
   watchingSide,
 } from '../location/index.js';
 import {
@@ -500,6 +501,8 @@ class ScannerService {
     if (!locationGate || nearby.length === 0) return null;
     const side = watchingSide(htfTrend, nearby);
     if (!side || !relativeStrengthAligned(side, rs)) return null;
+    const primaryStrategy = resolveWatchingStrategy(side, filteredMap);
+    if (!primaryStrategy) return null;
     return buildWatchingOpportunity({
       symbol,
       timeframe,
@@ -509,6 +512,7 @@ class ScannerService {
       minRR,
       minConfidence: minConf,
       regime: regimeResult.regime,
+      primaryStrategy,
       relativeStrength: rs,
     });
   }

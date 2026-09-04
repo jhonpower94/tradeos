@@ -124,6 +124,24 @@ export function previousDayLevels(candles: Candle[]): { high: number; low: numbe
   return { high: prev.high, low: prev.low };
 }
 
+/** Strategy id used to label a location-based watching row for a side. */
+export function watchingPrimaryStrategy(side: Side): StrategyId {
+  return side === Side.BUY ? 'support_bounce' : 'resistance_rejection';
+}
+
+/**
+ * Watching rows must not invent strategy names the user turned off.
+ * Absent from the map counts as enabled (same rule as StrategyRegistry).
+ */
+export function resolveWatchingStrategy(
+  side: Side,
+  enabledMap: Record<string, { enabled?: boolean } | undefined>,
+): StrategyId | null {
+  const id = watchingPrimaryStrategy(side);
+  if (enabledMap[id]?.enabled === false) return null;
+  return id;
+}
+
 export function buildWatchingOpportunity(input: {
   symbol: string;
   timeframe: Timeframe;
@@ -133,6 +151,7 @@ export function buildWatchingOpportunity(input: {
   minRR: number;
   minConfidence: number;
   regime: MarketRegime;
+  primaryStrategy: StrategyId;
   relativeStrength?: number;
 }): Opportunity {
   const nearest = input.nearby[0]!;
@@ -145,8 +164,7 @@ export function buildWatchingOpportunity(input: {
     input.minConfidence - 1,
     Math.max(40, Math.round(55 - nearest.distanceAtr * 10)),
   );
-  const primaryStrategy: StrategyId =
-    input.side === Side.BUY ? 'support_bounce' : 'resistance_rejection';
+  const primaryStrategy = input.primaryStrategy;
   return {
     symbol: input.symbol,
     timeframe: input.timeframe,
