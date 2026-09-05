@@ -361,23 +361,73 @@ export function SettingsPage() {
   });
   const deposit = useMutation({
     mutationFn: () => portfolioApi.deposit(Number(amount), note || undefined),
-    onSuccess: () => {
+    onSuccess: (paper) => {
       setAmount('');
       setNote('');
       setMsg('Deposit saved');
-      qc.invalidateQueries({ queryKey: ['portfolio'] });
-      qc.invalidateQueries({ queryKey: ['paper-ledger'] });
+      const p = paper as {
+        equity?: number;
+        freeQuote?: number;
+        unrealizedPnl?: number;
+        realizedPnl?: number;
+        startingBalance?: number;
+        adjustmentsNet?: number;
+        deployed?: number;
+      };
+      qc.setQueryData(['portfolio'], (old: Record<string, unknown> | undefined) => {
+        const deployed = Number(p.deployed ?? 0);
+        const freeQuote = Number(p.freeQuote ?? 0);
+        const base = old ?? {};
+        return {
+          ...base,
+          mode: 'paper',
+          equity: Number(p.equity ?? 0),
+          freeQuote,
+          unrealizedPnl: Number(p.unrealizedPnl ?? 0),
+          realizedPnl: Number(p.realizedPnl ?? 0),
+          startingBalance: Number(p.startingBalance ?? 0),
+          adjustmentsNet: Number(p.adjustmentsNet ?? 0),
+          balances: [{ asset: 'USDT', free: freeQuote, locked: deployed }],
+        };
+      });
+      void qc.invalidateQueries({ queryKey: ['portfolio'] });
+      void qc.invalidateQueries({ queryKey: ['paper-ledger'] });
     },
     onError: (e: unknown) => setMsg(errMsg(e)),
   });
   const withdraw = useMutation({
     mutationFn: () => portfolioApi.withdraw(Number(amount), note || undefined),
-    onSuccess: () => {
+    onSuccess: (paper) => {
       setAmount('');
       setNote('');
       setMsg('Withdrawal saved');
-      qc.invalidateQueries({ queryKey: ['portfolio'] });
-      qc.invalidateQueries({ queryKey: ['paper-ledger'] });
+      const p = paper as {
+        equity?: number;
+        freeQuote?: number;
+        unrealizedPnl?: number;
+        realizedPnl?: number;
+        startingBalance?: number;
+        adjustmentsNet?: number;
+        deployed?: number;
+      };
+      qc.setQueryData(['portfolio'], (old: Record<string, unknown> | undefined) => {
+        const deployed = Number(p.deployed ?? 0);
+        const freeQuote = Number(p.freeQuote ?? 0);
+        const base = old ?? {};
+        return {
+          ...base,
+          mode: 'paper',
+          equity: Number(p.equity ?? 0),
+          freeQuote,
+          unrealizedPnl: Number(p.unrealizedPnl ?? 0),
+          realizedPnl: Number(p.realizedPnl ?? 0),
+          startingBalance: Number(p.startingBalance ?? 0),
+          adjustmentsNet: Number(p.adjustmentsNet ?? 0),
+          balances: [{ asset: 'USDT', free: freeQuote, locked: deployed }],
+        };
+      });
+      void qc.invalidateQueries({ queryKey: ['portfolio'] });
+      void qc.invalidateQueries({ queryKey: ['paper-ledger'] });
     },
     onError: (e: unknown) => setMsg(errMsg(e)),
   });

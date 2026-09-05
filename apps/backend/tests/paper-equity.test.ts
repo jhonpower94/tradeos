@@ -54,7 +54,7 @@ describe('paper equity', () => {
     expect(migrated.equity).toBe(10_463);
   });
 
-  it('includes realized PnL on top of funded balance', () => {
+  it('includes realized PnL on equity and freeQuote when ahead', () => {
     const r = computePaperEquity({
       startingBalance: 0,
       adjustmentsNet: 10_000,
@@ -77,6 +77,18 @@ describe('paper equity', () => {
     expect(r.equity).toBe(1_000);
     expect(r.freeQuote).toBe(1_000);
     expect(r.adjustmentsNet).toBe(1_000);
+  });
+
+  it('new deposit restores freeQuote even when realized PnL is deeply negative', () => {
+    const r = computePaperEquity({
+      startingBalance: 0,
+      adjustmentsNet: 5_000,
+      realizedPnl: -20_000,
+      unrealizedPnl: 0,
+      deployed: 0,
+    });
+    expect(r.equity).toBe(-15_000);
+    expect(r.freeQuote).toBe(5_000);
   });
 
   it('subtracts deployed notional from freeQuote', () => {

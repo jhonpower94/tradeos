@@ -272,14 +272,6 @@ export function PortfolioPage() {
           value={formatNumber(rPnl)}
           tone={rPnl > 0 ? 'positive' : rPnl < 0 ? 'negative' : 'neutral'}
         />
-        {isPaper && (
-          <StatCard
-            label="Funded (net)"
-            value={formatNumber(
-              (summary as { adjustmentsNet?: number } | undefined)?.adjustmentsNet ?? 0,
-            )}
-          />
-        )}
         <StatCard label="Mode" value={summary?.mode ?? 'paper'} />
       </Box>
 

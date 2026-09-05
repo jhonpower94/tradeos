@@ -87,11 +87,25 @@ export function useWebSocket() {
                   (a, p) => a + (Number(p.unrealizedPnl) || 0),
                   0,
                 );
-                const oldU = Number(old.unrealizedPnl ?? 0);
+                const deployed = items.reduce(
+                  (a, p) => a + Number(p.qty || 0) * Number(p.entryPrice || 0),
+                  0,
+                );
                 const next: Record<string, unknown> = { ...old, unrealizedPnl };
-                // Paper equity includes uPnL; keep the header number live.
+                // Paper: rebuild equity/free from bankroll parts so deposits are not lost
+                // when only uPnL patches land over the wire.
                 if (old.mode !== 'live') {
-                  next.equity = Number(old.equity ?? 0) - oldU + unrealizedPnl;
+                  const bankroll =
+                    Number(old.startingBalance ?? 0) + Number(old.adjustmentsNet ?? 0);
+                  const realizedPnl = Number(old.realizedPnl ?? 0);
+                  const equity = bankroll + realizedPnl + unrealizedPnl;
+                  const fundedMark = bankroll + unrealizedPnl;
+                  const freeQuote = Math.max(0, Math.max(equity, fundedMark) - deployed);
+                  next.equity = equity;
+                  next.freeQuote = freeQuote;
+                  next.balances = [
+                    { asset: 'USDT', free: freeQuote, locked: Math.max(0, deployed) },
+                  ];
                 }
                 return next;
               },

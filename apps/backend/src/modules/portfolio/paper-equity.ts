@@ -29,8 +29,14 @@ export function computePaperEquity(input: {
   deployed: number;
 }): PaperEquityBreakdown {
   const startingBalance = Math.max(0, input.startingBalance);
-  const equity = startingBalance + input.adjustmentsNet + input.realizedPnl + input.unrealizedPnl;
-  const freeQuote = Math.max(0, equity - Math.max(0, input.deployed));
+  const bankroll = startingBalance + input.adjustmentsNet;
+  const equity = bankroll + input.realizedPnl + input.unrealizedPnl;
+  // Spendable cash: full equity when ahead; when closed PnL is underwater,
+  // still allow trading/withdraw against current funding + open uPnL so a
+  // fresh deposit is usable.
+  const fundedMark = bankroll + input.unrealizedPnl;
+  const freeBase = Math.max(equity, fundedMark);
+  const freeQuote = Math.max(0, freeBase - Math.max(0, input.deployed));
   return {
     equity,
     freeQuote,
