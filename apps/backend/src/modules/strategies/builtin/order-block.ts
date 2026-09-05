@@ -7,6 +7,8 @@ import {
   evidence,
   findPatterns,
   getAtr,
+  isDemandZoneReclaim,
+  isSupplyZoneReclaim,
   lastCandle,
   noTrade,
 } from '../utils.js';
@@ -21,7 +23,8 @@ function num(meta: Record<string, unknown> | undefined, key: string): number | u
 export const orderBlockStrategy: Strategy = {
   id: ID,
   name: 'Order Block Mitigation',
-  description: 'Enters when price returns to mitigate an unfilled bullish/bearish order block zone.',
+  description:
+    'Enters after price returns to an order block zone and reclaims it (rejection), not on raw overlap.',
   evaluate(ctx: StrategyContext) {
     const { candles, indicators, patterns } = ctx;
     const last = lastCandle(candles);
@@ -38,30 +41,46 @@ export const orderBlockStrategy: Strategy = {
       const high = num(block.meta, 'high');
       const low = num(block.meta, 'low');
       if (high == null || low == null) continue;
-      const overlaps = last.low <= high && last.high >= low;
-      if (!overlaps) continue;
 
-      const confidence = clamp(block.confidence + 5, 0, 90);
       if (block.bullish) {
+        if (!isDemandZoneReclaim(last, low, high)) continue;
         const levels = buildLongLevels(last.close, atr);
+        const confidence = clamp(block.confidence + 5, 0, 90);
         return {
           strategyId: ID,
           decision: Decision.BUY,
           confidence: Math.round(confidence),
           ...levels,
-          evidence: [evidence('order_block', `Price mitigated bullish order block [${low.toFixed(4)}, ${high.toFixed(4)}]`, 1)],
+          evidence: [
+            evidence(
+              'order_block',
+              `Reclaimed bullish order block [${low.toFixed(4)}, ${high.toFixed(4)}]`,
+              1,
+            ),
+          ],
         };
       }
+
+      if (!isSupplyZoneReclaim(last, low, high)) continue;
       const levels = buildShortLevels(last.close, atr);
+      const confidence = clamp(block.confidence + 5, 0, 90);
       return {
         strategyId: ID,
         decision: Decision.SELL,
         confidence: Math.round(confidence),
         ...levels,
-        evidence: [evidence('order_block', `Price mitigated bearish order block [${low.toFixed(4)}, ${high.toFixed(4)}]`, 1)],
+        evidence: [
+          evidence(
+            'order_block',
+            `Reclaimed bearish order block [${low.toFixed(4)}, ${high.toFixed(4)}]`,
+            1,
+          ),
+        ],
       };
     }
 
-    return noTrade(ID, [evidence('order_block', 'Price has not returned to any order block zone')]);
+    return noTrade(ID, [
+      evidence('order_block', 'No reclaim/rejection at any order block zone'),
+    ]);
   },
 };

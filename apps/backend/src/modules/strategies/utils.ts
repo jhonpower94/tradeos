@@ -119,3 +119,41 @@ export function findPatterns(
 ): PatternHit[] {
   return patterns.filter((p) => p.type === type && (bullish === undefined || p.bullish === bullish));
 }
+
+/**
+ * Bullish demand zone reclaim: wick into the zone, close back above zone high,
+ * bullish body, and did not close through the floor.
+ */
+export function isDemandZoneReclaim(
+  candle: Candle,
+  zoneLow: number,
+  zoneHigh: number,
+): boolean {
+  if (!(zoneHigh > zoneLow) || !Number.isFinite(zoneLow) || !Number.isFinite(zoneHigh)) {
+    return false;
+  }
+  const wickedInto = candle.low <= zoneHigh;
+  const closedReclaimed = candle.close > zoneHigh;
+  const bullish = candle.close > candle.open;
+  const notBroken = candle.close >= zoneLow;
+  return wickedInto && closedReclaimed && bullish && notBroken;
+}
+
+/**
+ * Bearish supply zone reclaim: wick into the zone, close back below zone low,
+ * bearish body, and did not close through the ceiling.
+ */
+export function isSupplyZoneReclaim(
+  candle: Candle,
+  zoneLow: number,
+  zoneHigh: number,
+): boolean {
+  if (!(zoneHigh > zoneLow) || !Number.isFinite(zoneLow) || !Number.isFinite(zoneHigh)) {
+    return false;
+  }
+  const wickedInto = candle.high >= zoneLow;
+  const closedReclaimed = candle.close < zoneLow;
+  const bearish = candle.close < candle.open;
+  const notBroken = candle.close <= zoneHigh;
+  return wickedInto && closedReclaimed && bearish && notBroken;
+}

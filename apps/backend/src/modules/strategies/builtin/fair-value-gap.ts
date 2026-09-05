@@ -7,6 +7,8 @@ import {
   evidence,
   findPatterns,
   getAtr,
+  isDemandZoneReclaim,
+  isSupplyZoneReclaim,
   lastCandle,
   noTrade,
 } from '../utils.js';
@@ -21,7 +23,8 @@ function num(meta: Record<string, unknown> | undefined, key: string): number | u
 export const fairValueGapStrategy: Strategy = {
   id: ID,
   name: 'Fair Value Gap Fill',
-  description: 'Enters when price retraces back into an unfilled fair value gap (imbalance).',
+  description:
+    'Enters after price retraces into an FVG and reclaims the gap edge (rejection), not on raw overlap.',
   evaluate(ctx: StrategyContext) {
     const { candles, indicators, patterns } = ctx;
     const last = lastCandle(candles);
@@ -38,30 +41,44 @@ export const fairValueGapStrategy: Strategy = {
       const gapHigh = num(gap.meta, 'gapHigh');
       const gapLow = num(gap.meta, 'gapLow');
       if (gapHigh == null || gapLow == null) continue;
-      const overlaps = last.low <= gapHigh && last.high >= gapLow;
-      if (!overlaps) continue;
 
-      const confidence = clamp(gap.confidence + 5, 0, 88);
       if (gap.bullish) {
+        if (!isDemandZoneReclaim(last, gapLow, gapHigh)) continue;
         const levels = buildLongLevels(last.close, atr);
+        const confidence = clamp(gap.confidence + 5, 0, 88);
         return {
           strategyId: ID,
           decision: Decision.BUY,
           confidence: Math.round(confidence),
           ...levels,
-          evidence: [evidence('fvg', `Price filled bullish FVG [${gapLow.toFixed(4)}, ${gapHigh.toFixed(4)}]`, 1)],
+          evidence: [
+            evidence(
+              'fvg',
+              `Reclaimed bullish FVG [${gapLow.toFixed(4)}, ${gapHigh.toFixed(4)}]`,
+              1,
+            ),
+          ],
         };
       }
+
+      if (!isSupplyZoneReclaim(last, gapLow, gapHigh)) continue;
       const levels = buildShortLevels(last.close, atr);
+      const confidence = clamp(gap.confidence + 5, 0, 88);
       return {
         strategyId: ID,
         decision: Decision.SELL,
         confidence: Math.round(confidence),
         ...levels,
-        evidence: [evidence('fvg', `Price filled bearish FVG [${gapLow.toFixed(4)}, ${gapHigh.toFixed(4)}]`, 1)],
+        evidence: [
+          evidence(
+            'fvg',
+            `Reclaimed bearish FVG [${gapLow.toFixed(4)}, ${gapHigh.toFixed(4)}]`,
+            1,
+          ),
+        ],
       };
     }
 
-    return noTrade(ID, [evidence('fvg', 'Price has not returned into any fair value gap')]);
+    return noTrade(ID, [evidence('fvg', 'No reclaim/rejection at any fair value gap')]);
   },
 };

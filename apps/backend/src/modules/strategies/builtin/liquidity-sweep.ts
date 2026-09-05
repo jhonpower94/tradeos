@@ -12,7 +12,6 @@ import {
 } from '../utils.js';
 
 const ID = 'liquidity_sweep' as const;
-const RECENCY_BARS = 1;
 
 export const liquiditySweepStrategy: Strategy = {
   id: ID,
@@ -24,14 +23,27 @@ export const liquiditySweepStrategy: Strategy = {
     if (!last) return noTrade(ID);
     const lastIndex = candles.length - 1;
 
-    const hits = findPatterns(patterns, 'liquidity_sweep').filter(
-      (h) => h.index == null || lastIndex - h.index <= RECENCY_BARS,
-    );
+    // Only the current bar — prior-bar sweeps can re-break while we still fire.
+    const hits = findPatterns(patterns, 'liquidity_sweep').filter((h) => h.index === lastIndex);
     if (hits.length === 0) {
-      return noTrade(ID, [evidence(ID, 'No recent liquidity sweep')]);
+      return noTrade(ID, [evidence(ID, 'No liquidity sweep on current bar')]);
     }
 
     const best = [...hits].sort((a, b) => b.confidence - a.confidence)[0]!;
+    const level = best.price;
+    if (level == null || !Number.isFinite(level)) {
+      return noTrade(ID, [evidence(ID, 'Sweep missing level price')]);
+    }
+
+    // Re-verify close is still back inside the swept level.
+    if (best.bullish) {
+      if (!(last.low < level && last.close > level)) {
+        return noTrade(ID, [evidence('sweep', 'Bullish sweep no longer closed back above level')]);
+      }
+    } else if (!(last.high > level && last.close < level)) {
+      return noTrade(ID, [evidence('sweep', 'Bearish sweep no longer closed back below level')]);
+    }
+
     const atr = getAtr(indicators, last.close);
     const confidence = clamp(best.confidence, 0, 90);
 
