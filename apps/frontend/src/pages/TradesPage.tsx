@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Alert from '@mui/joy/Alert';
 import Box from '@mui/joy/Box';
 import Button from '@mui/joy/Button';
+import Chip from '@mui/joy/Chip';
 import IconButton from '@mui/joy/IconButton';
 import Typography from '@mui/joy/Typography';
 import Close from '@mui/icons-material/Close';
@@ -15,6 +16,7 @@ import { SideChip } from '../components/SideChip';
 import { StatusChip } from '../components/StatusChip';
 import { ResponsiveRecordList } from '../components/ResponsiveRecordList';
 import { formatPrice } from '../utils/format';
+import { openTradeDisplayPnl, positionByTradeId } from '../utils/tradePnl';
 import { monoSx } from '../theme/theme';
 
 function errMsg(err: unknown): string {
@@ -43,6 +45,11 @@ type CopyResult = {
 export function TradesPage() {
   const qc = useQueryClient();
   const { data } = useQuery({ queryKey: ['trades'], queryFn: tradesApi.list, refetchInterval: 10_000 });
+  const { data: positionsData } = useQuery({
+    queryKey: ['positions'],
+    queryFn: positionsApi.list,
+    refetchInterval: 5_000,
+  });
   const { data: contexts } = useQuery({
     queryKey: ['positions-context'],
     queryFn: positionsApi.context,
@@ -51,6 +58,35 @@ export function TradesPage() {
   const contextByTrade = new Map<string, PositionContext>(
     ((contexts?.items ?? []) as PositionContext[]).map((c) => [c.tradeId, c]),
   );
+  const openByTrade = positionByTradeId(
+    (positionsData?.items ?? []) as Array<Record<string, unknown>>,
+  );
+
+  const tradePnl = (t: Record<string, unknown>) => {
+    if (t.status !== 'open') return Number(t.realizedPnl ?? 0);
+    const pos = openByTrade.get(String(t._id));
+    return openTradeDisplayPnl(
+      Number(t.realizedPnl ?? 0),
+      pos != null ? Number(pos.unrealizedPnl ?? 0) : 0,
+    );
+  };
+
+  const renderPnl = (t: Record<string, unknown>) => {
+    const pos = t.status === 'open' ? openByTrade.get(String(t._id)) : undefined;
+    const realized = Number(t.realizedPnl ?? 0);
+    const upnl = pos != null ? Number(pos.unrealizedPnl ?? 0) : 0;
+    return (
+      <Box>
+        <PnlText value={tradePnl(t)} />
+        {t.status === 'open' && pos ? (
+          <Typography level="body-xs" sx={{ color: 'text.tertiary', display: 'block' }}>
+            banked {realized.toFixed(2)} · open {upnl.toFixed(2)}
+            {pos.partialTpDone ? ' · partial taken' : ''}
+          </Typography>
+        ) : null}
+      </Box>
+    );
+  };
 
   const [copyInfo, setCopyInfo] = useState<string | null>(null);
 
@@ -207,7 +243,23 @@ export function TradesPage() {
         )}
         cardFields={[
           { label: 'Mode', render: (t) => String(t.mode) },
-          { label: 'Qty', render: (t) => <Typography sx={monoSx}>{Number(t.qty).toPrecision(6)}</Typography> },
+          {
+            label: 'Qty',
+            render: (t) => {
+              const pos = t.status === 'open' ? openByTrade.get(String(t._id)) : undefined;
+              const qty = pos != null ? Number(pos.qty) : Number(t.qty);
+              return (
+                <Box>
+                  <Typography sx={monoSx}>{qty.toPrecision(6)}</Typography>
+                  {pos?.partialTpDone ? (
+                    <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
+                      remaining after partial
+                    </Typography>
+                  ) : null}
+                </Box>
+              );
+            },
+          },
           { label: 'Entry', render: (t) => <Typography sx={monoSx}>{formatPrice(Number(t.entryPrice ?? 0))}</Typography> },
           {
             label: 'Exit',
@@ -215,7 +267,7 @@ export function TradesPage() {
               <Typography sx={monoSx}>{t.exitPrice ? formatPrice(Number(t.exitPrice)) : '—'}</Typography>
             ),
           },
-          { label: 'PnL', render: (t) => <PnlText value={Number(t.realizedPnl ?? 0)} /> },
+          { label: 'PnL', render: (t) => renderPnl(t) },
           {
             label: 'Bias',
             render: (t) => {
@@ -233,10 +285,28 @@ export function TradesPage() {
           { key: 'symbol', header: 'Symbol', render: (t) => <Typography sx={monoSx}>{String(t.symbol)}</Typography> },
           { key: 'side', header: 'Side', render: (t) => <SideChip side={String(t.side)} /> },
           { key: 'mode', header: 'Mode', render: (t) => String(t.mode) },
-          { key: 'qty', header: 'Qty', numeric: true, render: (t) => Number(t.qty).toPrecision(6) },
+          {
+            key: 'qty',
+            header: 'Qty',
+            numeric: true,
+            render: (t) => {
+              const pos = t.status === 'open' ? openByTrade.get(String(t._id)) : undefined;
+              const qty = pos != null ? Number(pos.qty) : Number(t.qty);
+              return (
+                <Box>
+                  <Typography sx={monoSx}>{qty.toPrecision(6)}</Typography>
+                  {pos?.partialTpDone ? (
+                    <Chip size="sm" variant="soft" color="neutral" sx={{ mt: 0.25 }}>
+                      remaining
+                    </Chip>
+                  ) : null}
+                </Box>
+              );
+            },
+          },
           { key: 'entry', header: 'Entry', numeric: true, render: (t) => formatPrice(Number(t.entryPrice ?? 0)) },
           { key: 'exit', header: 'Exit', numeric: true, render: (t) => (t.exitPrice ? formatPrice(Number(t.exitPrice)) : '—') },
-          { key: 'pnl', header: 'PnL', render: (t) => <PnlText value={Number(t.realizedPnl ?? 0)} /> },
+          { key: 'pnl', header: 'PnL', render: (t) => renderPnl(t) },
           { key: 'status', header: 'Status', render: (t) => <StatusChip status={String(t.status)} /> },
           {
             key: 'bias',

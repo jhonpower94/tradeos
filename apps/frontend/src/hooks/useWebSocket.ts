@@ -74,7 +74,29 @@ export function useWebSocket() {
             void queryClient.invalidateQueries({ queryKey: ['signals'] });
             void queryClient.invalidateQueries({ queryKey: ['opportunities'] });
           }
-          if (msg.channel === 'positions' && Array.isArray(msg.data)) setPositions(msg.data);
+          if (msg.channel === 'positions' && Array.isArray(msg.data)) {
+            setPositions(msg.data);
+            // Keep Portfolio/Trades in sync with 1s mark-to-market (not only REST poll).
+            const items = msg.data as Array<Record<string, unknown>>;
+            queryClient.setQueryData(['positions'], { items });
+            queryClient.setQueryData(
+              ['portfolio'],
+              (old: Record<string, unknown> | undefined) => {
+                if (!old) return old;
+                const unrealizedPnl = items.reduce(
+                  (a, p) => a + (Number(p.unrealizedPnl) || 0),
+                  0,
+                );
+                const oldU = Number(old.unrealizedPnl ?? 0);
+                const next: Record<string, unknown> = { ...old, unrealizedPnl };
+                // Paper equity includes uPnL; keep the header number live.
+                if (old.mode !== 'live') {
+                  next.equity = Number(old.equity ?? 0) - oldU + unrealizedPnl;
+                }
+                return next;
+              },
+            );
+          }
           if (msg.channel.startsWith('candles:') && msg.data && typeof msg.data === 'object') {
             const payload = msg.data as {
               symbol?: string;

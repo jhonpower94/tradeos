@@ -5,7 +5,7 @@ import Sheet from '@mui/joy/Sheet';
 import Typography from '@mui/joy/Typography';
 import { useQuery } from '@tanstack/react-query';
 import { Link as RouterLink } from 'react-router-dom';
-import { analyticsApi, portfolioApi, scannerApi, settingsApi, tradesApi } from '../api';
+import { analyticsApi, portfolioApi, positionsApi, scannerApi, settingsApi, tradesApi } from '../api';
 import { useLiveStore } from '../stores/liveStore';
 import { PageHeader } from '../components/PageHeader';
 import { EnableNotificationsBanner } from '../components/EnableNotificationsBanner';
@@ -15,6 +15,7 @@ import { StatusChip } from '../components/StatusChip';
 import { PnlText } from '../components/PnlText';
 import { KeyValueList } from '../components/ResponsiveRecordList';
 import { formatNumber } from '../utils/format';
+import { openTradeDisplayPnl, positionByTradeId } from '../utils/tradePnl';
 import { sortByRankThenConfidence } from '../utils/sort';
 import { monoSx } from '../theme/theme';
 
@@ -24,6 +25,7 @@ export function HomePage() {
   const { data: analytics } = useQuery({ queryKey: ['analytics'], queryFn: analyticsApi.overview });
   const { data: oppsData } = useQuery({ queryKey: ['opportunities'], queryFn: () => scannerApi.opportunities() });
   const { data: tradesData } = useQuery({ queryKey: ['trades'], queryFn: tradesApi.list });
+  const { data: positionsData } = useQuery({ queryKey: ['positions'], queryFn: positionsApi.list });
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
   const { data: status } = useQuery({
     queryKey: ['scanner-status'],
@@ -36,6 +38,9 @@ export function HomePage() {
     opportunities.filter((o) => o.status !== 'watching' && o.stage !== 'watching'),
   ).slice(0, 5);
   const trades = (tradesData?.items ?? []) as Array<Record<string, unknown>>;
+  const openByTrade = positionByTradeId(
+    (positionsData?.items ?? []) as Array<Record<string, unknown>>,
+  );
   const todayPnl = Number(portfolio?.todayPnl ?? 0);
   const isLive = (settings?.trading?.mode ?? 'paper') === 'live';
   const showBinanceAlert = Boolean(settings) && isLive && !settings?.binance?.configured;
@@ -134,17 +139,24 @@ export function HomePage() {
           </Typography>
           <KeyValueList
             emptyTitle="No trades yet"
-            items={trades.slice(0, 5).map((t) => ({
-              key: String(t._id),
-              primary: String(t.symbol),
-              secondary: String(t.side),
-              trailing: (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <StatusChip status={String(t.status)} />
-                  <PnlText value={Number(t.realizedPnl ?? 0)} />
-                </Box>
-              ),
-            }))}
+            items={trades.slice(0, 5).map((t) => {
+              const pos = t.status === 'open' ? openByTrade.get(String(t._id)) : undefined;
+              const pnl =
+                t.status === 'open'
+                  ? openTradeDisplayPnl(Number(t.realizedPnl ?? 0), Number(pos?.unrealizedPnl ?? 0))
+                  : Number(t.realizedPnl ?? 0);
+              return {
+                key: String(t._id),
+                primary: String(t.symbol),
+                secondary: String(t.side),
+                trailing: (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <StatusChip status={String(t.status)} />
+                    <PnlText value={pnl} />
+                  </Box>
+                ),
+              };
+            })}
           />
         </Box>
       </Box>

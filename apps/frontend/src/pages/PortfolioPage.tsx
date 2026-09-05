@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Alert from '@mui/joy/Alert';
 import Box from '@mui/joy/Box';
 import Button from '@mui/joy/Button';
+import Chip from '@mui/joy/Chip';
 import FormControl from '@mui/joy/FormControl';
 import FormLabel from '@mui/joy/FormLabel';
 import IconButton from '@mui/joy/IconButton';
@@ -350,6 +351,11 @@ export function PortfolioPage() {
             >
               <SideChip side={String(p.side)} />
               <PnlText value={Number(p.unrealizedPnl)} />
+              {p.partialTpDone ? (
+                <Chip size="sm" variant="soft" color="neutral">
+                  Partial taken
+                </Chip>
+              ) : null}
               {ctx ? (
                 <BiasChip aligned={ctx.aligned} suggestion={ctx.suggestion} message={ctx.message} />
               ) : null}
@@ -357,9 +363,34 @@ export function PortfolioPage() {
           );
         }}
         cardFields={[
-          { label: 'Qty', render: (p) => <Typography sx={monoSx}>{Number(p.qty).toPrecision(6)}</Typography> },
+          {
+            label: 'Qty',
+            render: (p) => (
+              <Box>
+                <Typography sx={monoSx}>{Number(p.qty).toPrecision(6)}</Typography>
+                {p.partialTpDone ? (
+                  <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
+                    remaining — uPnL on this size only
+                  </Typography>
+                ) : null}
+              </Box>
+            ),
+          },
           { label: 'Entry', render: (p) => <Typography sx={monoSx}>{formatPrice(Number(p.entryPrice))}</Typography> },
           { label: 'Mark', render: (p) => <Typography sx={monoSx}>{formatPrice(Number(p.currentPrice))}</Typography> },
+          {
+            label: 'uPnL',
+            render: (p) => (
+              <Box>
+                <PnlText value={Number(p.unrealizedPnl)} />
+                {p.partialTpDone ? (
+                  <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
+                    open size only (partial already banked)
+                  </Typography>
+                ) : null}
+              </Box>
+            ),
+          },
           {
             label: 'SL',
             render: (p) => (
@@ -461,10 +492,37 @@ export function PortfolioPage() {
         columns={[
           { key: 'symbol', header: 'Symbol', render: (p) => <Typography sx={monoSx}>{String(p.symbol)}</Typography> },
           { key: 'side', header: 'Side', render: (p) => <SideChip side={String(p.side)} /> },
-          { key: 'qty', header: 'Qty', numeric: true, render: (p) => Number(p.qty).toPrecision(6) },
+          {
+            key: 'qty',
+            header: 'Qty',
+            numeric: true,
+            render: (p) => (
+              <Box>
+                <Typography sx={monoSx}>{Number(p.qty).toPrecision(6)}</Typography>
+                {p.partialTpDone ? (
+                  <Chip size="sm" variant="soft" color="neutral" sx={{ mt: 0.25 }}>
+                    remaining
+                  </Chip>
+                ) : null}
+              </Box>
+            ),
+          },
           { key: 'entry', header: 'Entry', numeric: true, render: (p) => formatPrice(Number(p.entryPrice)) },
           { key: 'mark', header: 'Mark', numeric: true, render: (p) => formatPrice(Number(p.currentPrice)) },
-          { key: 'upnl', header: 'uPnL', render: (p) => <PnlText value={Number(p.unrealizedPnl)} /> },
+          {
+            key: 'upnl',
+            header: 'uPnL',
+            render: (p) => (
+              <Box>
+                <PnlText value={Number(p.unrealizedPnl)} />
+                {p.partialTpDone ? (
+                  <Typography level="body-xs" sx={{ color: 'text.tertiary', display: 'block' }}>
+                    on remaining
+                  </Typography>
+                ) : null}
+              </Box>
+            ),
+          },
           { key: 'sl', header: 'SL', numeric: true, render: (p) => (p.stopLoss ? formatPrice(Number(p.stopLoss)) : '—') },
           { key: 'tp', header: 'TP', numeric: true, render: (p) => (p.takeProfit ? formatPrice(Number(p.takeProfit)) : '—') },
           {
