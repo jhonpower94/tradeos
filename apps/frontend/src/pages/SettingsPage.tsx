@@ -22,6 +22,11 @@ import {
   TIMEFRAMES,
   applyScannerPreset,
   countEnabledStrategies,
+  DEFAULT_REGIME_SETTINGS,
+  DEFAULT_RISK_SETTINGS,
+  DEFAULT_SCANNER_SETTINGS,
+  DEFAULT_TRADING_SETTINGS,
+  defaultStrategiesSettings,
   EARLY_STRATEGY_PACK,
   formatStrategyLabel,
   LAGGING_STRATEGY_PACK,
@@ -235,6 +240,26 @@ const panelSx = {
   maxWidth: 520,
   borderRadius: 'md',
 } as const;
+
+function ResetDefaultsButton({
+  disabled,
+  onClick,
+}: {
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      variant="outlined"
+      color="neutral"
+      disabled={disabled}
+      onClick={onClick}
+      sx={{ justifySelf: 'start', mt: 0.5 }}
+    >
+      Reset to defaults
+    </Button>
+  );
+}
 
 export function SettingsPage() {
   const [searchParams] = useSearchParams();
@@ -628,6 +653,10 @@ export function SettingsPage() {
             onSave={(n) => saveSettings.mutate({ risk: { minNotionalPerTrade: n } })}
             helperText="Approve is blocked when estimated size is below this floor. Size is capped by max risk per trade and free USDT / slots. If signals are blocked, raise max risk % or lower this floor. 0 disables."
           />
+          <ResetDefaultsButton
+            disabled={saveSettings.isPending}
+            onClick={() => saveSettings.mutate({ risk: DEFAULT_RISK_SETTINGS })}
+          />
         </Sheet>
       )}
 
@@ -767,6 +796,10 @@ export function SettingsPage() {
             min={0}
             max={1}
             onSave={(n) => saveSettings.mutate({ trading: { minProgressR: n } })}
+          />
+          <ResetDefaultsButton
+            disabled={saveSettings.isPending}
+            onClick={() => saveSettings.mutate({ trading: DEFAULT_TRADING_SETTINGS })}
           />
         </Sheet>
       )}
@@ -1035,6 +1068,16 @@ export function SettingsPage() {
             checked={data.scanner?.hideAfterManualLoss !== false}
             onChange={(checked) => saveSettings.mutate({ scanner: { hideAfterManualLoss: checked } })}
             hint="After you manually close a losing trade, that symbol stays hidden from signals until a triggered opportunity appears on the opposite side."
+          />
+          <ResetDefaultsButton
+            disabled={saveSettings.isPending}
+            onClick={() =>
+              saveSettings.mutate({
+                scanner: DEFAULT_SCANNER_SETTINGS,
+                strategies: defaultStrategiesSettings(),
+                regime: DEFAULT_REGIME_SETTINGS,
+              })
+            }
           />
         </Sheet>
       )}

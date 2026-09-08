@@ -196,3 +196,23 @@ export type RiskSettings = z.infer<typeof riskSettingsSchema>;
 export type TradingSettings = z.infer<typeof tradingSettingsSchema>;
 export type ScannerSettings = z.infer<typeof scannerSettingsSchema>;
 export type RegimeSettings = z.infer<typeof regimeSettingsSchema>;
+
+/** Schema defaults used by Settings “Reset to defaults” and new-user docs. */
+export const DEFAULT_RISK_SETTINGS: RiskSettings = riskSettingsSchema.parse({});
+export const DEFAULT_TRADING_SETTINGS: TradingSettings = tradingSettingsSchema.parse({});
+export const DEFAULT_SCANNER_SETTINGS: ScannerSettings = scannerSettingsSchema.parse({});
+export const DEFAULT_REGIME_SETTINGS: RegimeSettings = regimeSettingsSchema.parse({});
+
+export function defaultStrategiesSettings(): Record<
+  (typeof STRATEGY_IDS)[number],
+  { enabled: boolean; params: Record<string, unknown> }
+> {
+  const map = {} as Record<
+    (typeof STRATEGY_IDS)[number],
+    { enabled: boolean; params: Record<string, unknown> }
+  >;
+  for (const id of STRATEGY_IDS) {
+    map[id] = { enabled: true, params: {} };
+  }
+  return map;
+}
