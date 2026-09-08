@@ -13,10 +13,18 @@ import {
 
 const ID = 'trend_continuation' as const;
 
+/** Aligns with regime trending threshold (ADX ≥ 25). */
+export const TREND_CONTINUATION_ADX_MIN = 25;
+/** Max close distance from EMA21 in ATR units — reject chase entries. */
+export const TREND_CONTINUATION_MAX_EXTENSION_ATR = 1;
+/** EMA21 touch band (±0.3%), same idea as ema_pullback. */
+const EMA21_TOUCH_FRAC = 0.003;
+
 export const trendContinuationStrategy: Strategy = {
   id: ID,
   name: 'Trend Continuation',
-  description: 'Fully stacked EMAs with strong ADX and a shallow pullback candle continuing the trend.',
+  description:
+    'Fully stacked EMAs with ADX≥25 (rising), an EMA21 pullback reclaim, and no overextended close.',
   evaluate(ctx: StrategyContext) {
     const { candles, indicators } = ctx;
     const last = lastCandle(candles);
@@ -27,20 +35,31 @@ export const trendContinuationStrategy: Strategy = {
     const ema50 = seriesAt(indicators.ema50);
     const ema200 = seriesAt(indicators.ema200);
     const adx = seriesAt(indicators.adx14?.adx);
+    const adxPrev = seriesAt(indicators.adx14?.adx, 1);
     if (ema9 == null || ema21 == null || ema50 == null || ema200 == null || adx == null) {
       return noTrade(ID, [evidence(ID, 'Insufficient EMA/ADX data')]);
     }
 
     const bullStack = ema9 > ema21 && ema21 > ema50 && ema50 > ema200;
     const bearStack = ema9 < ema21 && ema21 < ema50 && ema50 < ema200;
-    const strongTrend = adx > 22;
+    const strongTrend = adx >= TREND_CONTINUATION_ADX_MIN;
+    const risingAdx = adxPrev == null || adx >= adxPrev;
     const atr = getAtr(indicators, last.close);
 
-    if (bullStack && strongTrend) {
-      const shallowPullback = last.low <= ema9 * 1.004 || last.low <= ema21 * 1.004;
-      if (shallowPullback && last.close > last.open) {
+    const touchedEma21 =
+      last.low <= ema21 * (1 + EMA21_TOUCH_FRAC) && last.high >= ema21 * (1 - EMA21_TOUCH_FRAC);
+
+    if (bullStack && strongTrend && risingAdx) {
+      const reclaimed = last.close > ema21 && last.close > last.open;
+      const extensionAtr = (last.close - ema21) / atr;
+      const notOverextended = extensionAtr <= TREND_CONTINUATION_MAX_EXTENSION_ATR;
+      if (touchedEma21 && reclaimed && notOverextended) {
         const levels = buildLongLevels(last.close, atr);
-        const confidence = clamp(65 + (adx - 22) * 1.2, 0, 93);
+        const confidence = clamp(
+          68 + (adx - TREND_CONTINUATION_ADX_MIN) * 1.5 + (adxPrev != null && adx > adxPrev ? 4 : 0),
+          0,
+          93,
+        );
         return {
           strategyId: ID,
           decision: Decision.BUY,
@@ -48,17 +67,24 @@ export const trendContinuationStrategy: Strategy = {
           ...levels,
           evidence: [
             evidence('ema_stack', 'EMA9>EMA21>EMA50>EMA200 fully bullish stacked', 1),
-            evidence('adx', `ADX=${adx.toFixed(1)} confirms trend strength`, 0.5),
+            evidence('adx', `ADX=${adx.toFixed(1)} (≥${TREND_CONTINUATION_ADX_MIN}, rising)`, 0.5),
+            evidence('pullback', 'EMA21 touch + bullish reclaim, not overextended', 1),
           ],
         };
       }
     }
 
-    if (bearStack && strongTrend) {
-      const shallowPullback = last.high >= ema9 * 0.996 || last.high >= ema21 * 0.996;
-      if (shallowPullback && last.close < last.open) {
+    if (bearStack && strongTrend && risingAdx) {
+      const reclaimed = last.close < ema21 && last.close < last.open;
+      const extensionAtr = (ema21 - last.close) / atr;
+      const notOverextended = extensionAtr <= TREND_CONTINUATION_MAX_EXTENSION_ATR;
+      if (touchedEma21 && reclaimed && notOverextended) {
         const levels = buildShortLevels(last.close, atr);
-        const confidence = clamp(65 + (adx - 22) * 1.2, 0, 93);
+        const confidence = clamp(
+          68 + (adx - TREND_CONTINUATION_ADX_MIN) * 1.5 + (adxPrev != null && adx > adxPrev ? 4 : 0),
+          0,
+          93,
+        );
         return {
           strategyId: ID,
           decision: Decision.SELL,
@@ -66,12 +92,13 @@ export const trendContinuationStrategy: Strategy = {
           ...levels,
           evidence: [
             evidence('ema_stack', 'EMA9<EMA21<EMA50<EMA200 fully bearish stacked', 1),
-            evidence('adx', `ADX=${adx.toFixed(1)} confirms trend strength`, 0.5),
+            evidence('adx', `ADX=${adx.toFixed(1)} (≥${TREND_CONTINUATION_ADX_MIN}, rising)`, 0.5),
+            evidence('pullback', 'EMA21 touch + bearish reclaim, not overextended', 1),
           ],
         };
       }
     }
 
-    return noTrade(ID, [evidence('trend_continuation', 'No fully stacked trend with valid pullback')]);
+    return noTrade(ID, [evidence('trend_continuation', 'No fully stacked trend with valid EMA21 pullback')]);
   },
 };
