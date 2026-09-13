@@ -124,7 +124,7 @@ describe('new strategies registry', () => {
     expect(STRATEGY_IDS).toContain('adx_ignition');
     expect(STRATEGY_IDS).toContain('macd_divergence');
     expect(STRATEGY_IDS).toContain('inside_bar_nr7');
-    expect(STRATEGY_IDS).toHaveLength(27);
+    expect(STRATEGY_IDS).toHaveLength(29);
 
     const candles = makeCandles(250);
     const indicators = computeAllIndicators(candles);

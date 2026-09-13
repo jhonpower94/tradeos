@@ -11,6 +11,7 @@ import { breakoutStrategy } from './breakout.js';
 import { trendContinuationStrategy } from './trend-continuation.js';
 import { supportBounceStrategy } from './support-bounce.js';
 import { resistanceRejectionStrategy } from './resistance-rejection.js';
+import { resistanceRejectionV2 } from './resistance-rejection-v2.js';
 import { breakOfStructureStrategy } from './break-of-structure.js';
 import { changeOfCharacterStrategy } from './change-of-character.js';
 import { orderBlockStrategy } from './order-block.js';
@@ -22,6 +23,7 @@ import { stochRsiReversionStrategy } from './stoch-rsi-reversion.js';
 import { ichimokuTrendStrategy } from './ichimoku-trend.js';
 import { pivotBounceStrategy } from './pivot-bounce.js';
 import { rsiDivergenceStrategy } from './rsi-divergence.js';
+import { rsiReversalStrategy } from './rsi-reversal.js';
 import { donchianVolumeStrategy } from './donchian-volume.js';
 import { adxIgnitionStrategy } from './adx-ignition.js';
 import { macdDivergenceStrategy } from './macd-divergence.js';
@@ -40,6 +42,7 @@ export {
   trendContinuationStrategy,
   supportBounceStrategy,
   resistanceRejectionStrategy,
+  resistanceRejectionV2,
   breakOfStructureStrategy,
   changeOfCharacterStrategy,
   orderBlockStrategy,
@@ -51,6 +54,7 @@ export {
   ichimokuTrendStrategy,
   pivotBounceStrategy,
   rsiDivergenceStrategy,
+  rsiReversalStrategy,
   donchianVolumeStrategy,
   adxIgnitionStrategy,
   macdDivergenceStrategy,
@@ -71,6 +75,7 @@ export const builtinStrategies: Strategy[] = [
   trendContinuationStrategy,
   supportBounceStrategy,
   resistanceRejectionStrategy,
+  resistanceRejectionV2,
   breakOfStructureStrategy,
   changeOfCharacterStrategy,
   orderBlockStrategy,
@@ -82,6 +87,7 @@ export const builtinStrategies: Strategy[] = [
   ichimokuTrendStrategy,
   pivotBounceStrategy,
   rsiDivergenceStrategy,
+  rsiReversalStrategy,
   donchianVolumeStrategy,
   adxIgnitionStrategy,
   macdDivergenceStrategy,

@@ -44,6 +44,7 @@ export const STRATEGY_REGIME_COMPATIBILITY: Record<StrategyId, MarketRegime[]> =
   ],
   support_bounce: [MarketRegime.RANGING],
   resistance_rejection: [MarketRegime.RANGING, MarketRegime.TRENDING_BEAR],
+  resistance_rejection_v2: [MarketRegime.RANGING, MarketRegime.TRENDING_BEAR],
   break_of_structure: [
     MarketRegime.TRENDING_BULL,
     MarketRegime.TRENDING_BEAR,
@@ -77,6 +78,11 @@ export const STRATEGY_REGIME_COMPATIBILITY: Record<StrategyId, MarketRegime[]> =
   ],
   pivot_bounce: [MarketRegime.RANGING],
   rsi_divergence: [
+    MarketRegime.RANGING,
+    MarketRegime.VOLATILE,
+    MarketRegime.COMPRESSION,
+  ],
+  rsi_reversal: [
     MarketRegime.RANGING,
     MarketRegime.VOLATILE,
     MarketRegime.COMPRESSION,
