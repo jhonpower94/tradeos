@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { MarketRegime, Side, Timeframe } from '@trading-os/shared';
 import {
   buildCloneOpportunity,
+  buildFlipOpportunity,
   CloneLevelsError,
   entryDriftExceeded,
   reanchorRiskLevels,
@@ -133,5 +134,34 @@ describe('validateRisk after re-anchor', () => {
     expect(result.qty).toBeDefined();
     const dollarRisk = (result.qty ?? 0) * Math.abs(fill - levels.stopLoss);
     expect(dollarRisk).toBeCloseTo(equity * baseRisk.maxRiskPerTrade, 0);
+  });
+});
+
+describe('buildFlipOpportunity', () => {
+  it('BUY → SELL mirrors SL/TP distances onto live entry', () => {
+    const opp = buildFlipOpportunity(
+      { symbol: 'BTCUSDT', side: Side.BUY, entryPrice: 100, stopLoss: 98, takeProfit: 104 },
+      110,
+      { timeframe: Timeframe.M15, sourceTradeId: 'abc' },
+    );
+    expect(opp.side).toBe(Side.SELL);
+    expect(opp.entry).toBe(110);
+    // slDist 2, tpDist 4 → SELL SL above, TP below
+    expect(opp.stopLoss).toBe(112);
+    expect(opp.takeProfit).toBe(106);
+    expect(opp.riskReward).toBe(2);
+    expect(opp.evidence[0]?.source).toBe('flip');
+  });
+
+  it('SELL → BUY mirrors distances', () => {
+    const opp = buildFlipOpportunity(
+      { symbol: 'ETHUSDT', side: Side.SELL, entryPrice: 100, stopLoss: 102, takeProfit: 96 },
+      90,
+    );
+    expect(opp.side).toBe(Side.BUY);
+    expect(opp.entry).toBe(90);
+    expect(opp.stopLoss).toBe(88);
+    expect(opp.takeProfit).toBe(94);
+    expect(opp.riskReward).toBe(2);
   });
 });

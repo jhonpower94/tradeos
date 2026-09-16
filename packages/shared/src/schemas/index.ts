@@ -173,6 +173,9 @@ export const copyTradeSchema = z.object({
   limitPrice: z.number().positive().optional(),
 });
 
+/** Flip closes then opens opposite side; body mirrors copy. */
+export const flipTradeSchema = copyTradeSchema;
+
 export const updatePositionLevelsSchema = z.object({
   stopLoss: z.number().positive().optional(),
   takeProfit: z.number().positive().optional(),

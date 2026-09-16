@@ -44,7 +44,7 @@ import {
 } from '../modules/settings/index.js';
 import { exchangeService } from '../modules/exchange/index.js';
 import { marketDataService } from '../modules/market-data/index.js';
-import { candlesQuerySchema, approveSignalSchema, createTradeSchema, copyTradeSchema, updatePositionLevelsSchema, backtestRequestSchema } from '@trading-os/shared';
+import { candlesQuerySchema, approveSignalSchema, createTradeSchema, copyTradeSchema, flipTradeSchema, updatePositionLevelsSchema, backtestRequestSchema } from '@trading-os/shared';
 import { scannerService } from '../modules/scanner/index.js';
 import { listOpportunities } from '../modules/ranking/index.js';
 import { Signal } from '../models/Signal.js';
@@ -55,6 +55,7 @@ import {
   closePosition,
   executeOpportunity,
   copyTrade,
+  flipTrade,
   estimateEquity,
 } from '../modules/trade/index.js';
 import { listPositions, updatePositionLevels } from '../modules/position/index.js';
@@ -420,6 +421,13 @@ export async function registerRoutes(app: FastifyInstance) {
   app.post('/api/v1/trades/:id/copy', { preHandler: auth }, async (req) => {
     const body = copyTradeSchema.parse(req.body ?? {});
     return copyTrade(getUserId(req), (req.params as { id: string }).id, {
+      orderType: body.orderType as OrderType,
+      limitPrice: body.limitPrice,
+    });
+  });
+  app.post('/api/v1/trades/:id/flip', { preHandler: auth }, async (req) => {
+    const body = flipTradeSchema.parse(req.body ?? {});
+    return flipTrade(getUserId(req), (req.params as { id: string }).id, {
       orderType: body.orderType as OrderType,
       limitPrice: body.limitPrice,
     });

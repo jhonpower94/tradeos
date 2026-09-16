@@ -132,6 +132,21 @@ export function PortfolioPage() {
     },
   });
 
+  const flipTrade = useMutation({
+    mutationFn: (tradeId: string) => tradesApi.flip(tradeId),
+    onSuccess: (data: {
+      opportunity?: { side?: string; entry?: number };
+      opened?: { side?: string; entryPrice?: number };
+    }) => {
+      invalidateTradeQueries();
+      setCopyInfo(
+        `Flipped to ${data?.opportunity?.side ?? data?.opened?.side ?? 'opposite'} @ ${
+          data?.opportunity?.entry ?? data?.opened?.entryPrice ?? '—'
+        }`,
+      );
+    },
+  });
+
   const updateLevels = useMutation({
     mutationFn: (input: { id: string; stopLoss?: number; takeProfit?: number }) =>
       positionsApi.update(input.id, { stopLoss: input.stopLoss, takeProfit: input.takeProfit }),
@@ -158,12 +173,14 @@ export function PortfolioPage() {
   const actionError =
     (closeTrade.isError && errMsg(closeTrade.error)) ||
     (copyTrade.isError && errMsg(copyTrade.error)) ||
+    (flipTrade.isError && errMsg(flipTrade.error)) ||
     (updateLevels.isError && errMsg(updateLevels.error)) ||
     null;
 
   const clearActionError = () => {
     closeTrade.reset();
     copyTrade.reset();
+    flipTrade.reset();
     updateLevels.reset();
   };
 
@@ -222,6 +239,25 @@ export function PortfolioPage() {
           }}
         >
           Copy
+        </Button>
+        <Button
+          size="sm"
+          variant="outlined"
+          color="warning"
+          disabled={flipTrade.isPending}
+          onClick={() => {
+            if (
+              !window.confirm(
+                'Fully close this position and open the opposite side at market (size auto-calculated)?',
+              )
+            ) {
+              return;
+            }
+            setCopyInfo(null);
+            flipTrade.mutate(String(p.tradeId));
+          }}
+        >
+          Flip
         </Button>
         <Button
           size="sm"
