@@ -72,6 +72,16 @@ export function meetsMinRiskReward(riskReward: number, minRiskReward: number): b
   return riskReward + RR_EPS >= minRiskReward;
 }
 
+/** Round qty up to exchange step so notional meets a USDT floor. */
+function ceilQty(symbol: string, qty: number): number {
+  const { stepSize, minQty } = exchangeService.getLotSize(symbol);
+  if (!(qty > 0) || !(stepSize > 0)) return exchangeService.roundQty(symbol, qty);
+  const precision = Math.max(0, Math.round(-Math.log10(stepSize)));
+  const rounded = Math.ceil(qty / stepSize - 1e-12) * stepSize;
+  const fixed = Number(rounded.toFixed(precision));
+  return Math.max(fixed, minQty);
+}
+
 export interface PreviewRiskSizeInput {
   equity: number;
   freeQuote: number;
@@ -120,7 +130,28 @@ export function previewRiskSize(input: PreviewRiskSizeInput): RiskValidationResu
     }
   }
 
+  let minNotionalFloored = false;
+  if (remainingSlots > 0 && o.entry > 0 && minNotionalPerTrade > 0) {
+    const notionalBeforeFloor = qty * o.entry;
+    if (notionalBeforeFloor + 1e-9 < minNotionalPerTrade) {
+      const floorQty = ceilQty(o.symbol, minNotionalPerTrade / o.entry);
+      const floorNotional = floorQty * o.entry;
+      if (floorNotional > capNotional + 1e-9 || floorNotional > freeQuote + 1e-9) {
+        reasons.push(
+          `Cannot meet min per trade ${minNotionalPerTrade} (need ~${floorNotional.toFixed(2)} USDT, cap ${capNotional.toFixed(2)}, free ${freeQuote.toFixed(2)})`,
+        );
+      } else if (floorQty <= 0) {
+        reasons.push(`Cannot size to min per trade (${minNotionalPerTrade})`);
+      } else {
+        if (floorQty > qty + 1e-12) minNotionalFloored = true;
+        qty = floorQty;
+      }
+    }
+  }
+
   const notional = qty * o.entry;
+  const effectiveRiskAtStop = slDist > 0 && qty > 0 ? qty * slDist : undefined;
+
   if (remainingSlots > 0) {
     if (qty <= 0) {
       reasons.push('Position size is zero');
@@ -144,6 +175,8 @@ export function previewRiskSize(input: PreviewRiskSizeInput): RiskValidationResu
     qty: reasons.length === 0 ? qty : undefined,
     notional,
     riskAmount,
+    effectiveRiskAtStop,
+    minNotionalFloored: minNotionalFloored || undefined,
     reasons,
   };
 }
@@ -252,6 +285,8 @@ export async function validateRisk(ctx: RiskContext): Promise<RiskValidationResu
     qty: reasons.length === 0 ? sized.qty : undefined,
     notional: sized.notional,
     riskAmount: sized.riskAmount,
+    effectiveRiskAtStop: sized.effectiveRiskAtStop,
+    minNotionalFloored: sized.minNotionalFloored,
     reasons,
   };
 }

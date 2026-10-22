@@ -618,9 +618,9 @@ export function SettingsPage() {
             label="Max risk per trade"
             value={Number(data.risk?.maxRiskPerTrade ?? 0.01)}
             min={0.001}
-            max={0.1}
+            max={1}
             onSave={(n) => saveSettings.mutate({ risk: { maxRiskPerTrade: n } })}
-            helperText="Fraction of equity (0.01 = 1%). Position size ≈ (equity × risk) / stop distance. Raise this or lower min notional if signals show Size below the floor."
+            helperText="Fraction of equity (0.01 = 1%, 0.2 = 20%). Target $ risk at stop ≈ equity × this value. Position size ≈ (equity × risk) / stop distance, raised to min notional when needed."
           />
           <SettingsNumberField
             label="Max daily loss"
@@ -651,7 +651,7 @@ export function SettingsPage() {
             min={0}
             max={1_000_000}
             onSave={(n) => saveSettings.mutate({ risk: { minNotionalPerTrade: n } })}
-            helperText="Approve is blocked when estimated size is below this floor. Size is capped by max risk per trade and free USDT / slots. If signals are blocked, raise max risk % or lower this floor. 0 disables."
+            helperText="Minimum position size (USDT). If risk-based size is smaller, size is raised to this floor when you can afford it—actual $ risk at stop may exceed equity × max risk %. 0 disables."
           />
           <ResetDefaultsButton
             disabled={saveSettings.isPending}

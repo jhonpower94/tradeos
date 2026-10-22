@@ -25,6 +25,9 @@ import { monoSx } from '../theme/theme';
 type SizePreview = {
   ok?: boolean;
   notional?: number;
+  riskAmount?: number;
+  effectiveRiskAtStop?: number;
+  minNotionalFloored?: boolean;
   reasons?: string[];
 };
 
@@ -34,9 +37,17 @@ function getSizePreview(row: Record<string, unknown>): SizePreview | undefined {
   return p as SizePreview;
 }
 
-function formatNotional(preview: SizePreview | undefined): string {
+function formatSizePreview(preview: SizePreview | undefined): string {
   if (preview?.notional == null || !Number.isFinite(preview.notional)) return '—';
-  return `$${preview.notional.toFixed(0)}`;
+  const notional = `$${preview.notional.toFixed(0)}`;
+  const eff = preview.effectiveRiskAtStop;
+  const target = preview.riskAmount;
+  const showRisk =
+    eff != null &&
+    Number.isFinite(eff) &&
+    (preview.minNotionalFloored || (target != null && eff > target * 1.001));
+  if (!showRisk) return notional;
+  return `${notional} · risk ~$${eff.toFixed(0)}`;
 }
 
 export function ScannerPage() {
@@ -225,7 +236,7 @@ export function ScannerPage() {
                   title={preview?.ok === false ? preview.reasons?.[0] : undefined}
                   color={preview?.ok === false ? 'warning' : undefined}
                 >
-                  {formatNotional(preview)}
+                  {formatSizePreview(preview)}
                 </Typography>
               );
             },
@@ -272,7 +283,7 @@ export function ScannerPage() {
                   title={preview?.ok === false ? preview.reasons?.[0] : undefined}
                   color={preview?.ok === false ? 'warning' : undefined}
                 >
-                  {formatNotional(preview)}
+                  {formatSizePreview(preview)}
                 </Typography>
               );
             },

@@ -90,7 +90,12 @@ export interface RiskValidationResult {
   qty?: number;
   /** Estimated position notional (qty × entry), always set when sizing ran. */
   notional?: number;
+  /** Target $ at stop from equity × maxRiskPerTrade. */
   riskAmount?: number;
+  /** Actual $ at stop after final qty (may exceed riskAmount when min-notional floor applied). */
+  effectiveRiskAtStop?: number;
+  /** True when qty was raised to meet minNotionalPerTrade above pure risk sizing. */
+  minNotionalFloored?: boolean;
   reasons: string[];
 }
 

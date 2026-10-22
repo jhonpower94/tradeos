@@ -10,7 +10,7 @@ import {
   withSizePreview,
 } from '../src/modules/risk/index.js';
 import { buildConsensus, detectRegime } from '../src/modules/consensus/index.js';
-import { Decision, MarketRegime, Side, type StrategyResult } from '@trading-os/shared';
+import { Decision, MarketRegime, Side, riskSettingsSchema, type StrategyResult } from '@trading-os/shared';
 import { computeAllIndicators } from '../src/modules/indicators/index.js';
 import { setTickerPrice } from '../src/modules/market-data/index.js';
 import type { Candle } from '@trading-os/shared';
@@ -182,7 +182,12 @@ describe('risk', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('previewRiskSize rejects when notional below min per trade', () => {
+  it('riskSettingsSchema accepts maxRiskPerTrade 0.2', () => {
+    const parsed = riskSettingsSchema.parse({ maxRiskPerTrade: 0.2 });
+    expect(parsed.maxRiskPerTrade).toBe(0.2);
+  });
+
+  it('previewRiskSize floors to min per trade when affordable', () => {
     const result = previewRiskSize({
       equity: 2_100,
       freeQuote: 2_100,
@@ -191,8 +196,31 @@ describe('risk', () => {
         ...baseRisk,
         maxOpenPositions: 2,
         minNotionalPerTrade: 1_000,
-        atrSlMultiplierMin: 0.01,
-        atrSlMultiplierMax: 100,
+      } as never,
+      opportunity: {
+        symbol: 'BTCUSDT',
+        entry: 100,
+        stopLoss: 95,
+        riskReward: 2,
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.notional ?? 0).toBeGreaterThanOrEqual(1_000);
+    expect(result.minNotionalFloored).toBe(true);
+    expect(result.effectiveRiskAtStop).toBeDefined();
+    expect(result.effectiveRiskAtStop!).toBeGreaterThan(result.riskAmount ?? 0);
+  });
+
+  it('previewRiskSize rejects when min per trade cannot be funded', () => {
+    const result = previewRiskSize({
+      equity: 500,
+      freeQuote: 150,
+      openCount: 0,
+      risk: {
+        ...baseRisk,
+        maxRiskPerTrade: 0.2,
+        maxOpenPositions: 2,
+        minNotionalPerTrade: 200,
       } as never,
       opportunity: {
         symbol: 'BTCUSDT',
@@ -202,8 +230,32 @@ describe('risk', () => {
       },
     });
     expect(result.ok).toBe(false);
-    expect(result.notional).toBeDefined();
-    expect(result.reasons.some((r) => r.includes('below min per trade'))).toBe(true);
+    expect(result.reasons.some((r) => r.includes('Cannot meet min per trade'))).toBe(true);
+  });
+
+  it('previewRiskSize floors with 0.2 risk and $200 min on $500 equity', () => {
+    const result = previewRiskSize({
+      equity: 500,
+      freeQuote: 500,
+      openCount: 0,
+      risk: {
+        ...baseRisk,
+        maxRiskPerTrade: 0.2,
+        maxOpenPositions: 2,
+        minNotionalPerTrade: 200,
+      } as never,
+      opportunity: {
+        symbol: 'BTCUSDT',
+        entry: 100,
+        stopLoss: 40,
+        riskReward: 2,
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.riskAmount).toBe(100);
+    expect(result.notional ?? 0).toBeGreaterThanOrEqual(200);
+    expect(result.minNotionalFloored).toBe(true);
+    expect(result.effectiveRiskAtStop).toBeGreaterThan(100);
   });
 
   it('previewRiskSize passes when notional meets min per trade', () => {
@@ -391,7 +443,7 @@ describe('risk', () => {
     expect(notional).toBeLessThanOrEqual(1_050 + 1e-6);
   });
 
-  it('rejects when risk cap would size below min notional per trade', async () => {
+  it('validateRisk floors when risk-based size is below min notional per trade', async () => {
     const result = await validateRisk({
       userId: '000000000000000000000001',
       equity: 2_100,
@@ -418,8 +470,10 @@ describe('risk', () => {
         regime: MarketRegime.TRENDING_BULL,
       },
     });
-    expect(result.ok).toBe(false);
-    expect(result.reasons.some((r) => r.includes('below min per trade'))).toBe(true);
+    expect(result.ok).toBe(true);
+    expect(result.minNotionalFloored).toBe(true);
+    expect((result.qty ?? 0) * 100).toBeGreaterThanOrEqual(1_000);
+    expect(result.effectiveRiskAtStop).toBeGreaterThan(result.riskAmount ?? 0);
   });
 });
 
