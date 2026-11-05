@@ -446,21 +446,27 @@ export class ExchangeService {
     return Math.max(fixed, minQty === 0 ? fixed : 0);
   }
 
-  /** Enable isolated margin for a symbol if not already enabled. */
+  /**
+   * Prepare isolated margin for a symbol.
+   * Binance removed POST /sapi/v1/margin/isolated/create (2021); new pairs are created on first
+   * isolated transfer. Re-enable disabled pairs via POST /sapi/v1/margin/isolated/account.
+   */
   async ensureIsolatedAccount(symbol: string): Promise<void> {
     const sym = symbol.toUpperCase();
+    let acct: IsolatedMarginPairAccount[] = [];
     try {
-      const acct = await this.getIsolatedMarginAccount(sym);
-      if (acct.some((a) => a.symbol === sym && a.enabled)) return;
+      acct = await this.getIsolatedMarginAccount(sym);
     } catch {
-      // create below
+      return;
     }
-    const base = this.baseAsset(sym);
+    const row = acct.find((a) => a.symbol === sym);
+    if (!row) return;
+    if (row.enabled) return;
     try {
-      await this.request('POST', '/sapi/v1/margin/isolated/create', { base, quote: 'USDT' }, true, 1);
+      await this.request('POST', '/sapi/v1/margin/isolated/account', { symbol: sym }, true, 300);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (!/already|exist/i.test(msg)) throw e;
+      if (!/already|enabled|exist/i.test(msg)) throw e;
     }
   }
 
