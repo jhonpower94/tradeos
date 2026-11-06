@@ -33,6 +33,7 @@ import {
   fillPriceFromOrder,
   resolveLiveExitPrice,
 } from './pricing.js';
+import { computeLiveEquityAndRiskBudget } from './live-equity.js';
 import {
   entryDriftExceeded,
   reanchorRiskLevels,
@@ -242,18 +243,9 @@ export async function estimateEquity(
       const creds = await getBinanceCredentials(userId);
       if (creds) {
         exchangeService.setCredentials(creds);
-        if (executionVenue !== ExecutionVenue.SPOT) {
-          try {
-            const q = await exchangeService.getMarginSizingQuote();
-            return { equity: q.freeQuote, freeQuote: q.freeQuote };
-          } catch {
-            // fall back to spot balances
-          }
-        }
-        const balances = await exchangeService.getBalances();
-        const usdt = balances.find((b) => b.asset === 'USDT');
-        const free = usdt?.free ?? 0;
-        return { equity: free, freeQuote: free };
+        const venue = (executionVenue as ExecutionVenue | undefined) ?? ExecutionVenue.MARGIN;
+        const { equity, riskFreeQuote } = await computeLiveEquityAndRiskBudget(userId, venue);
+        return { equity, freeQuote: riskFreeQuote };
       }
     } catch {
       // fall through to paper accounting

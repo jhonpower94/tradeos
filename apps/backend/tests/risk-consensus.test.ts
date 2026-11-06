@@ -282,6 +282,35 @@ describe('risk', () => {
     expect(result.qty).toBeDefined();
   });
 
+  /**
+   * Live margin slot model: stack minus deployed notional yields freeQuote for sizing
+   * (~half wallet per slot after one trade of half stack).
+   */
+  it('previewRiskSize second slot uses paper-style freeQuote budget (~3050 → 1525 after deploy)', () => {
+    const result = previewRiskSize({
+      equity: 3_050,
+      freeQuote: 1_525,
+      openCount: 1,
+      risk: {
+        ...baseRisk,
+        maxOpenPositions: 2,
+        minNotionalPerTrade: 1_000,
+        atrSlMultiplierMin: 0.01,
+        atrSlMultiplierMax: 100,
+      } as never,
+      opportunity: {
+        symbol: 'BTCUSDT',
+        entry: 100,
+        stopLoss: 98,
+        riskReward: 2,
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.notional ?? 0).toBeGreaterThanOrEqual(1_000);
+    expect(result.notional ?? 0).toBeLessThanOrEqual(1_525 + 1e-6);
+    expect(result.qty).toBeDefined();
+  });
+
   it('withSizePreview attaches sizePreview to each item', () => {
     const items = withSizePreview(
       [{ symbol: 'BTCUSDT', entry: 100, stopLoss: 98, riskReward: 2, _id: 'a' }],

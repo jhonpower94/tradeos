@@ -16,6 +16,10 @@ export { depositPaper, getPaperEquity, listPaperLedger, withdrawPaper };
 export async function getPortfolioSummary(userId: string) {
   const settings = await getRawSettings(userId);
   const positions = await Position.find({ userId, status: PositionStatus.OPEN }).lean();
+  const deployedOpenNotional = positions.reduce(
+    (a, p) => a + Number(p.qty) * Number(p.entryPrice),
+    0,
+  );
   const mode = settings.trading?.mode === TradingMode.LIVE ? TradingMode.LIVE : TradingMode.PAPER;
 
   let balances: { asset: string; free: number; locked: number }[] = [];
@@ -37,12 +41,10 @@ export async function getPortfolioSummary(userId: string) {
         balances = await exchangeService.getBalances();
         const usdt = balances.find((b) => b.asset === 'USDT');
         const spotUsdt = (usdt?.free ?? 0) + (usdt?.locked ?? 0);
-        freeQuote = usdt?.free ?? 0;
+        freeQuote = Math.max(0, spotUsdt - deployedOpenNotional);
 
         if (executionVenue !== ExecutionVenue.SPOT) {
           try {
-            const sizing = await exchangeService.getMarginSizingQuote();
-            freeQuote = sizing.freeQuote;
             const pairs = await exchangeService.getIsolatedMarginAccount();
             let isolatedQuoteNet = 0;
             let isolatedUsdtFree = 0;
@@ -60,6 +62,8 @@ export async function getPortfolioSummary(userId: string) {
             }
             // Spot USDT + isolated USDT net equity; open uPnL tracks base mark-to-market vs entry.
             equity = spotUsdt + isolatedQuoteNet + unrealized;
+            const stack = spotUsdt + isolatedQuoteNet;
+            freeQuote = Math.max(0, stack - deployedOpenNotional);
             if (levels.length) marginLevel = Math.min(...levels);
             balances = [
               ...balances.filter((b) => b.asset !== 'USDT' && b.asset !== 'USDT (Spot)'),
@@ -76,7 +80,7 @@ export async function getPortfolioSummary(userId: string) {
             ];
           } catch {
             equity = spotUsdt + unrealized;
-            freeQuote = usdt?.free ?? 0;
+            freeQuote = Math.max(0, spotUsdt - deployedOpenNotional);
             balances = [
               ...balances.filter((b) => b.asset !== 'USDT'),
               {

@@ -295,7 +295,13 @@ export function PortfolioPage() {
       >
         <StatCard label="Equity" value={formatNumber(summary?.equity ?? 0)} />
         <StatCard
-          label={summary?.mode === 'live' ? 'Free USDT (spot + isolated)' : 'Free USDT'}
+          label={
+            summary?.mode === 'live' && summary?.executionVenue === 'margin'
+              ? 'Risk budget (slots)'
+              : summary?.mode === 'live'
+                ? 'Risk budget'
+                : 'Free USDT'
+          }
           value={formatNumber(summary?.freeQuote ?? 0)}
         />
         <StatCard
@@ -316,9 +322,9 @@ export function PortfolioPage() {
       </Typography>
       {summary?.mode === 'live' && summary?.executionVenue === 'margin' && (
         <Typography level="body-xs" sx={{ color: 'text.tertiary', mb: 1.5 }}>
-          After trades, USDT often sits in <strong>Isolated</strong> (not Spot). Equity includes both;
-          free USDT for new entries is spot free + isolated free. Trailing column is free + locked per
-          wallet.
+          <strong>Risk budget</strong> is USDT stack (Spot + Isolated net) minus deployed notional on
+          open positions — same slot-splitting logic as paper. Raw exchange balances per wallet are
+          below; trailing column is free + locked per row.
         </Typography>
       )}
       <Box sx={{ mb: 4 }}>
