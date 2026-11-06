@@ -92,6 +92,10 @@ export function useWebSocket() {
                   0,
                 );
                 const next: Record<string, unknown> = { ...old, unrealizedPnl };
+                if (old.mode === 'live') {
+                  const prevUpnl = Number(old.unrealizedPnl ?? 0);
+                  next.equity = Number(old.equity ?? 0) - prevUpnl + unrealizedPnl;
+                }
                 // Paper: rebuild equity/free from bankroll parts so deposits are not lost
                 // when only uPnL patches land over the wire.
                 if (old.mode !== 'live') {

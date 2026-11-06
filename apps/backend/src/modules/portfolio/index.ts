@@ -45,9 +45,13 @@ export async function getPortfolioSummary(userId: string) {
             freeQuote = sizing.freeQuote;
             const pairs = await exchangeService.getIsolatedMarginAccount();
             let isolatedQuoteNet = 0;
+            let isolatedUsdtFree = 0;
+            let isolatedUsdtLocked = 0;
             const levels: number[] = [];
             for (const pair of pairs) {
               if (pair.quote.asset === 'USDT') {
+                isolatedUsdtFree += pair.quote.free;
+                isolatedUsdtLocked += pair.quote.locked;
                 isolatedQuoteNet += pair.quote.netAsset;
                 marginDebtUsdt += Math.max(0, pair.quote.borrowed + pair.quote.interest);
               }
@@ -57,19 +61,30 @@ export async function getPortfolioSummary(userId: string) {
             // Spot USDT + isolated USDT net equity; open uPnL tracks base mark-to-market vs entry.
             equity = spotUsdt + isolatedQuoteNet + unrealized;
             if (levels.length) marginLevel = Math.min(...levels);
-            if (isolatedQuoteNet !== 0 || marginDebtUsdt !== 0) {
-              balances = [
-                ...balances.filter((b) => b.asset !== 'USDT'),
-                {
-                  asset: 'USDT',
-                  free: usdt?.free ?? 0,
-                  locked: usdt?.locked ?? 0,
-                },
-                { asset: 'USDT_ISOLATED_NET', free: isolatedQuoteNet, locked: 0 },
-              ];
-            }
+            balances = [
+              ...balances.filter((b) => b.asset !== 'USDT' && b.asset !== 'USDT (Spot)'),
+              {
+                asset: 'USDT (Spot)',
+                free: usdt?.free ?? 0,
+                locked: usdt?.locked ?? 0,
+              },
+              {
+                asset: 'USDT (Isolated)',
+                free: isolatedUsdtFree,
+                locked: isolatedUsdtLocked,
+              },
+            ];
           } catch {
             equity = spotUsdt + unrealized;
+            freeQuote = usdt?.free ?? 0;
+            balances = [
+              ...balances.filter((b) => b.asset !== 'USDT'),
+              {
+                asset: 'USDT (Spot)',
+                free: usdt?.free ?? 0,
+                locked: usdt?.locked ?? 0,
+              },
+            ];
           }
         } else {
           equity = spotUsdt + unrealized;

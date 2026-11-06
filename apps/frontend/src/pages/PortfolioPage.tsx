@@ -295,8 +295,8 @@ export function PortfolioPage() {
       >
         <StatCard label="Equity" value={formatNumber(summary?.equity ?? 0)} />
         <StatCard
-          label="Free USDT"
-          value={formatNumber(summary?.freeQuote ?? summary?.balances?.[0]?.free ?? 0)}
+          label={summary?.mode === 'live' ? 'Free USDT (spot + isolated)' : 'Free USDT'}
+          value={formatNumber(summary?.freeQuote ?? 0)}
         />
         <StatCard
           label="Unrealized PnL"
@@ -311,17 +311,28 @@ export function PortfolioPage() {
         <StatCard label="Mode" value={summary?.mode ?? 'paper'} />
       </Box>
 
-      <Typography level="title-md" sx={{ mb: 1.5 }}>
+      <Typography level="title-md" sx={{ mb: 0.5 }}>
         Balances
       </Typography>
+      {summary?.mode === 'live' && summary?.executionVenue === 'margin' && (
+        <Typography level="body-xs" sx={{ color: 'text.tertiary', mb: 1.5 }}>
+          After trades, USDT often sits in <strong>Isolated</strong> (not Spot). Equity includes both;
+          free USDT for new entries is spot free + isolated free. Trailing column is free + locked per
+          wallet.
+        </Typography>
+      )}
       <Box sx={{ mb: 4 }}>
         <KeyValueList
           emptyTitle="No balances"
           items={(summary?.balances ?? []).map((b: { asset: string; free: number; locked: number }) => ({
             key: b.asset,
             primary: b.asset,
-            secondary: `Locked ${b.locked.toFixed(4)}`,
-            trailing: <Typography sx={monoSx}>{b.free.toFixed(4)}</Typography>,
+            secondary: `Free ${formatNumber(b.free)} · Locked ${formatNumber(b.locked)}`,
+            trailing: (
+              <Typography sx={monoSx} level="body-sm">
+                {formatNumber(b.free + b.locked)}
+              </Typography>
+            ),
           }))}
         />
       </Box>
