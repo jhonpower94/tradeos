@@ -487,6 +487,48 @@ export function PortfolioPage() {
                     : 'Clear'}
               </Chip>
             )}
+            cardFields={[
+              {
+                label: 'ML',
+                render: (w) => (
+                  <Typography
+                    sx={monoSx}
+                    color={w.marginLevel > 0 && w.marginLevel <= 2.1 ? 'warning' : undefined}
+                  >
+                    {w.marginLevel > 0 ? w.marginLevel.toFixed(2) : '—'}
+                  </Typography>
+                ),
+              },
+              {
+                label: 'Borrowed',
+                render: (w) => (
+                  <Typography level="body-sm">
+                    {w.base.borrowed + w.base.interest > 0
+                      ? `${w.base.asset} ${formatNumber(w.base.borrowed + w.base.interest)}`
+                      : '—'}
+                    {w.quote.borrowed + w.quote.interest > 0.01
+                      ? ` · ${w.quote.asset} ${formatNumber(w.quote.borrowed + w.quote.interest)}`
+                      : ''}
+                  </Typography>
+                ),
+              },
+              {
+                label: 'USDT (iso)',
+                render: (w) => (
+                  <Typography sx={monoSx} level="body-sm">
+                    {formatNumber(w.quote.free)} free
+                  </Typography>
+                ),
+              },
+              {
+                label: 'Max → Spot',
+                render: (w) => (
+                  <Typography sx={monoSx} level="body-sm">
+                    {formatNumber(w.maxTransferableUsdt)}
+                  </Typography>
+                ),
+              },
+            ]}
             cardActions={(w) => (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                 <Button
