@@ -446,6 +446,34 @@ export class ExchangeService {
     return Math.max(fixed, minQty === 0 ? fixed : 0);
   }
 
+  /** Round qty up to stepSize (for min-notional bumps). */
+  ceilQty(symbol: string, qty: number): number {
+    const { stepSize, minQty } = this.getLotSize(symbol);
+    if (!(qty > 0) || !(stepSize > 0)) return 0;
+    const precision = Math.max(0, Math.round(-Math.log10(stepSize)));
+    const rounded = Math.ceil(qty / stepSize - 1e-12) * stepSize;
+    const fixed = Number(rounded.toFixed(precision));
+    return Math.max(fixed, minQty);
+  }
+
+  /**
+   * Market BUY qty that covers `owed` and satisfies LOT_SIZE + MIN_NOTIONAL.
+   * May buy slightly more than owed when residual debt is below the notional floor.
+   */
+  qtyToCoverBorrow(symbol: string, owed: number, price: number): number {
+    const { minNotional, minQty } = this.getLotSize(symbol);
+    let qty = this.roundQty(symbol, owed);
+    if (qty <= 0 && owed > 0) qty = this.ceilQty(symbol, owed);
+    if (price > 0) {
+      const notional = qty * price;
+      if (notional < minNotional) {
+        qty = this.ceilQty(symbol, (minNotional * 1.02) / price);
+      }
+    }
+    if (qty < minQty) qty = minQty;
+    return qty;
+  }
+
   /**
    * Prepare isolated margin for a symbol.
    * Binance removed POST /sapi/v1/margin/isolated/create (2021); new pairs are created on first

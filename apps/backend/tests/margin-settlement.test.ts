@@ -65,9 +65,42 @@ vi.mock('../src/modules/exchange/index.js', async () => {
           cummulativeQuoteQty: 375,
         };
       }),
-      roundQty: actual.exchangeService.roundQty.bind(actual.exchangeService),
+      getExchangeInfo: vi.fn(async () => []),
+      getLotSize: vi.fn(() => ({ stepSize: 0.01, minQty: 0.01, minNotional: 5 })),
+      roundQty: vi.fn((_: string, qty: number) => Math.floor(qty * 100) / 100),
+      ceilQty: vi.fn((_: string, qty: number) => Math.ceil(qty * 100) / 100),
+      qtyToCoverBorrow: vi.fn((_: string, owed: number, price: number) => {
+        let qty = Math.floor(owed * 100) / 100;
+        if (qty <= 0 && owed > 0) qty = Math.ceil(owed * 100) / 100;
+        if (price > 0 && qty * price < 5) qty = Math.ceil(((5 * 1.02) / price) * 100) / 100;
+        return qty;
+      }),
     },
   };
+});
+
+describe('qtyToCoverBorrow (exchange)', () => {
+  it('bumps dust qty up to min notional', async () => {
+    const { ExchangeService } = await import('../src/modules/exchange/index.js');
+    const svc = new ExchangeService();
+    // @ts-expect-error test stub
+    svc.symbolCache = [
+      {
+        symbol: 'INJUSDT',
+        baseAsset: 'INJ',
+        quoteAsset: 'USDT',
+        status: 'TRADING',
+        filters: [
+          { filterType: 'LOT_SIZE', stepSize: '0.01', minQty: '0.01' },
+          { filterType: 'NOTIONAL', minNotional: '5' },
+        ],
+      },
+    ];
+    // @ts-expect-error test stub
+    svc.symbolCacheAt = Date.now();
+    const qty = svc.qtyToCoverBorrow('INJUSDT', 0.05, 20); // $1 notional dust
+    expect(qty * 20).toBeGreaterThanOrEqual(5);
+  });
 });
 
 describe('margin settlement', () => {

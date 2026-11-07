@@ -178,20 +178,23 @@ export async function repayMarginWallet(
   const repayBaseDebt = async () => {
     const owed = borrowTotal(pair.base);
     if (owed <= QTY_DUST) return;
-    const roundedQty = exchangeService.roundQty(symbol, owed);
-    const qty = roundedQty > 0 ? roundedQty : owed;
-    let price = 0;
-    try {
-      const t = await exchangeService.getTicker(symbol);
-      price = t.price;
-    } catch {
-      /* */
+
+    // Prefer explicit repay when free base is already sitting in the isolated wallet.
+    const freeBase = Math.max(0, pair.base.free);
+    if (freeBase > QTY_DUST) {
+      const repayAmt = Number(Math.min(freeBase, opts?.amount ?? owed).toFixed(8));
+      if (repayAmt > QTY_DUST) {
+        await exchangeService.repayIsolatedMargin({
+          symbol,
+          asset: pair.base.asset,
+          amount: repayAmt,
+        });
+        actions.push('repay_base');
+        pair = await getPairOrThrow(symbol);
+        if (borrowTotal(pair.base) <= QTY_DUST) return;
+      }
     }
-    const estQuote = price > 0 ? qty * price * 1.05 : 0;
-    if (estQuote > USDT_DUST) {
-      await ensureQuoteForRepay(symbol, pair, estQuote, actions);
-      pair = await getPairOrThrow(symbol);
-    }
+
     if (opts?.asset && opts.asset.toUpperCase() === pair.base.asset.toUpperCase() && opts.amount != null) {
       await exchangeService.repayIsolatedMargin({
         symbol,
@@ -201,6 +204,33 @@ export async function repayMarginWallet(
       actions.push('repay_base');
       return;
     }
+
+    await exchangeService.getExchangeInfo();
+    let price = 0;
+    try {
+      const t = await exchangeService.getTicker(symbol);
+      price = t.price;
+    } catch {
+      /* */
+    }
+    const stillOwed = borrowTotal(pair.base);
+    // Bump to MIN_NOTIONAL when residual dust would fail Filter failure: NOTIONAL.
+    const qty =
+      price > 0
+        ? exchangeService.qtyToCoverBorrow(symbol, stillOwed, price)
+        : exchangeService.roundQty(symbol, stillOwed) || stillOwed;
+    if (!(qty > 0)) {
+      throw new AppError(
+        'REPAY_FAILED',
+        `Cannot size repay order for ${stillOwed} ${pair.base.asset} on ${symbol}`,
+        400,
+      );
+    }
+    const estQuote = price > 0 ? qty * price * 1.05 : 0;
+    if (estQuote > USDT_DUST) {
+      await ensureQuoteForRepay(symbol, pair, estQuote, actions);
+      pair = await getPairOrThrow(symbol);
+    }
     await exchangeService.placeMarginOrder({
       symbol,
       side: Side.BUY,
@@ -209,6 +239,20 @@ export async function repayMarginWallet(
       sideEffectType: 'AUTO_REPAY',
     });
     actions.push('buy_auto_repay');
+
+    // Over-buy for min notional can leave free base; repay any remaining borrow from it.
+    pair = await getPairOrThrow(symbol);
+    const leftoverOwed = borrowTotal(pair.base);
+    const leftoverFree = Math.max(0, pair.base.free);
+    if (leftoverOwed > QTY_DUST && leftoverFree > QTY_DUST) {
+      const repayAmt = Number(Math.min(leftoverFree, leftoverOwed).toFixed(8));
+      await exchangeService.repayIsolatedMargin({
+        symbol,
+        asset: pair.base.asset,
+        amount: repayAmt,
+      });
+      actions.push('repay_base');
+    }
   };
 
   if (opts?.asset) {
