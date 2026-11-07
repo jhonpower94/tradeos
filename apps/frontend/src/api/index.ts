@@ -113,6 +113,13 @@ export const portfolioApi = {
   withdraw: (amount: number, note?: string) =>
     api.post('/portfolio/paper/withdraw', { amount, note }).then((r) => r.data),
   ledger: () => api.get('/portfolio/paper/ledger').then((r) => r.data),
+  marginWallets: () => api.get('/portfolio/margin/wallets').then((r) => r.data),
+  marginRepay: (symbol: string, body?: { asset?: string; amount?: number }) =>
+    api.post(`/portfolio/margin/${encodeURIComponent(symbol)}/repay`, body ?? {}).then((r) => r.data),
+  marginTransfer: (symbol: string, body?: { amount?: number }) =>
+    api.post(`/portfolio/margin/${encodeURIComponent(symbol)}/transfer`, body ?? {}).then((r) => r.data),
+  marginSettle: (symbol: string) =>
+    api.post(`/portfolio/margin/${encodeURIComponent(symbol)}/settle`).then((r) => r.data),
 };
 
 export const journalApi = {

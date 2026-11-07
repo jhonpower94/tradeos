@@ -573,6 +573,41 @@ export class ExchangeService {
     return { spotFree, isolatedFree, freeQuote: spotFree + isolatedFree };
   }
 
+  async repayIsolatedMargin(input: {
+    symbol: string;
+    asset: string;
+    amount: number;
+  }): Promise<{ tranId: number }> {
+    const sym = input.symbol.toUpperCase();
+    const data = await this.request<{ tranId: number }>(
+      'POST',
+      '/sapi/v1/margin/borrow-repay',
+      {
+        asset: input.asset.toUpperCase(),
+        amount: input.amount,
+        type: 'REPAY',
+        isIsolated: 'TRUE',
+        symbol: sym,
+      },
+      true,
+      3000,
+    );
+    return { tranId: data.tranId };
+  }
+
+  async getMaxTransferable(asset: string, isolatedSymbol?: string): Promise<number> {
+    const params: Record<string, string> = { asset: asset.toUpperCase() };
+    if (isolatedSymbol) params.isolatedSymbol = isolatedSymbol.toUpperCase();
+    const data = await this.request<{ amount: string }>(
+      'GET',
+      '/sapi/v1/margin/maxTransferable',
+      params,
+      true,
+      50,
+    );
+    return Number(data.amount);
+  }
+
   async placeMarginOrder(params: PlaceMarginOrderParams): Promise<OrderResult> {
     const body: Record<string, string | number | boolean | undefined> = {
       symbol: params.symbol.toUpperCase(),

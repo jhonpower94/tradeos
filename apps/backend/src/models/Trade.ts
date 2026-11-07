@@ -32,6 +32,11 @@ const tradeSchema = new Schema(
     exitReason: String,
     openedAt: Date,
     closedAt: Date,
+    marginSettlement: {
+      status: String,
+      message: String,
+      at: Date,
+    },
   },
   { timestamps: true },
 );

@@ -64,6 +64,12 @@ import {
   listOpenPositionsMarketContext,
 } from '../modules/position/context.js';
 import { getPortfolioSummary, depositPaper, withdrawPaper, listPaperLedger } from '../modules/portfolio/index.js';
+import {
+  listMarginWallets,
+  repayMarginWallet,
+  transferMarginToSpot,
+  settleMarginWallet,
+} from '../modules/portfolio/margin-settlement.js';
 import { listJournal, getJournalEntry } from '../modules/journal/index.js';
 import { computeAnalytics } from '../modules/analytics/index.js';
 import {
@@ -474,6 +480,28 @@ export async function registerRoutes(app: FastifyInstance) {
     if (!(amount > 0)) throw new AppError('INVALID_AMOUNT', 'Withdraw amount must be positive', 400);
     return withdrawPaper(getUserId(req), amount, body.note);
   });
+
+  app.get('/api/v1/portfolio/margin/wallets', { preHandler: auth }, async (req) =>
+    listMarginWallets(getUserId(req)),
+  );
+  app.post('/api/v1/portfolio/margin/:symbol/repay', { preHandler: auth }, async (req) => {
+    const symbol = (req.params as { symbol: string }).symbol;
+    const body = (req.body ?? {}) as { asset?: string; amount?: number };
+    return repayMarginWallet(getUserId(req), symbol, {
+      asset: body.asset,
+      amount: body.amount != null ? Number(body.amount) : undefined,
+    });
+  });
+  app.post('/api/v1/portfolio/margin/:symbol/transfer', { preHandler: auth }, async (req) => {
+    const symbol = (req.params as { symbol: string }).symbol;
+    const body = (req.body ?? {}) as { amount?: number };
+    return transferMarginToSpot(getUserId(req), symbol, {
+      amount: body.amount != null ? Number(body.amount) : undefined,
+    });
+  });
+  app.post('/api/v1/portfolio/margin/:symbol/settle', { preHandler: auth }, async (req) =>
+    settleMarginWallet(getUserId(req), (req.params as { symbol: string }).symbol),
+  );
 
   // Journal
   app.get('/api/v1/journal', { preHandler: auth }, async (req) => ({

@@ -709,6 +709,16 @@ export async function closePosition(
       .catch((e) => console.error('Post-close rescan failed', e));
   }
 
+  if (trade.mode === TradingMode.LIVE && trade.venue === TradeVenue.MARGIN) {
+    void import('../portfolio/margin-settlement.js')
+      .then(({ reconcileIsolatedSymbol, persistTradeMarginSettlement }) =>
+        reconcileIsolatedSymbol(userId, freedSymbol).then((result) =>
+          persistTradeMarginSettlement(String(trade._id), result),
+        ),
+      )
+      .catch((e) => console.error('Post-close margin reconcile failed', e));
+  }
+
   return trade;
 }
 

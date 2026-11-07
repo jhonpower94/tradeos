@@ -51,6 +51,17 @@ type CopyResult = {
   opportunity?: { stopLoss?: number; takeProfit?: number; primaryStrategy?: string };
 };
 
+type MarginWalletRow = {
+  symbol: string;
+  marginLevel: number;
+  hasDebt: boolean;
+  maxTransferableUsdt: number;
+  sweepableUsdt: number;
+  status: 'clear' | 'debt' | 'ready_to_sweep';
+  base: { asset: string; borrowed: number; interest: number; free: number };
+  quote: { asset: string; borrowed: number; interest: number; free: number; locked: number };
+};
+
 export function PortfolioPage() {
   const qc = useQueryClient();
   const { data: summary } = useQuery({
@@ -88,6 +99,78 @@ export function PortfolioPage() {
   const [copyInfo, setCopyInfo] = useState<string | null>(null);
 
   const isPaper = (summary?.mode ?? settings?.trading?.mode ?? 'paper') === 'paper';
+  const isLiveMargin =
+    summary?.mode === 'live' &&
+    (summary as { executionVenue?: string }).executionVenue === 'margin';
+
+  const { data: marginWallets } = useQuery({
+    queryKey: ['margin-wallets'],
+    queryFn: portfolioApi.marginWallets,
+    enabled: isLiveMargin,
+    refetchInterval: 5_000,
+  });
+
+  const [marginActionError, setMarginActionError] = useState<string | null>(null);
+
+  const marginRepay = useMutation({
+    mutationFn: (symbol: string) => portfolioApi.marginRepay(symbol),
+    onSuccess: () => {
+      setMarginActionError(null);
+      void qc.invalidateQueries({ queryKey: ['margin-wallets'] });
+      void qc.invalidateQueries({ queryKey: ['portfolio'] });
+    },
+    onError: (err) => setMarginActionError(errMsg(err)),
+  });
+  const marginTransfer = useMutation({
+    mutationFn: (symbol: string) => portfolioApi.marginTransfer(symbol),
+    onSuccess: () => {
+      setMarginActionError(null);
+      void qc.invalidateQueries({ queryKey: ['margin-wallets'] });
+      void qc.invalidateQueries({ queryKey: ['portfolio'] });
+    },
+    onError: (err) => setMarginActionError(errMsg(err)),
+  });
+  const marginSettle = useMutation({
+    mutationFn: (symbol: string) => portfolioApi.marginSettle(symbol),
+    onSuccess: () => {
+      setMarginActionError(null);
+      void qc.invalidateQueries({ queryKey: ['margin-wallets'] });
+      void qc.invalidateQueries({ queryKey: ['portfolio'] });
+      void qc.invalidateQueries({ queryKey: ['trades'] });
+    },
+    onError: (err) => setMarginActionError(errMsg(err)),
+  });
+
+  const marginPending =
+    marginRepay.isPending || marginTransfer.isPending || marginSettle.isPending;
+
+  const settleAllMargin = async () => {
+    const items = (marginWallets?.items ?? []) as MarginWalletRow[];
+    const targets = items.filter(
+      (w) => w.hasDebt || w.status === 'ready_to_sweep' || w.sweepableUsdt > 0.01,
+    );
+    if (!targets.length) return;
+    if (
+      !window.confirm(
+        `Settle ${targets.length} isolated pair(s)? Repays borrow then moves USDT to Spot.`,
+      )
+    ) {
+      return;
+    }
+    setMarginActionError(null);
+    const errors: string[] = [];
+    for (const w of targets) {
+      try {
+        await portfolioApi.marginSettle(w.symbol);
+      } catch (e) {
+        errors.push(`${w.symbol}: ${errMsg(e)}`);
+      }
+    }
+    void qc.invalidateQueries({ queryKey: ['margin-wallets'] });
+    void qc.invalidateQueries({ queryKey: ['portfolio'] });
+    void qc.invalidateQueries({ queryKey: ['trades'] });
+    if (errors.length) setMarginActionError(errors.join(' · '));
+  };
 
   const invalidateTradeQueries = () => {
     qc.invalidateQueries({ queryKey: ['positions'] });
@@ -342,6 +425,262 @@ export function PortfolioPage() {
           }))}
         />
       </Box>
+
+      {isLiveMargin && (
+        <Box sx={{ mb: 4 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 1,
+              mb: 1,
+            }}
+          >
+            <Box>
+              <Typography level="title-md">Isolated margin wallets</Typography>
+              <Typography level="body-xs" sx={{ color: 'text.tertiary', mt: 0.25 }}>
+                Closing a trade does not move USDT to Spot. Repay clears borrow; Settle repays then
+                sweeps USDT to Spot (may move USDT Spot → isolated first if needed).
+              </Typography>
+            </Box>
+            <Button
+              size="sm"
+              variant="soft"
+              disabled={marginPending}
+              onClick={() => void settleAllMargin()}
+            >
+              Settle all
+            </Button>
+          </Box>
+          {marginActionError && (
+            <Alert color="danger" variant="soft" sx={{ mb: 1.5 }}>
+              {marginActionError}
+            </Alert>
+          )}
+          <ResponsiveRecordList<MarginWalletRow>
+            emptyTitle="No isolated wallets"
+            rows={(marginWallets?.items ?? []) as MarginWalletRow[]}
+            getRowKey={(w) => w.symbol}
+            cardTitle={(w) => (
+              <Typography level="title-md" sx={monoSx}>
+                {w.symbol}
+              </Typography>
+            )}
+            cardMeta={(w) => (
+              <Chip
+                size="sm"
+                variant="soft"
+                color={
+                  w.status === 'debt'
+                    ? 'danger'
+                    : w.status === 'ready_to_sweep'
+                      ? 'success'
+                      : 'neutral'
+                }
+              >
+                {w.status === 'debt'
+                  ? 'Debt'
+                  : w.status === 'ready_to_sweep'
+                    ? 'Ready to sweep'
+                    : 'Clear'}
+              </Chip>
+            )}
+            cardActions={(w) => (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                <Button
+                  size="sm"
+                  variant="outlined"
+                  color="neutral"
+                  disabled={marginPending || !w.hasDebt}
+                  onClick={() => {
+                    if (
+                      !window.confirm(
+                        `Repay borrow for ${w.symbol}? May transfer USDT from Spot to this isolated wallet.`,
+                      )
+                    ) {
+                      return;
+                    }
+                    marginRepay.mutate(w.symbol);
+                  }}
+                >
+                  Repay
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outlined"
+                  color="primary"
+                  disabled={marginPending || w.hasDebt || w.maxTransferableUsdt <= 0.01}
+                  onClick={() => {
+                    if (!window.confirm(`Transfer max USDT from ${w.symbol} isolated to Spot?`)) {
+                      return;
+                    }
+                    marginTransfer.mutate(w.symbol);
+                  }}
+                >
+                  Transfer
+                </Button>
+                <Button
+                  size="sm"
+                  color="success"
+                  disabled={marginPending}
+                  onClick={() => {
+                    if (
+                      !window.confirm(
+                        `Settle ${w.symbol}? Repay any borrow, then sweep USDT to Spot.`,
+                      )
+                    ) {
+                      return;
+                    }
+                    marginSettle.mutate(w.symbol);
+                  }}
+                >
+                  Settle
+                </Button>
+              </Box>
+            )}
+            columns={[
+              {
+                key: 'symbol',
+                header: 'Pair',
+                render: (w) => <Typography sx={monoSx}>{w.symbol}</Typography>,
+              },
+              {
+                key: 'ml',
+                header: 'ML',
+                numeric: true,
+                render: (w) => (
+                  <Typography
+                    sx={monoSx}
+                    color={w.marginLevel > 0 && w.marginLevel <= 2.1 ? 'warning' : undefined}
+                  >
+                    {w.marginLevel > 0 ? w.marginLevel.toFixed(2) : '—'}
+                  </Typography>
+                ),
+              },
+              {
+                key: 'debt',
+                header: 'Borrowed',
+                render: (w) => (
+                  <Typography level="body-sm">
+                    {w.base.borrowed + w.base.interest > 0
+                      ? `${w.base.asset} ${formatNumber(w.base.borrowed + w.base.interest)}`
+                      : '—'}
+                    {w.quote.borrowed + w.quote.interest > 0.01
+                      ? ` · ${w.quote.asset} ${formatNumber(w.quote.borrowed + w.quote.interest)}`
+                      : ''}
+                  </Typography>
+                ),
+              },
+              {
+                key: 'usdt',
+                header: 'USDT (iso)',
+                numeric: true,
+                render: (w) => (
+                  <Typography sx={monoSx} level="body-sm">
+                    {formatNumber(w.quote.free)} free
+                  </Typography>
+                ),
+              },
+              {
+                key: 'max',
+                header: 'Max → Spot',
+                numeric: true,
+                render: (w) => (
+                  <Typography sx={monoSx} level="body-sm">
+                    {formatNumber(w.maxTransferableUsdt)}
+                  </Typography>
+                ),
+              },
+              {
+                key: 'status',
+                header: 'Status',
+                render: (w) => (
+                  <Chip
+                    size="sm"
+                    variant="soft"
+                    color={
+                      w.status === 'debt'
+                        ? 'danger'
+                        : w.status === 'ready_to_sweep'
+                          ? 'success'
+                          : 'neutral'
+                    }
+                  >
+                    {w.status === 'debt'
+                      ? 'Debt'
+                      : w.status === 'ready_to_sweep'
+                        ? 'Ready to sweep'
+                        : 'Clear'}
+                  </Chip>
+                ),
+              },
+              {
+                key: 'actions',
+                header: '',
+                render: (w) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    <Button
+                      size="sm"
+                      variant="outlined"
+                      color="neutral"
+                      disabled={marginPending || !w.hasDebt}
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            `Repay borrow for ${w.symbol}? May transfer USDT from Spot to this isolated wallet.`,
+                          )
+                        ) {
+                          return;
+                        }
+                        marginRepay.mutate(w.symbol);
+                      }}
+                    >
+                      Repay
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outlined"
+                      color="primary"
+                      disabled={
+                        marginPending || w.hasDebt || w.maxTransferableUsdt <= 0.01
+                      }
+                      onClick={() => {
+                        if (
+                          !window.confirm(`Transfer max USDT from ${w.symbol} isolated to Spot?`)
+                        ) {
+                          return;
+                        }
+                        marginTransfer.mutate(w.symbol);
+                      }}
+                    >
+                      Transfer
+                    </Button>
+                    <Button
+                      size="sm"
+                      color="success"
+                      disabled={marginPending}
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            `Settle ${w.symbol}? Repay any borrow, then sweep USDT to Spot.`,
+                          )
+                        ) {
+                          return;
+                        }
+                        marginSettle.mutate(w.symbol);
+                      }}
+                    >
+                      Settle
+                    </Button>
+                  </Box>
+                ),
+              },
+            ]}
+          />
+        </Box>
+      )}
 
       <Typography level="title-md" sx={{ mb: 1.5 }}>
         Open Positions
