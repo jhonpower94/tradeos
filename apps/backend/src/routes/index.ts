@@ -34,6 +34,7 @@ import {
   adminListInvoices,
   adminConfirmInvoice,
   adminRejectInvoice,
+  adminStopAllScanners,
 } from '../modules/admin/index.js';
 import {
   getSettings,
@@ -41,6 +42,8 @@ import {
   updateBinanceKeys,
   testBinanceConnection,
   getRawSettings,
+  setScannerEnabled,
+  anyUserScannerEnabled,
 } from '../modules/settings/index.js';
 import { exchangeService } from '../modules/exchange/index.js';
 import { marketDataService } from '../modules/market-data/index.js';
@@ -246,6 +249,10 @@ export async function registerRoutes(app: FastifyInstance) {
     await requireAdmin(req);
     return adminPatchUser((req.params as { id: string }).id, (req.body ?? {}) as never);
   });
+  app.post('/api/v1/admin/scanner/stop-all', { preHandler: auth }, async (req) => {
+    await requireAdmin(req);
+    return adminStopAllScanners();
+  });
   app.get('/api/v1/admin/subscription/settings', { preHandler: auth }, async (req) => {
     await requireAdmin(req);
     return adminGetSubscriptionSettings();
@@ -318,14 +325,32 @@ export async function registerRoutes(app: FastifyInstance) {
     const ctx = await sizePreviewContext(userId);
     return { items: withSizePreview(items as Array<Record<string, unknown> & { symbol: string }>, ctx) };
   });
-  app.get('/api/v1/scanner/status', { preHandler: auth }, async () => scannerService.getStatus());
-  app.post('/api/v1/scanner/start', { preHandler: auth }, async () => {
-    scannerService.start();
-    return scannerService.getStatus();
+  app.get('/api/v1/scanner/status', { preHandler: auth }, async (req) => {
+    const settings = await getRawSettings(getUserId(req));
+    return {
+      ...scannerService.getStatus(),
+      enabled: settings.scanner?.enabled !== false,
+    };
   });
-  app.post('/api/v1/scanner/stop', { preHandler: auth }, async () => {
-    scannerService.stop();
-    return scannerService.getStatus();
+  app.post('/api/v1/scanner/start', { preHandler: auth }, async (req) => {
+    const userId = getUserId(req);
+    await setScannerEnabled(userId, true);
+    scannerService.start();
+    return {
+      ...scannerService.getStatus(),
+      enabled: true,
+    };
+  });
+  app.post('/api/v1/scanner/stop', { preHandler: auth }, async (req) => {
+    const userId = getUserId(req);
+    await setScannerEnabled(userId, false);
+    if (!(await anyUserScannerEnabled())) {
+      scannerService.stop();
+    }
+    return {
+      ...scannerService.getStatus(),
+      enabled: false,
+    };
   });
 
   // Signals — default: newest active opportunities (same data as scanner)

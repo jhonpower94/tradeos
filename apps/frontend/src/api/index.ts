@@ -56,6 +56,7 @@ export const adminApi = {
     api.patch(`/admin/users/${userId}`, { grantDays: body.days }).then((r) => r.data),
   revokeSubscription: (userId: string) =>
     api.patch(`/admin/users/${userId}`, { revokeSubscription: true }).then((r) => r.data),
+  stopAllScanners: () => api.post('/admin/scanner/stop-all').then((r) => r.data),
 };
 
 export const settingsApi = {

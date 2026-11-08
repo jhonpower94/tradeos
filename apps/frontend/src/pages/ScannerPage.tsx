@@ -102,17 +102,23 @@ export function ScannerPage() {
     <Box>
       <PageHeader
         title="Scanner"
-        subtitle="Runs on the server and continues even if you close the browser."
+        subtitle="Starts scanning for your account on the server (other users are unaffected when you Stop)."
         actions={
           <>
-            <Button variant="outlined" onClick={() => start.mutate()} disabled={status?.running}>
+            <Button
+              variant="outlined"
+              onClick={() => start.mutate()}
+              disabled={status?.enabled === true}
+              loading={start.isPending}
+            >
               Start
             </Button>
             <Button
               variant="outlined"
               color="warning"
               onClick={() => stop.mutate()}
-              disabled={!status?.running}
+              disabled={status?.enabled === false}
+              loading={stop.isPending}
             >
               Stop
             </Button>
@@ -199,7 +205,9 @@ export function ScannerPage() {
             pb: { md: 0.75 },
           }}
         >
-          Scanned: {status?.pairsScanned ?? 0} · Found: {status?.opportunitiesFound ?? 0}
+          Your scanner: {status?.enabled === false ? 'off' : 'on'}
+          {status?.running ? ' · worker running' : ' · worker idle'} · Scanned:{' '}
+          {status?.pairsScanned ?? 0} · Found: {status?.opportunitiesFound ?? 0}
         </Typography>
       </Sheet>
       <ResponsiveRecordList

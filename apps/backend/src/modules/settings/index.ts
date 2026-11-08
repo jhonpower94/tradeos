@@ -133,6 +133,37 @@ function sanitizeSettings(doc: InstanceType<typeof Settings>) {
   };
 }
 
+/** Enable/disable this user's participation in the scanner loop. */
+export async function setScannerEnabled(userId: string, enabled: boolean) {
+  await Settings.findOneAndUpdate(
+    { userId },
+    { $set: { 'scanner.enabled': enabled } },
+    { upsert: true, new: true },
+  );
+  return enabled;
+}
+
+/** True if at least one user still has scanning turned on. */
+export async function anyUserScannerEnabled(): Promise<boolean> {
+  const n = await Settings.countDocuments({ 'scanner.enabled': { $ne: false } });
+  return n > 0;
+}
+
+/** Bulk-disable scanning for every settings doc (and ensure missing docs are covered via User ids). */
+export async function disableScannerForAllUsers(): Promise<{ updated: number }> {
+  const result = await Settings.updateMany({}, { $set: { 'scanner.enabled': false } });
+  const users = await (await import('../../models/User.js')).User.find().select('_id').lean();
+  let created = 0;
+  for (const u of users) {
+    const existing = await Settings.findOne({ userId: u._id }).select('_id').lean();
+    if (!existing) {
+      await Settings.create({ userId: u._id, scanner: { enabled: false } });
+      created++;
+    }
+  }
+  return { updated: (result.modifiedCount ?? 0) + created };
+}
+
 export async function updateSettings(userId: string, body: unknown) {
   const parsed = updateSettingsSchema.parse(body);
   // Stale @trading-os/shared dist can strip unknown keys; keep onboarding if sent.

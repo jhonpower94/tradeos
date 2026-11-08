@@ -22,6 +22,7 @@ type AdminUser = {
   role?: string;
   status?: string;
   totpEnabled?: boolean;
+  scannerEnabled?: boolean;
   subscription?: { active?: boolean; endsAt?: string | null; planId?: string | null } | null;
 };
 
@@ -51,6 +52,7 @@ export function ManagerUsersPage() {
     mutationFn: ({ id, body }: { id: string; body: unknown }) => adminApi.patchUser(id, body),
     onSuccess: () => {
       setMsg('User updated');
+      setErr('');
       void qc.invalidateQueries({ queryKey: ['admin-users'] });
     },
     onError: (e) => setErr(errMsg(e)),
@@ -61,6 +63,7 @@ export function ManagerUsersPage() {
       adminApi.grantSubscription(id, { days }),
     onSuccess: () => {
       setMsg('Subscription granted');
+      setErr('');
       void qc.invalidateQueries({ queryKey: ['admin-users'] });
     },
     onError: (e) => setErr(errMsg(e)),
@@ -70,6 +73,17 @@ export function ManagerUsersPage() {
     mutationFn: (id: string) => adminApi.revokeSubscription(id),
     onSuccess: () => {
       setMsg('Subscription revoked');
+      setErr('');
+      void qc.invalidateQueries({ queryKey: ['admin-users'] });
+    },
+    onError: (e) => setErr(errMsg(e)),
+  });
+
+  const stopAll = useMutation({
+    mutationFn: () => adminApi.stopAllScanners(),
+    onSuccess: (res: { updated?: number }) => {
+      setMsg(`Stopped scanners for all users${res?.updated != null ? ` (${res.updated} updated)` : ''}`);
+      setErr('');
       void qc.invalidateQueries({ queryKey: ['admin-users'] });
     },
     onError: (e) => setErr(errMsg(e)),
@@ -79,18 +93,51 @@ export function ManagerUsersPage() {
 
   return (
     <Box sx={{ display: 'grid', gap: 1.5 }}>
-      {err && (
-        <Alert color="danger">
-          {err}
-        </Alert>
-      )}
-      {msg && (
-        <Alert color="success">
-          {msg}
-        </Alert>
-      )}
+      {err && <Alert color="danger">{err}</Alert>}
+      {msg && <Alert color="success">{msg}</Alert>}
+
+      <Sheet
+        variant="outlined"
+        sx={{
+          p: 2,
+          borderRadius: 'md',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 1.5,
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <Box>
+          <Typography level="title-sm">Scanners</Typography>
+          <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
+            Stop all disables every account. Users can Start again for themselves unless you turn
+            them off here.
+          </Typography>
+        </Box>
+        <Button
+          size="sm"
+          color="danger"
+          variant="solid"
+          loading={stopAll.isPending}
+          onClick={() => {
+            if (
+              !window.confirm(
+                'Disable scanning for ALL users and stop the scanner worker? Only accounts you (or they) enable afterward will scan.',
+              )
+            ) {
+              return;
+            }
+            stopAll.mutate();
+          }}
+        >
+          Stop all scanners
+        </Button>
+      </Sheet>
+
       {users.map((u) => {
         const id = uid(u);
+        const scannerOn = u.scannerEnabled !== false;
         return (
           <Sheet key={id} variant="outlined" sx={{ p: 2, borderRadius: 'md', display: 'grid', gap: 1.5 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
@@ -99,6 +146,7 @@ export function ManagerUsersPage() {
                 <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
                   {u.role ?? 'user'}
                   {u.totpEnabled ? ' · MFA on' : ''}
+                  {scannerOn ? ' · scanner on' : ' · scanner off'}
                   {u.subscription?.active
                     ? ` · sub until ${u.subscription.endsAt ? formatDateTime(u.subscription.endsAt) : '—'}`
                     : ' · no active sub'}
@@ -125,6 +173,22 @@ export function ManagerUsersPage() {
                 >
                   <Option value="active">active</Option>
                   <Option value="disabled">disabled</Option>
+                </Select>
+              </FormControl>
+              <FormControl size="sm" sx={{ minWidth: 140 }}>
+                <FormLabel>Scanner</FormLabel>
+                <Select
+                  value={scannerOn ? 'on' : 'off'}
+                  onChange={(_, v) =>
+                    v &&
+                    patch.mutate({
+                      id,
+                      body: { scannerEnabled: v === 'on' },
+                    })
+                  }
+                >
+                  <Option value="on">on</Option>
+                  <Option value="off">off</Option>
                 </Select>
               </FormControl>
               <FormControl size="sm" sx={{ width: 100 }}>

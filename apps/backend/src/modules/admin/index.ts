@@ -1,5 +1,6 @@
 import { User } from '../../models/User.js';
 import { Subscription } from '../../models/Subscription.js';
+import { Settings } from '../../models/Settings.js';
 import { AppError } from '../../utils/errors.js';
 import {
   adminConfirmInvoice,
@@ -11,6 +12,11 @@ import {
   updateSubscriptionSettings,
 } from '../subscription/index.js';
 import { getSubscriptionStatus } from '../subscription/entitlement.js';
+import {
+  disableScannerForAllUsers,
+  setScannerEnabled,
+} from '../settings/index.js';
+import { scannerService } from '../scanner/index.js';
 
 export async function adminListUsers(q?: string) {
   const filter: Record<string, unknown> = {};
@@ -21,8 +27,19 @@ export async function adminListUsers(q?: string) {
     .limit(200)
     .lean();
   const ids = users.map((u) => u._id);
-  const subs = await Subscription.find({ userId: { $in: ids } }).lean();
+  const [subs, settingsDocs] = await Promise.all([
+    Subscription.find({ userId: { $in: ids } }).lean(),
+    Settings.find({ userId: { $in: ids } })
+      .select('userId scanner.enabled')
+      .lean(),
+  ]);
   const byUser = new Map(subs.map((s) => [String(s.userId), s]));
+  const scannerByUser = new Map(
+    settingsDocs.map((s) => [
+      String(s.userId),
+      (s as { scanner?: { enabled?: boolean } }).scanner?.enabled !== false,
+    ]),
+  );
   return users.map((u) => {
     const sub = byUser.get(String(u._id));
     const active = Boolean(
@@ -35,6 +52,7 @@ export async function adminListUsers(q?: string) {
       status: u.status,
       totpEnabled: Boolean(u.totpEnabled),
       createdAt: u.createdAt,
+      scannerEnabled: scannerByUser.get(String(u._id)) ?? true,
       subscription: {
         active,
         endsAt: sub?.endsAt ? new Date(sub.endsAt).toISOString() : null,
@@ -52,6 +70,7 @@ export async function adminPatchUser(
     clearMfa?: boolean;
     grantDays?: number;
     revokeSubscription?: boolean;
+    scannerEnabled?: boolean;
   },
 ) {
   const user = await User.findById(userId);
@@ -68,14 +87,34 @@ export async function adminPatchUser(
   if (patch.grantDays && patch.grantDays > 0) {
     await adminGrantSubscription(userId, patch.grantDays);
   }
+  let scannerEnabled: boolean | undefined;
+  if (typeof patch.scannerEnabled === 'boolean') {
+    scannerEnabled = await setScannerEnabled(userId, patch.scannerEnabled);
+    if (patch.scannerEnabled) {
+      scannerService.start();
+    } else {
+      const { anyUserScannerEnabled } = await import('../settings/index.js');
+      if (!(await anyUserScannerEnabled())) scannerService.stop();
+    }
+  } else {
+    const s = await Settings.findOne({ userId }).select('scanner.enabled').lean();
+    scannerEnabled = (s as { scanner?: { enabled?: boolean } } | null)?.scanner?.enabled !== false;
+  }
   return {
     id: String(user._id),
     email: user.email,
     role: user.role,
     status: user.status,
     totpEnabled: Boolean(user.totpEnabled),
+    scannerEnabled,
     subscription: await getSubscriptionStatus(userId),
   };
+}
+
+export async function adminStopAllScanners() {
+  const result = await disableScannerForAllUsers();
+  scannerService.stop();
+  return { ...result, workerRunning: false };
 }
 
 export async function adminOverview() {
