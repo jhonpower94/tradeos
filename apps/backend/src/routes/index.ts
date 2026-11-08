@@ -53,6 +53,7 @@ import {
   rejectSignal,
   listTrades,
   closePosition,
+  closePositionAffordable,
   executeOpportunity,
   copyTrade,
   flipTrade,
@@ -415,13 +416,16 @@ export async function registerRoutes(app: FastifyInstance) {
     const { Position } = await import('../models/Position.js');
     const { PositionStatus } = await import('@trading-os/shared');
     const tradeId = (req.params as { id: string }).id;
+    const body = (req.body ?? {}) as { affordable?: boolean };
     const pos = await Position.findOne({
       tradeId,
       userId: getUserId(req),
       status: PositionStatus.OPEN,
     });
     if (!pos) throw new AppError('NOT_FOUND', 'Open position not found', 404);
-    const trade = await closePosition(getUserId(req), String(pos._id), 'Manual close');
+    const trade = body.affordable
+      ? await closePositionAffordable(getUserId(req), String(pos._id), 'Manual close (max affordable)')
+      : await closePosition(getUserId(req), String(pos._id), 'Manual close');
     return { trade };
   });
   app.post('/api/v1/trades/:id/copy', { preHandler: auth }, async (req) => {

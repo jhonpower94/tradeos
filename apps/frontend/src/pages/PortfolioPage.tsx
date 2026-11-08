@@ -181,9 +181,12 @@ export function PortfolioPage() {
     qc.invalidateQueries({ queryKey: ['signals'] });
   };
 
+  const [lastCloseTradeId, setLastCloseTradeId] = useState<string | null>(null);
   const closeTrade = useMutation({
-    mutationFn: (tradeId: string) => tradesApi.close(tradeId),
+    mutationFn: ({ tradeId, affordable }: { tradeId: string; affordable?: boolean }) =>
+      tradesApi.close(tradeId, affordable ? { affordable: true } : undefined),
     onSuccess: () => {
+      setLastCloseTradeId(null);
       invalidateTradeQueries();
       // Post-close symbol rescan is fire-and-forget; refresh again after it can persist.
       window.setTimeout(() => {
@@ -347,7 +350,10 @@ export function PortfolioPage() {
           color="warning"
           variant="outlined"
           disabled={closeTrade.isPending}
-          onClick={() => closeTrade.mutate(String(p.tradeId))}
+          onClick={() => {
+            setLastCloseTradeId(String(p.tradeId));
+            closeTrade.mutate({ tradeId: String(p.tradeId) });
+          }}
         >
           Close
         </Button>
@@ -732,9 +738,32 @@ export function PortfolioPage() {
           color="danger"
           sx={{ mb: 1 }}
           endDecorator={
-            <IconButton size="sm" variant="plain" color="danger" onClick={clearActionError}>
-              <Close />
-            </IconButton>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              {lastCloseTradeId &&
+                /shortfall|insufficient|cannot close/i.test(actionError) && (
+                  <Button
+                    size="sm"
+                    color="warning"
+                    variant="solid"
+                    disabled={closeTrade.isPending}
+                    onClick={() => {
+                      if (
+                        !window.confirm(
+                          'Close the largest size Spot + isolated USDT can fund? Remainder stays open until you add funds and close again.',
+                        )
+                      ) {
+                        return;
+                      }
+                      closeTrade.mutate({ tradeId: lastCloseTradeId, affordable: true });
+                    }}
+                  >
+                    Close max affordable
+                  </Button>
+                )}
+              <IconButton size="sm" variant="plain" color="danger" onClick={clearActionError}>
+                <Close />
+              </IconButton>
+            </Box>
           }
         >
           {actionError}

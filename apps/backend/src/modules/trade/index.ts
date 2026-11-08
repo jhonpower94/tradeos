@@ -668,6 +668,74 @@ export async function partialClosePosition(
   return trade;
 }
 
+/**
+ * Close as much of a live margin short as isolated+spot USDT can fund.
+ * Falls back to a normal full close when capital is enough or venue/side don't need it.
+ */
+export async function closePositionAffordable(
+  userId: string,
+  positionId: string,
+  reason = 'Manual close (max affordable)',
+) {
+  const position = await Position.findOne({ _id: positionId, userId, status: PositionStatus.OPEN });
+  if (!position) throw new AppError('NOT_FOUND', 'Position not found', 404);
+  const trade = await Trade.findById(position.tradeId);
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404);
+
+  const isLiveMarginShort =
+    trade.mode === TradingMode.LIVE &&
+    trade.venue === TradeVenue.MARGIN &&
+    position.side === Side.SELL;
+
+  if (!isLiveMarginShort) {
+    return closePosition(userId, positionId, reason);
+  }
+
+  const creds = await getBinanceCredentials(userId);
+  if (!creds) throw new AppError('NO_KEYS', 'Binance keys required for live close', 400);
+  exchangeService.setCredentials(creds);
+  await exchangeService.getExchangeInfo();
+
+  let px = 0;
+  try {
+    px = (await exchangeService.getTicker(position.symbol)).price;
+  } catch {
+    /* */
+  }
+  if (!(px > 0)) {
+    throw new AppError('NO_MARK_PRICE', 'Live market price unavailable', 503);
+  }
+
+  const pairs = await exchangeService.getIsolatedMarginAccount(position.symbol);
+  const pair = pairs.find((a) => a.symbol === position.symbol.toUpperCase());
+  const freeIso = pair?.quote.asset === 'USDT' ? pair.quote.free : 0;
+  const spotBal = await exchangeService.getBalances();
+  const spotFree = spotBal.find((b) => b.asset === 'USDT')?.free ?? 0;
+  const budgetUsdt = (freeIso + spotFree) / 1.015;
+  const { minNotional } = exchangeService.getLotSize(position.symbol);
+
+  let qty = exchangeService.roundQty(position.symbol, Math.min(position.qty, budgetUsdt / px));
+  if (qty <= 0 || qty * px < minNotional) {
+    throw new AppError(
+      'INSUFFICIENT_MARGIN',
+      `Not enough USDT to close any size of ${position.symbol}: need ≥~${minNotional.toFixed(2)} notional, have ${freeIso.toFixed(2)} isolated + ${spotFree.toFixed(2)} spot. Deposit more to Spot.`,
+      400,
+      { freeIso, spotFree, minNotional, price: px },
+    );
+  }
+
+  if (qty >= position.qty * (1 - 1e-8)) {
+    return closePosition(userId, positionId, reason);
+  }
+
+  return partialClosePosition(
+    userId,
+    positionId,
+    qty,
+    `${reason} · closed ${qty} of ${position.qty}`,
+  );
+}
+
 export async function closePosition(
   userId: string,
   positionId: string,

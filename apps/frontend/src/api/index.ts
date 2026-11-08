@@ -89,7 +89,8 @@ export const signalsApi = {
 
 export const tradesApi = {
   list: () => api.get('/trades').then((r) => r.data),
-  close: (id: string) => api.post(`/trades/${id}/close`).then((r) => r.data),
+  close: (id: string, body?: { affordable?: boolean }) =>
+    api.post(`/trades/${id}/close`, body ?? {}).then((r) => r.data),
   copy: (id: string, body?: { orderType?: string; limitPrice?: number }) =>
     api.post(`/trades/${id}/copy`, body ?? {}).then((r) => r.data),
   flip: (id: string, body?: { orderType?: string; limitPrice?: number }) =>
