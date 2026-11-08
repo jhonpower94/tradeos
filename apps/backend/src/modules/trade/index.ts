@@ -67,20 +67,29 @@ function resolveTradeVenue(
   return executionVenue === ExecutionVenue.SPOT ? TradeVenue.SPOT : TradeVenue.MARGIN;
 }
 
-async function ensureMarginCollateral(symbol: string, notionalUsdt: number): Promise<void> {
+async function ensureMarginCollateral(
+  symbol: string,
+  notionalUsdt: number,
+  opts?: { buffer?: number; purpose?: 'entry' | 'close' },
+): Promise<void> {
   await exchangeService.ensureIsolatedAccount(symbol);
   const pairs = await exchangeService.getIsolatedMarginAccount(symbol);
   const pair = pairs.find((a) => a.symbol === symbol.toUpperCase());
   const freeIso = pair?.quote.asset === 'USDT' ? pair.quote.free : 0;
-  // Small buffer for fees/slippage; transfer any shortfall > $0.50 (closes need precise top-up).
-  const need = Math.max(0, notionalUsdt * 1.03 - freeIso);
+  const buffer = opts?.buffer ?? (opts?.purpose === 'close' ? 1.01 : 1.02);
+  const target = notionalUsdt * buffer;
+  const need = Math.max(0, target - freeIso);
   if (need > 0.5) {
     const spot = await exchangeService.getBalances();
     const usdt = spot.find((b) => b.asset === 'USDT')?.free ?? 0;
     if (usdt < need) {
+      const shortfall = need - usdt;
+      const total = freeIso + usdt;
       throw new AppError(
         'INSUFFICIENT_MARGIN',
-        `Need ~${need.toFixed(2)} USDT in isolated margin for ${symbol}; spot free ${usdt.toFixed(2)}. Transfer USDT to Spot or lower size, then retry.`,
+        opts?.purpose === 'close'
+          ? `Cannot close ${symbol}: buyback ~${target.toFixed(2)} USDT, have ${freeIso.toFixed(2)} isolated + ${usdt.toFixed(2)} spot = ${total.toFixed(2)}. Shortfall ~${shortfall.toFixed(2)} USDT — deposit that to Spot, then retry Close.`
+          : `Need ~${need.toFixed(2)} more USDT in isolated ${symbol} (have ${freeIso.toFixed(2)} iso + ${usdt.toFixed(2)} spot). Deposit ~${shortfall.toFixed(2)} USDT to Spot or lower size.`,
         400,
       );
     }
@@ -168,9 +177,15 @@ async function placeLiveCloseOrder(input: {
     } catch {
       /* */
     }
-    const qty = exchangeService.qtyToCoverBorrow(input.symbol, input.qty, px || 1);
+    // Use position qty (lot-rounded), not min-notional bump — oversizing the close leaves leftover base.
+    let qty = exchangeService.roundQty(input.symbol, input.qty);
+    if (qty <= 0 && input.qty > 0) qty = exchangeService.ceilQty(input.symbol, input.qty);
     if (px > 0) {
-      await ensureMarginCollateral(input.symbol, qty * px);
+      const { minNotional } = exchangeService.getLotSize(input.symbol);
+      if (qty * px < minNotional) {
+        qty = exchangeService.qtyToCoverBorrow(input.symbol, input.qty, px);
+      }
+      await ensureMarginCollateral(input.symbol, qty * px, { purpose: 'close' });
     }
     return exchangeService.placeMarginOrder({
       symbol: input.symbol,
