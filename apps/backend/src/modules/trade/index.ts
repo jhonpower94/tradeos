@@ -72,14 +72,15 @@ async function ensureMarginCollateral(symbol: string, notionalUsdt: number): Pro
   const pairs = await exchangeService.getIsolatedMarginAccount(symbol);
   const pair = pairs.find((a) => a.symbol === symbol.toUpperCase());
   const freeIso = pair?.quote.asset === 'USDT' ? pair.quote.free : 0;
-  const need = Math.max(0, notionalUsdt * 1.02 - freeIso);
-  if (need > 1) {
+  // Small buffer for fees/slippage; transfer any shortfall > $0.50 (closes need precise top-up).
+  const need = Math.max(0, notionalUsdt * 1.03 - freeIso);
+  if (need > 0.5) {
     const spot = await exchangeService.getBalances();
     const usdt = spot.find((b) => b.asset === 'USDT')?.free ?? 0;
     if (usdt < need) {
       throw new AppError(
         'INSUFFICIENT_MARGIN',
-        `Need ~${need.toFixed(2)} USDT in isolated margin for ${symbol}; spot free ${usdt.toFixed(2)}`,
+        `Need ~${need.toFixed(2)} USDT in isolated margin for ${symbol}; spot free ${usdt.toFixed(2)}. Transfer USDT to Spot or lower size, then retry.`,
         400,
       );
     }
@@ -155,14 +156,37 @@ async function placeLiveCloseOrder(input: {
       quantity: input.qty,
     });
   }
-  const sideEffect: MarginSideEffect =
-    input.positionSide === Side.SELL ? 'AUTO_REPAY' : 'NO_SIDE_EFFECT';
+
+  // Closing a short = BUY base with USDT + AUTO_REPAY. Entry only funded ~50% collateral;
+  // if price rose or free quote was spent, isolated USDT may be short → Binance -2010.
+  if (input.positionSide === Side.SELL) {
+    await exchangeService.getExchangeInfo();
+    let px = 0;
+    try {
+      const t = await exchangeService.getTicker(input.symbol);
+      px = t.price;
+    } catch {
+      /* */
+    }
+    const qty = exchangeService.qtyToCoverBorrow(input.symbol, input.qty, px || 1);
+    if (px > 0) {
+      await ensureMarginCollateral(input.symbol, qty * px);
+    }
+    return exchangeService.placeMarginOrder({
+      symbol: input.symbol,
+      side: Side.BUY,
+      type: OrderType.MARKET,
+      quantity: qty,
+      sideEffectType: 'AUTO_REPAY',
+    });
+  }
+
   return exchangeService.placeMarginOrder({
     symbol: input.symbol,
     side: closeSide,
     type: OrderType.MARKET,
     quantity: input.qty,
-    sideEffectType: sideEffect,
+    sideEffectType: 'NO_SIDE_EFFECT',
   });
 }
 
