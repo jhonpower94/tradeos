@@ -9,6 +9,7 @@ import IconButton from '@mui/joy/IconButton';
 import Input from '@mui/joy/Input';
 import Typography from '@mui/joy/Typography';
 import Close from '@mui/icons-material/Close';
+import Refresh from '@mui/icons-material/Refresh';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { portfolioApi, positionsApi, settingsApi, tradesApi } from '../api';
@@ -20,6 +21,11 @@ import { StatCard } from '../components/StatCard';
 import { SideChip } from '../components/SideChip';
 import { PnlText } from '../components/PnlText';
 import { KeyValueList, ResponsiveRecordList } from '../components/ResponsiveRecordList';
+import {
+  formatBalanceAsOf,
+  useBalanceRefresh,
+  usePullToRefresh,
+} from '../hooks/useBalanceRefresh';
 import { formatNumber, formatPrice } from '../utils/format';
 import { monoSx } from '../theme/theme';
 
@@ -64,7 +70,12 @@ type MarginWalletRow = {
 
 export function PortfolioPage() {
   const qc = useQueryClient();
-  const { data: summary } = useQuery({
+  const { refreshing, refreshBalances } = useBalanceRefresh();
+  const {
+    data: summary,
+    dataUpdatedAt: portfolioUpdatedAt,
+    isFetching: portfolioFetching,
+  } = useQuery({
     queryKey: ['portfolio'],
     queryFn: portfolioApi.summary,
     refetchInterval: 5_000,
@@ -111,6 +122,7 @@ export function PortfolioPage() {
   });
 
   const [marginActionError, setMarginActionError] = useState<string | null>(null);
+  const { pullPx, pullBusy, pullHandlers } = usePullToRefresh(refreshBalances);
 
   const marginRepay = useMutation({
     mutationFn: (symbol: string) => portfolioApi.marginRepay(symbol),
@@ -118,6 +130,7 @@ export function PortfolioPage() {
       setMarginActionError(null);
       void qc.invalidateQueries({ queryKey: ['margin-wallets'] });
       void qc.invalidateQueries({ queryKey: ['portfolio'] });
+      void qc.invalidateQueries({ queryKey: ['positions'] });
     },
     onError: (err) => setMarginActionError(errMsg(err)),
   });
@@ -127,6 +140,7 @@ export function PortfolioPage() {
       setMarginActionError(null);
       void qc.invalidateQueries({ queryKey: ['margin-wallets'] });
       void qc.invalidateQueries({ queryKey: ['portfolio'] });
+      void qc.invalidateQueries({ queryKey: ['positions'] });
     },
     onError: (err) => setMarginActionError(errMsg(err)),
   });
@@ -136,6 +150,7 @@ export function PortfolioPage() {
       setMarginActionError(null);
       void qc.invalidateQueries({ queryKey: ['margin-wallets'] });
       void qc.invalidateQueries({ queryKey: ['portfolio'] });
+      void qc.invalidateQueries({ queryKey: ['positions'] });
       void qc.invalidateQueries({ queryKey: ['trades'] });
     },
     onError: (err) => setMarginActionError(errMsg(err)),
@@ -168,6 +183,7 @@ export function PortfolioPage() {
     }
     void qc.invalidateQueries({ queryKey: ['margin-wallets'] });
     void qc.invalidateQueries({ queryKey: ['portfolio'] });
+    void qc.invalidateQueries({ queryKey: ['positions'] });
     void qc.invalidateQueries({ queryKey: ['trades'] });
     if (errors.length) setMarginActionError(errors.join(' · '));
   };
@@ -177,6 +193,7 @@ export function PortfolioPage() {
     qc.invalidateQueries({ queryKey: ['positions-context'] });
     qc.invalidateQueries({ queryKey: ['trades'] });
     qc.invalidateQueries({ queryKey: ['portfolio'] });
+    qc.invalidateQueries({ queryKey: ['margin-wallets'] });
     qc.invalidateQueries({ queryKey: ['opportunities'] });
     qc.invalidateQueries({ queryKey: ['signals'] });
   };
@@ -361,9 +378,40 @@ export function PortfolioPage() {
     );
   };
 
+  const balancesRefreshing = refreshing || pullBusy || portfolioFetching;
+
   return (
-    <Box>
-      <PageHeader title="Portfolio" subtitle="Balances and open spots" />
+    <Box {...pullHandlers}>
+      {(pullPx > 0 || pullBusy) && (
+        <Typography
+          level="body-xs"
+          sx={{
+            textAlign: 'center',
+            color: 'text.tertiary',
+            height: Math.max(pullPx, pullBusy ? 28 : 0),
+            mb: 0.5,
+            transition: pullBusy ? 'none' : 'height 0.1s',
+          }}
+        >
+          {pullBusy || refreshing ? 'Updating balances…' : 'Release to refresh'}
+        </Typography>
+      )}
+      <PageHeader
+        title="Portfolio"
+        subtitle="Balances and open spots"
+        actions={
+          <Button
+            size="sm"
+            variant="outlined"
+            color="neutral"
+            loading={balancesRefreshing}
+            startDecorator={<Refresh />}
+            onClick={() => void refreshBalances()}
+          >
+            Refresh
+          </Button>
+        }
+      />
       {(summary as { executionVenue?: string; marginLevel?: number } | undefined)?.executionVenue ===
         'margin' && (
         <Typography level="body-sm" sx={{ mb: 2, color: 'text.tertiary' }}>
@@ -406,14 +454,29 @@ export function PortfolioPage() {
         <StatCard label="Mode" value={summary?.mode ?? 'paper'} />
       </Box>
 
-      <Typography level="title-md" sx={{ mb: 0.5 }}>
-        Balances
-      </Typography>
+      <Box
+        sx={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: 1,
+          mb: 0.5,
+        }}
+      >
+        <Typography level="title-md">Balances</Typography>
+        <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
+          {balancesRefreshing
+            ? 'Updating…'
+            : `Balances as of ${formatBalanceAsOf(portfolioUpdatedAt)}`}
+        </Typography>
+      </Box>
       {summary?.mode === 'live' && summary?.executionVenue === 'margin' && (
         <Typography level="body-xs" sx={{ color: 'text.tertiary', mb: 1.5 }}>
           <strong>Risk budget</strong> is USDT stack (Spot + Isolated net) minus deployed notional on
           open positions — same slot-splitting logic as paper. Raw exchange balances per wallet are
-          below; trailing column is free + locked per row.
+          below; trailing column is free + locked per row. Pull down or tap Refresh to sync with
+          Binance.
         </Typography>
       )}
       <Box sx={{ mb: 4 }}>

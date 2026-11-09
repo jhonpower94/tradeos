@@ -95,6 +95,7 @@ export function TradesPage() {
     qc.invalidateQueries({ queryKey: ['positions'] });
     qc.invalidateQueries({ queryKey: ['positions-context'] });
     qc.invalidateQueries({ queryKey: ['portfolio'] });
+    qc.invalidateQueries({ queryKey: ['margin-wallets'] });
     qc.invalidateQueries({ queryKey: ['opportunities'] });
     qc.invalidateQueries({ queryKey: ['signals'] });
   };

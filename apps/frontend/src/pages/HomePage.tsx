@@ -3,6 +3,7 @@ import Button from '@mui/joy/Button';
 import Chip from '@mui/joy/Chip';
 import Sheet from '@mui/joy/Sheet';
 import Typography from '@mui/joy/Typography';
+import Refresh from '@mui/icons-material/Refresh';
 import { useQuery } from '@tanstack/react-query';
 import { Link as RouterLink } from 'react-router-dom';
 import { analyticsApi, portfolioApi, positionsApi, scannerApi, settingsApi, tradesApi } from '../api';
@@ -14,6 +15,11 @@ import { SideChip } from '../components/SideChip';
 import { StatusChip } from '../components/StatusChip';
 import { PnlText } from '../components/PnlText';
 import { KeyValueList } from '../components/ResponsiveRecordList';
+import {
+  formatBalanceAsOf,
+  useBalanceRefresh,
+  usePullToRefresh,
+} from '../hooks/useBalanceRefresh';
 import { formatNumber } from '../utils/format';
 import { openTradeDisplayPnl, positionByTradeId } from '../utils/tradePnl';
 import { sortByRankThenConfidence } from '../utils/sort';
@@ -21,17 +27,32 @@ import { monoSx } from '../theme/theme';
 
 export function HomePage() {
   const liveOpps = useLiveStore((s) => s.opportunities) as unknown as Array<Record<string, unknown>>;
-  const { data: portfolio } = useQuery({ queryKey: ['portfolio'], queryFn: portfolioApi.summary });
+  const { refreshing, refreshBalances } = useBalanceRefresh();
+  const {
+    data: portfolio,
+    dataUpdatedAt: portfolioUpdatedAt,
+    isFetching: portfolioFetching,
+  } = useQuery({
+    queryKey: ['portfolio'],
+    queryFn: portfolioApi.summary,
+    refetchInterval: 5_000,
+  });
   const { data: analytics } = useQuery({ queryKey: ['analytics'], queryFn: analyticsApi.overview });
   const { data: oppsData } = useQuery({ queryKey: ['opportunities'], queryFn: () => scannerApi.opportunities() });
   const { data: tradesData } = useQuery({ queryKey: ['trades'], queryFn: tradesApi.list });
-  const { data: positionsData } = useQuery({ queryKey: ['positions'], queryFn: positionsApi.list });
+  const { data: positionsData } = useQuery({
+    queryKey: ['positions'],
+    queryFn: positionsApi.list,
+    refetchInterval: 5_000,
+  });
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
   const { data: status } = useQuery({
     queryKey: ['scanner-status'],
     queryFn: scannerApi.status,
     refetchInterval: 10_000,
   });
+  const { pullPx, pullBusy, pullHandlers } = usePullToRefresh(refreshBalances);
+  const balancesRefreshing = refreshing || pullBusy || portfolioFetching;
 
   const opportunities = liveOpps.length ? liveOpps : ((oppsData?.items ?? []) as Array<Record<string, unknown>>);
   const topOpportunities = sortByRankThenConfidence(
@@ -46,8 +67,36 @@ export function HomePage() {
   const showBinanceAlert = Boolean(settings) && isLive && !settings?.binance?.configured;
 
   return (
-    <Box>
-      <PageHeader title="Home" subtitle="Spot terminal overview" />
+    <Box {...pullHandlers}>
+      {(pullPx > 0 || pullBusy) && (
+        <Typography
+          level="body-xs"
+          sx={{
+            textAlign: 'center',
+            color: 'text.tertiary',
+            height: Math.max(pullPx, pullBusy ? 28 : 0),
+            mb: 0.5,
+          }}
+        >
+          {pullBusy || refreshing ? 'Updating balances…' : 'Release to refresh'}
+        </Typography>
+      )}
+      <PageHeader
+        title="Home"
+        subtitle="Spot terminal overview"
+        actions={
+          <Button
+            size="sm"
+            variant="outlined"
+            color="neutral"
+            loading={balancesRefreshing}
+            startDecorator={<Refresh />}
+            onClick={() => void refreshBalances()}
+          >
+            Refresh
+          </Button>
+        }
+      />
 
       <EnableNotificationsBanner />
 
@@ -107,6 +156,11 @@ export function HomePage() {
         <StatCard label="Open Positions" value={String(portfolio?.openPositions ?? 0)} />
         <StatCard label="Equity" value={formatNumber(portfolio?.equity ?? 0)} />
       </Box>
+      <Typography level="body-xs" sx={{ color: 'text.tertiary', mb: 2, mt: -2 }}>
+        {balancesRefreshing
+          ? 'Updating…'
+          : `Balances as of ${formatBalanceAsOf(portfolioUpdatedAt)}`}
+      </Typography>
 
       <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
         <Box>
