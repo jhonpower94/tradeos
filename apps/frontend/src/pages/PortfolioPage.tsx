@@ -62,11 +62,17 @@ type MarginWalletRow = {
   marginLevel: number;
   hasDebt: boolean;
   maxTransferableUsdt: number;
+  maxTransferableBase: number;
   sweepableUsdt: number;
+  sweepableBase: number;
   status: 'clear' | 'debt' | 'ready_to_sweep';
   base: { asset: string; borrowed: number; interest: number; free: number };
   quote: { asset: string; borrowed: number; interest: number; free: number; locked: number };
 };
+
+function marginHasSweepable(w: MarginWalletRow): boolean {
+  return w.maxTransferableUsdt > 0.01 || (w.maxTransferableBase ?? 0) > 0;
+}
 
 export function PortfolioPage() {
   const qc = useQueryClient();
@@ -162,12 +168,16 @@ export function PortfolioPage() {
   const settleAllMargin = async () => {
     const items = (marginWallets?.items ?? []) as MarginWalletRow[];
     const targets = items.filter(
-      (w) => w.hasDebt || w.status === 'ready_to_sweep' || w.sweepableUsdt > 0.01,
+      (w) =>
+        w.hasDebt ||
+        w.status === 'ready_to_sweep' ||
+        w.sweepableUsdt > 0.01 ||
+        (w.sweepableBase ?? 0) > 0,
     );
     if (!targets.length) return;
     if (
       !window.confirm(
-        `Settle ${targets.length} isolated pair(s)? Repays borrow then moves USDT to Spot.`,
+        `Settle ${targets.length} isolated pair(s)? Repays borrow, converts free base to USDT on isolated, then sweeps to Spot.`,
       )
     ) {
       return;
@@ -510,8 +520,8 @@ export function PortfolioPage() {
             <Box>
               <Typography level="title-md">Isolated margin wallets</Typography>
               <Typography level="body-xs" sx={{ color: 'text.tertiary', mt: 0.25 }}>
-                Closing a trade does not move USDT to Spot. Repay clears borrow; Settle repays then
-                sweeps USDT to Spot (may move USDT Spot → isolated first if needed).
+                Closing a trade does not move USDT to Spot. Repay clears borrow; Settle repays,
+                converts free base to USDT on isolated, then sweeps to Spot.
               </Typography>
             </Box>
             <Button
@@ -582,10 +592,13 @@ export function PortfolioPage() {
                 ),
               },
               {
-                label: 'USDT (iso)',
+                label: 'Free (iso)',
                 render: (w) => (
                   <Typography sx={monoSx} level="body-sm">
-                    {formatNumber(w.quote.free)} free
+                    {formatNumber(w.quote.free)} {w.quote.asset}
+                    {w.base.free > 0
+                      ? ` · ${formatNumber(w.base.free)} ${w.base.asset}`
+                      : ''}
                   </Typography>
                 ),
               },
@@ -593,7 +606,10 @@ export function PortfolioPage() {
                 label: 'Max → Spot',
                 render: (w) => (
                   <Typography sx={monoSx} level="body-sm">
-                    {formatNumber(w.maxTransferableUsdt)}
+                    {formatNumber(w.maxTransferableUsdt)} USDT
+                    {(w.maxTransferableBase ?? 0) > 0
+                      ? ` · ${formatNumber(w.maxTransferableBase)} ${w.base.asset}`
+                      : ''}
                   </Typography>
                 ),
               },
@@ -622,9 +638,13 @@ export function PortfolioPage() {
                   size="sm"
                   variant="outlined"
                   color="primary"
-                  disabled={marginPending || w.hasDebt || w.maxTransferableUsdt <= 0.01}
+                  disabled={marginPending || w.hasDebt || !marginHasSweepable(w)}
                   onClick={() => {
-                    if (!window.confirm(`Transfer max USDT from ${w.symbol} isolated to Spot?`)) {
+                    if (
+                      !window.confirm(
+                        `Transfer max transferable assets from ${w.symbol} isolated to Spot?`,
+                      )
+                    ) {
                       return;
                     }
                     marginTransfer.mutate(w.symbol);
@@ -639,7 +659,7 @@ export function PortfolioPage() {
                   onClick={() => {
                     if (
                       !window.confirm(
-                        `Settle ${w.symbol}? Repay any borrow, then sweep USDT to Spot.`,
+                        `Settle ${w.symbol}? Repay any borrow, convert free base to USDT on isolated, then sweep to Spot.`,
                       )
                     ) {
                       return;
@@ -686,11 +706,14 @@ export function PortfolioPage() {
               },
               {
                 key: 'usdt',
-                header: 'USDT (iso)',
+                header: 'Free (iso)',
                 numeric: true,
                 render: (w) => (
                   <Typography sx={monoSx} level="body-sm">
-                    {formatNumber(w.quote.free)} free
+                    {formatNumber(w.quote.free)} {w.quote.asset}
+                    {w.base.free > 0
+                      ? ` · ${formatNumber(w.base.free)} ${w.base.asset}`
+                      : ''}
                   </Typography>
                 ),
               },
@@ -700,7 +723,10 @@ export function PortfolioPage() {
                 numeric: true,
                 render: (w) => (
                   <Typography sx={monoSx} level="body-sm">
-                    {formatNumber(w.maxTransferableUsdt)}
+                    {formatNumber(w.maxTransferableUsdt)} USDT
+                    {(w.maxTransferableBase ?? 0) > 0
+                      ? ` · ${formatNumber(w.maxTransferableBase)} ${w.base.asset}`
+                      : ''}
                   </Typography>
                 ),
               },
@@ -754,12 +780,12 @@ export function PortfolioPage() {
                       size="sm"
                       variant="outlined"
                       color="primary"
-                      disabled={
-                        marginPending || w.hasDebt || w.maxTransferableUsdt <= 0.01
-                      }
+                      disabled={marginPending || w.hasDebt || !marginHasSweepable(w)}
                       onClick={() => {
                         if (
-                          !window.confirm(`Transfer max USDT from ${w.symbol} isolated to Spot?`)
+                          !window.confirm(
+                            `Transfer max transferable assets from ${w.symbol} isolated to Spot?`,
+                          )
                         ) {
                           return;
                         }
@@ -775,7 +801,7 @@ export function PortfolioPage() {
                       onClick={() => {
                         if (
                           !window.confirm(
-                            `Settle ${w.symbol}? Repay any borrow, then sweep USDT to Spot.`,
+                            `Settle ${w.symbol}? Repay any borrow, convert free base to USDT on isolated, then sweep to Spot.`,
                           )
                         ) {
                           return;

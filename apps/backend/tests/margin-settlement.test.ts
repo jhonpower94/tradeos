@@ -51,7 +51,13 @@ vi.mock('../src/modules/exchange/index.js', async () => {
       getTicker: vi.fn(async () => ({ symbol: 'INJUSDT', price: 20 })),
       transferIsolatedMargin: vi.fn(async () => undefined),
       repayIsolatedMargin: vi.fn(async () => ({ tranId: 1 })),
-      getMaxTransferable: vi.fn(async () => (pair.base.borrowed > 0 ? 0 : 2000)),
+      getMaxTransferable: vi.fn(async (asset: string) => {
+        if (pair.base.borrowed > 0 || pair.quote.borrowed > 0) return 0;
+        const a = asset.toUpperCase();
+        if (a === 'USDT') return Math.max(0, pair.quote.free);
+        if (a === pair.base.asset.toUpperCase()) return Math.max(0, pair.base.free);
+        return 0;
+      }),
       placeMarginOrder: vi.fn(async () => {
         pair = makePair(0);
         return {
@@ -124,5 +130,135 @@ describe('margin settlement', () => {
     await expect(transferMarginToSpot(userId, 'INJUSDT')).rejects.toMatchObject({
       code: 'MARGIN_DEBT',
     });
+  });
+
+  it('settle converts free base then sweeps USDT', async () => {
+    const { exchangeService } = await import('../src/modules/exchange/index.js');
+    const clear = makePair(0);
+    // 0.5 INJ @ $20 = $10 >= min notional $5 → sellable
+    clear.base.free = 0.5;
+    clear.base.netAsset = 0.5;
+    clear.quote.free = 100;
+    clear.quote.netAsset = 100;
+
+    let usdtLeft = 100;
+    let injLeft = 0.5;
+    vi.mocked(exchangeService.getIsolatedMarginAccount).mockImplementation(async () => [
+      {
+        ...clear,
+        base: { ...clear.base, free: injLeft, netAsset: injLeft },
+        quote: { ...clear.quote, free: usdtLeft, netAsset: usdtLeft },
+      },
+    ]);
+    vi.mocked(exchangeService.getMaxTransferable).mockImplementation(async (asset: string) => {
+      const a = asset.toUpperCase();
+      if (a === 'USDT') return usdtLeft;
+      if (a === 'INJ') return injLeft;
+      return 0;
+    });
+    vi.mocked(exchangeService.placeMarginOrder).mockImplementation(async (params) => {
+      if (params.side === 'SELL') {
+        const px = 20;
+        const qty = Number(params.quantity);
+        injLeft = Math.max(0, injLeft - qty);
+        usdtLeft += qty * px;
+      }
+      return {
+        orderId: '2',
+        symbol: 'INJUSDT',
+        status: 'FILLED',
+        side: String(params.side),
+        type: 'MARKET',
+        price: 20,
+        executedQty: Number(params.quantity),
+        cummulativeQuoteQty: Number(params.quantity) * 20,
+      };
+    });
+    vi.mocked(exchangeService.transferIsolatedMargin).mockImplementation(async (input) => {
+      const a = String(input.asset).toUpperCase();
+      if (a === 'USDT') usdtLeft = Math.max(0, usdtLeft - Number(input.amount));
+      if (a === 'INJ') injLeft = Math.max(0, injLeft - Number(input.amount));
+    });
+
+    const { settleMarginWallet } = await import('../src/modules/portfolio/margin-settlement.js');
+    const result = await settleMarginWallet(userId, 'INJUSDT');
+
+    expect(result.actions).toContain('convert_base');
+    expect(result.actions.some((a) => a === 'transfer' || a === 'transfer_usdt')).toBe(true);
+    expect(result.soldQty).toBe(0.5);
+    expect(result.transferAmount).toBe(110); // 100 + 0.5*20
+    expect(result.baseTransferAmount).toBe(0);
+    expect(exchangeService.placeMarginOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        side: 'SELL',
+        type: 'MARKET',
+        quantity: 0.5,
+        sideEffectType: 'NO_SIDE_EFFECT',
+      }),
+    );
+    expect(exchangeService.transferIsolatedMargin).toHaveBeenCalledWith(
+      expect.objectContaining({ asset: 'USDT', amount: 110, direction: 'to_spot' }),
+    );
+  });
+
+  it('settle transfers dust base when below min notional', async () => {
+    const { exchangeService } = await import('../src/modules/exchange/index.js');
+    const clear = makePair(0);
+    // 0.15 INJ @ $20 = $3 < min notional $5 → unsellable dust
+    clear.base.free = 0.15;
+    clear.base.netAsset = 0.15;
+    clear.quote.free = 100;
+    clear.quote.netAsset = 100;
+
+    let usdtLeft = 100;
+    let injLeft = 0.15;
+    vi.mocked(exchangeService.getIsolatedMarginAccount).mockResolvedValue([clear]);
+    vi.mocked(exchangeService.getMaxTransferable).mockImplementation(async (asset: string) => {
+      const a = asset.toUpperCase();
+      if (a === 'USDT') return usdtLeft;
+      if (a === 'INJ') return injLeft;
+      return 0;
+    });
+    vi.mocked(exchangeService.transferIsolatedMargin).mockImplementation(async (input) => {
+      const a = String(input.asset).toUpperCase();
+      if (a === 'USDT') usdtLeft = Math.max(0, usdtLeft - Number(input.amount));
+      if (a === 'INJ') injLeft = Math.max(0, injLeft - Number(input.amount));
+    });
+
+    const { settleMarginWallet } = await import('../src/modules/portfolio/margin-settlement.js');
+    const result = await settleMarginWallet(userId, 'INJUSDT');
+
+    expect(result.actions).not.toContain('convert_base');
+    expect(result.soldQty).toBe(0);
+    expect(result.actions).toEqual(expect.arrayContaining(['transfer_usdt', 'transfer_base']));
+    expect(result.baseTransferAmount).toBe(0.15);
+    expect(exchangeService.placeMarginOrder).not.toHaveBeenCalled();
+  });
+
+  it('transfer sweeps base without converting', async () => {
+    const { exchangeService } = await import('../src/modules/exchange/index.js');
+    const clear = makePair(0);
+    clear.base.free = 0.2;
+    clear.base.netAsset = 0.2;
+    clear.quote.free = 0;
+    clear.quote.netAsset = 0;
+
+    vi.mocked(exchangeService.getIsolatedMarginAccount).mockResolvedValue([clear]);
+    vi.mocked(exchangeService.getMaxTransferable).mockImplementation(async (asset: string) => {
+      const a = asset.toUpperCase();
+      if (a === 'USDT') return 0;
+      if (a === 'INJ') return 0.2;
+      return 0;
+    });
+
+    const { transferMarginToSpot } = await import('../src/modules/portfolio/margin-settlement.js');
+    const result = await transferMarginToSpot(userId, 'INJUSDT');
+    expect(result.actions).toContain('transfer_base');
+    expect(result.baseTransferAmount).toBe(0.2);
+    expect(result.amount).toBe(0);
+    expect(exchangeService.placeMarginOrder).not.toHaveBeenCalled();
+    expect(exchangeService.transferIsolatedMargin).toHaveBeenCalledWith(
+      expect.objectContaining({ asset: 'INJ', amount: 0.2, direction: 'to_spot' }),
+    );
   });
 });

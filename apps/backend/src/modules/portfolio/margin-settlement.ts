@@ -21,7 +21,9 @@ export interface MarginWalletView {
   quote: IsolatedMarginPairAccount['quote'];
   hasDebt: boolean;
   maxTransferableUsdt: number;
+  maxTransferableBase: number;
   sweepableUsdt: number;
+  sweepableBase: number;
   status: 'clear' | 'debt' | 'ready_to_sweep';
   linkedTradeId?: string;
 }
@@ -34,10 +36,26 @@ function pairHasDebt(pair: IsolatedMarginPairAccount): boolean {
   return borrowTotal(pair.base) > QTY_DUST || borrowTotal(pair.quote) > USDT_DUST;
 }
 
-function walletStatus(pair: IsolatedMarginPairAccount, maxTransferableUsdt: number): MarginWalletView['status'] {
+function transferDust(asset: string): number {
+  return asset.toUpperCase() === 'USDT' ? USDT_DUST : QTY_DUST;
+}
+
+function walletStatus(
+  pair: IsolatedMarginPairAccount,
+  maxTransferableUsdt: number,
+  maxTransferableBase: number,
+): MarginWalletView['status'] {
   if (pairHasDebt(pair)) return 'debt';
-  if (maxTransferableUsdt > USDT_DUST) return 'ready_to_sweep';
+  if (maxTransferableUsdt > USDT_DUST || maxTransferableBase > QTY_DUST) return 'ready_to_sweep';
   return 'clear';
+}
+
+async function readMaxTransferable(asset: string, symbol: string): Promise<number> {
+  try {
+    return await exchangeService.getMaxTransferable(asset, symbol);
+  } catch {
+    return 0;
+  }
 }
 
 async function withLiveMarginExchange(userId: string): Promise<void> {
@@ -116,18 +134,21 @@ export async function listMarginWallets(userId: string): Promise<{ items: Margin
     if (!pair.enabled && !pairHasDebt(pair) && pair.quote.netAsset < USDT_DUST && pair.base.netAsset < QTY_DUST) {
       continue;
     }
-    let maxTransferableUsdt = 0;
-    try {
-      if (pair.quote.asset === 'USDT') {
-        maxTransferableUsdt = await exchangeService.getMaxTransferable('USDT', pair.symbol);
-      }
-    } catch {
-      maxTransferableUsdt = 0;
-    }
+    const maxTransferableUsdt =
+      pair.quote.asset.toUpperCase() === 'USDT'
+        ? await readMaxTransferable('USDT', pair.symbol)
+        : await readMaxTransferable(pair.quote.asset, pair.symbol);
+    const maxTransferableBase =
+      pair.base.free > QTY_DUST || pair.base.netAsset > QTY_DUST
+        ? await readMaxTransferable(pair.base.asset, pair.symbol)
+        : 0;
     const hasDebt = pairHasDebt(pair);
     const sweepableUsdt = hasDebt
       ? 0
       : Math.min(Math.max(0, pair.quote.free), Math.max(0, maxTransferableUsdt));
+    const sweepableBase = hasDebt
+      ? 0
+      : Math.min(Math.max(0, pair.base.free), Math.max(0, maxTransferableBase));
     items.push({
       symbol: pair.symbol,
       marginLevel: pair.marginLevel,
@@ -136,8 +157,10 @@ export async function listMarginWallets(userId: string): Promise<{ items: Margin
       quote: pair.quote,
       hasDebt,
       maxTransferableUsdt,
+      maxTransferableBase,
       sweepableUsdt,
-      status: walletStatus(pair, maxTransferableUsdt),
+      sweepableBase,
+      status: walletStatus(pair, maxTransferableUsdt, maxTransferableBase),
       linkedTradeId: tradeBySymbol.get(pair.symbol),
     });
   }
@@ -287,11 +310,41 @@ export async function repayMarginWallet(
   return { actions, pair };
 }
 
+async function transferAssetToSpot(
+  symbol: string,
+  asset: string,
+  actions: string[],
+  amounts: Record<string, number>,
+  opts?: { amount?: number },
+): Promise<number> {
+  const dust = transferDust(asset);
+  const max = await readMaxTransferable(asset, symbol);
+  const capped =
+    opts?.amount != null ? Math.min(opts.amount, Math.max(0, max)) : Math.max(0, max);
+  const amount = Number(capped.toFixed(8));
+  if (amount <= dust) return 0;
+  await exchangeService.transferIsolatedMargin({
+    asset,
+    symbol,
+    amount,
+    direction: 'to_spot',
+  });
+  const key = asset.toUpperCase();
+  amounts[key] = (amounts[key] ?? 0) + amount;
+  actions.push(asset.toUpperCase() === 'USDT' ? 'transfer_usdt' : 'transfer_base');
+  return amount;
+}
+
 export async function transferMarginToSpot(
   userId: string,
   symbol: string,
   opts?: { amount?: number },
-): Promise<{ actions: string[]; amount: number }> {
+): Promise<{
+  actions: string[];
+  amount: number;
+  amounts: Record<string, number>;
+  baseTransferAmount: number;
+}> {
   await withLiveMarginExchange(userId);
   const pair = await getPairOrThrow(symbol);
   if (pairHasDebt(pair)) {
@@ -301,39 +354,107 @@ export async function transferMarginToSpot(
       400,
     );
   }
-  if (pair.quote.asset !== 'USDT') {
-    throw new AppError('UNSUPPORTED', 'v1 transfers USDT quote only', 400);
+
+  const actions: string[] = [];
+  const amounts: Record<string, number> = {};
+
+  // Quote first (optional amount caps quote only), then base, then quote retry when
+  // doing a full sweep so residual free after base leaves can still move out.
+  await transferAssetToSpot(symbol, pair.quote.asset, actions, amounts, {
+    amount: opts?.amount,
+  });
+  await transferAssetToSpot(symbol, pair.base.asset, actions, amounts);
+  if (opts?.amount == null) {
+    await transferAssetToSpot(symbol, pair.quote.asset, actions, amounts);
   }
-  const max = await exchangeService.getMaxTransferable('USDT', symbol);
-  if (max <= USDT_DUST) {
+
+  const amount = amounts[pair.quote.asset.toUpperCase()] ?? 0;
+  const baseTransferAmount = amounts[pair.base.asset.toUpperCase()] ?? 0;
+  if (amount <= transferDust(pair.quote.asset) && baseTransferAmount <= transferDust(pair.base.asset)) {
     throw new AppError(
       'TRANSFER_BLOCKED',
-      `Binance max transferable USDT is ${max.toFixed(4)} for ${symbol} (margin level may be too low)`,
+      `Nothing transferable out of isolated ${symbol}`,
       400,
     );
   }
-  const amount = Number(
-    (opts?.amount != null ? Math.min(opts.amount, max) : max).toFixed(8),
-  );
-  if (amount <= USDT_DUST) {
-    throw new AppError('TRANSFER_BLOCKED', 'Nothing to transfer', 400);
+  // Keep legacy `transfer` alias when only a single USDT move happened for older clients/tests.
+  if (actions.length === 1 && actions[0] === 'transfer_usdt') {
+    actions[0] = 'transfer';
   }
-  await exchangeService.transferIsolatedMargin({
-    asset: 'USDT',
+  return { actions, amount, amounts, baseTransferAmount };
+}
+
+/**
+ * Market-sell free isolated base into quote (USDT) when above min notional.
+ * Dust below min notional is left for the subsequent base→Spot transfer fallback.
+ */
+export async function convertFreeBaseToUsdt(
+  userId: string,
+  symbol: string,
+): Promise<{ actions: string[]; soldQty: number }> {
+  await withLiveMarginExchange(userId);
+  const actions: string[] = [];
+  const pair = await getPairOrThrow(symbol);
+  if (pairHasDebt(pair)) {
+    throw new AppError(
+      'MARGIN_DEBT',
+      'Repay borrowed assets before converting isolated base',
+      400,
+    );
+  }
+  if (pair.quote.asset.toUpperCase() !== 'USDT') {
+    return { actions, soldQty: 0 };
+  }
+
+  const freeBase = Math.max(0, pair.base.free);
+  if (freeBase <= QTY_DUST) return { actions, soldQty: 0 };
+
+  await exchangeService.getExchangeInfo();
+  let price = 0;
+  try {
+    price = (await exchangeService.getTicker(symbol)).price;
+  } catch {
+    /* */
+  }
+  const qty = exchangeService.roundQty(symbol, freeBase);
+  if (!(qty > 0)) return { actions, soldQty: 0 };
+
+  const { minNotional } = exchangeService.getLotSize(symbol);
+  if (price > 0 && qty * price < minNotional) {
+    return { actions, soldQty: 0 };
+  }
+
+  await exchangeService.placeMarginOrder({
     symbol,
-    amount,
-    direction: 'to_spot',
+    side: Side.SELL,
+    type: OrderType.MARKET,
+    quantity: qty,
+    sideEffectType: 'NO_SIDE_EFFECT',
   });
-  return { actions: ['transfer'], amount };
+  actions.push('convert_base');
+  return { actions, soldQty: qty };
 }
 
 export async function settleMarginWallet(
   userId: string,
   symbol: string,
-): Promise<{ actions: string[]; transferAmount: number }> {
+): Promise<{
+  actions: string[];
+  transferAmount: number;
+  amounts: Record<string, number>;
+  baseTransferAmount: number;
+  soldQty: number;
+}> {
   const repay = await repayMarginWallet(userId, symbol);
+  const convert = await convertFreeBaseToUsdt(userId, symbol);
   const xfer = await transferMarginToSpot(userId, symbol);
-  return { actions: [...repay.actions, ...xfer.actions], transferAmount: xfer.amount };
+  return {
+    actions: [...repay.actions, ...convert.actions, ...xfer.actions],
+    transferAmount: xfer.amount,
+    amounts: xfer.amounts,
+    baseTransferAmount: xfer.baseTransferAmount,
+    soldQty: convert.soldQty,
+  };
 }
 
 export async function reconcileIsolatedSymbol(
@@ -344,20 +465,20 @@ export async function reconcileIsolatedSymbol(
   try {
     await withLiveMarginExchange(userId);
     let pair = await getPairOrThrow(symbol);
+    const anySweepable = async (p: IsolatedMarginPairAccount): Promise<boolean> => {
+      const quoteMax = await readMaxTransferable(p.quote.asset, symbol);
+      const baseMax = await readMaxTransferable(p.base.asset, symbol);
+      return quoteMax > transferDust(p.quote.asset) || baseMax > transferDust(p.base.asset);
+    };
+
     if (!pairHasDebt(pair)) {
-      let max = 0;
-      try {
-        max = await exchangeService.getMaxTransferable('USDT', symbol);
-      } catch {
-        /* */
-      }
-      const status: MarginSettlementStatus = max > USDT_DUST ? 'sweepable' : 'settled';
+      const sweepable = await anySweepable(pair);
+      const status: MarginSettlementStatus = sweepable ? 'sweepable' : 'settled';
       return {
         status,
-        message:
-          status === 'sweepable'
-            ? 'No debt; USDT can be swept to Spot'
-            : 'Isolated wallet clear',
+        message: sweepable
+          ? 'No debt; transferable assets can be swept to Spot'
+          : 'Isolated wallet clear',
         actions,
       };
     }
@@ -378,15 +499,12 @@ export async function reconcileIsolatedSymbol(
         actions,
       };
     }
-    let max = 0;
-    try {
-      max = await exchangeService.getMaxTransferable('USDT', symbol);
-    } catch {
-      /* */
-    }
+    const sweepable = await anySweepable(pair);
     return {
-      status: max > USDT_DUST ? 'sweepable' : 'settled',
-      message: max > USDT_DUST ? 'Debt cleared; sweep USDT to Spot when ready' : 'Debt cleared',
+      status: sweepable ? 'sweepable' : 'settled',
+      message: sweepable
+        ? 'Debt cleared; sweep transferable assets to Spot when ready'
+        : 'Debt cleared',
       actions,
     };
   } catch (e) {
