@@ -71,6 +71,16 @@ vi.mock('../src/modules/exchange/index.js', async () => {
           cummulativeQuoteQty: 375,
         };
       }),
+      placeOrder: vi.fn(async () => ({
+        orderId: '3',
+        symbol: 'INJUSDT',
+        status: 'FILLED',
+        side: 'SELL',
+        type: 'MARKET',
+        price: 20,
+        executedQty: 0,
+        cummulativeQuoteQty: 0,
+      })),
       getExchangeInfo: vi.fn(async () => []),
       getLotSize: vi.fn(() => ({ stepSize: 0.01, minQty: 0.01, minNotional: 5 })),
       roundQty: vi.fn((_: string, qty: number) => Math.floor(qty * 100) / 100),
@@ -212,6 +222,7 @@ describe('margin settlement', () => {
 
     let usdtLeft = 100;
     let injLeft = 0.15;
+    let spotInj = 0;
     vi.mocked(exchangeService.getIsolatedMarginAccount).mockResolvedValue([clear]);
     vi.mocked(exchangeService.getMaxTransferable).mockImplementation(async (asset: string) => {
       const a = asset.toUpperCase();
@@ -222,17 +233,102 @@ describe('margin settlement', () => {
     vi.mocked(exchangeService.transferIsolatedMargin).mockImplementation(async (input) => {
       const a = String(input.asset).toUpperCase();
       if (a === 'USDT') usdtLeft = Math.max(0, usdtLeft - Number(input.amount));
-      if (a === 'INJ') injLeft = Math.max(0, injLeft - Number(input.amount));
+      if (a === 'INJ') {
+        injLeft = Math.max(0, injLeft - Number(input.amount));
+        spotInj += Number(input.amount);
+      }
+    });
+    vi.mocked(exchangeService.getBalances).mockImplementation(async () => [
+      { asset: 'USDT', free: usdtLeft + 10_000, locked: 0 },
+      { asset: 'INJ', free: spotInj, locked: 0 },
+    ]);
+
+    const { settleMarginWallet } = await import('../src/modules/portfolio/margin-settlement.js');
+    const result = await settleMarginWallet(userId, 'INJUSDT');
+
+    expect(result.actions).not.toContain('convert_base');
+    expect(result.actions).not.toContain('convert_spot_base');
+    expect(result.soldQty).toBe(0);
+    expect(result.actions).toEqual(expect.arrayContaining(['transfer_usdt', 'transfer_base']));
+    expect(result.baseTransferAmount).toBe(0.15);
+    expect(result.convertSkipped).toMatch(/min notional/i);
+    expect(exchangeService.placeMarginOrder).not.toHaveBeenCalled();
+    expect(exchangeService.placeOrder).not.toHaveBeenCalled();
+  });
+
+  it('settle converts on spot after transferring sellable base', async () => {
+    const { exchangeService } = await import('../src/modules/exchange/index.js');
+    const clear = makePair(0);
+    // Soft-skip isolated (force via getLotSize), then spot sell after transfer.
+    clear.base.free = 0.5;
+    clear.base.netAsset = 0.5;
+    clear.quote.free = 50;
+    clear.quote.netAsset = 50;
+
+    let usdtIso = 50;
+    let injIso = 0.5;
+    let spotInj = 0;
+    let spotUsdt = 0;
+    vi.mocked(exchangeService.getLotSize).mockReturnValue({
+      stepSize: 0.01,
+      minQty: 0.01,
+      minNotional: 20, // isolated soft-skip: 0.5*20=10 < 20*0.9
+    });
+    vi.mocked(exchangeService.getIsolatedMarginAccount).mockImplementation(async () => [
+      {
+        ...clear,
+        base: { ...clear.base, free: injIso, netAsset: injIso },
+        quote: { ...clear.quote, free: usdtIso, netAsset: usdtIso },
+      },
+    ]);
+    vi.mocked(exchangeService.getMaxTransferable).mockImplementation(async (asset: string) => {
+      const a = asset.toUpperCase();
+      if (a === 'USDT') return usdtIso;
+      if (a === 'INJ') return injIso;
+      return 0;
+    });
+    vi.mocked(exchangeService.transferIsolatedMargin).mockImplementation(async (input) => {
+      const a = String(input.asset).toUpperCase();
+      if (a === 'USDT') usdtIso = Math.max(0, usdtIso - Number(input.amount));
+      if (a === 'INJ') {
+        injIso = Math.max(0, injIso - Number(input.amount));
+        spotInj += Number(input.amount);
+      }
+    });
+    vi.mocked(exchangeService.getBalances).mockImplementation(async () => [
+      { asset: 'USDT', free: spotUsdt, locked: 0 },
+      { asset: 'INJ', free: spotInj, locked: 0 },
+    ]);
+    // Spot path uses a lower min notional so convert can succeed after transfer.
+    vi.mocked(exchangeService.getLotSize)
+      .mockReturnValueOnce({ stepSize: 0.01, minQty: 0.01, minNotional: 20 }) // isolated size
+      .mockReturnValue({ stepSize: 0.01, minQty: 0.01, minNotional: 5 }); // spot size
+    vi.mocked(exchangeService.placeOrder).mockImplementation(async (params) => {
+      const qty = Number(params.quantity);
+      spotInj = Math.max(0, spotInj - qty);
+      spotUsdt += qty * 20;
+      return {
+        orderId: '9',
+        symbol: 'INJUSDT',
+        status: 'FILLED',
+        side: 'SELL',
+        type: 'MARKET',
+        price: 20,
+        executedQty: qty,
+        cummulativeQuoteQty: qty * 20,
+      };
     });
 
     const { settleMarginWallet } = await import('../src/modules/portfolio/margin-settlement.js');
     const result = await settleMarginWallet(userId, 'INJUSDT');
 
     expect(result.actions).not.toContain('convert_base');
-    expect(result.soldQty).toBe(0);
-    expect(result.actions).toEqual(expect.arrayContaining(['transfer_usdt', 'transfer_base']));
-    expect(result.baseTransferAmount).toBe(0.15);
-    expect(exchangeService.placeMarginOrder).not.toHaveBeenCalled();
+    expect(result.actions).toContain('convert_spot_base');
+    expect(result.soldQty).toBe(0.5);
+    expect(result.convertSkipped).toBeUndefined();
+    expect(exchangeService.placeOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ side: 'SELL', quantity: 0.5 }),
+    );
   });
 
   it('transfer sweeps base without converting', async () => {

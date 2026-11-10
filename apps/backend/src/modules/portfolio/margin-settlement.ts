@@ -384,9 +384,33 @@ export async function transferMarginToSpot(
   return { actions, amount, amounts, baseTransferAmount };
 }
 
+function isUnsellableFilterError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  return /NOTIONAL|MIN_NOTIONAL|LOT_SIZE|MIN_QTY|insufficient balance|Insufficient/i.test(msg);
+}
+
+async function sizeSellableBaseQty(
+  symbol: string,
+  freeBase: number,
+): Promise<{ qty: number; price: number; minNotional: number; estimated: number }> {
+  const sym = symbol.toUpperCase();
+  await exchangeService.getExchangeInfo();
+  let price = 0;
+  try {
+    price = (await exchangeService.getTicker(sym)).price;
+  } catch {
+    /* */
+  }
+  const qty = exchangeService.roundQty(sym, freeBase);
+  const { minNotional } = exchangeService.getLotSize(sym);
+  const estimated = price > 0 && qty > 0 ? qty * price : 0;
+  return { qty, price, minNotional, estimated };
+}
+
 /**
- * Market-sell free isolated base into quote (USDT) when above min notional.
- * Dust below min notional is left for the subsequent base→Spot transfer fallback.
+ * Market-sell free isolated base into quote (USDT) when Binance will accept the order.
+ * Soft-skips only when clearly under min notional; otherwise attempts sell and
+ * treats filter rejections as skip so settle can fall back to transfer + spot sell.
  */
 export async function convertFreeBaseToUsdt(
   userId: string,
@@ -394,7 +418,8 @@ export async function convertFreeBaseToUsdt(
 ): Promise<{ actions: string[]; soldQty: number }> {
   await withLiveMarginExchange(userId);
   const actions: string[] = [];
-  const pair = await getPairOrThrow(symbol);
+  const sym = symbol.toUpperCase();
+  const pair = await getPairOrThrow(sym);
   if (pairHasDebt(pair)) {
     throw new AppError(
       'MARGIN_DEBT',
@@ -409,29 +434,68 @@ export async function convertFreeBaseToUsdt(
   const freeBase = Math.max(0, pair.base.free);
   if (freeBase <= QTY_DUST) return { actions, soldQty: 0 };
 
-  await exchangeService.getExchangeInfo();
-  let price = 0;
-  try {
-    price = (await exchangeService.getTicker(symbol)).price;
-  } catch {
-    /* */
-  }
-  const qty = exchangeService.roundQty(symbol, freeBase);
+  const { qty, price, minNotional, estimated } = await sizeSellableBaseQty(sym, freeBase);
   if (!(qty > 0)) return { actions, soldQty: 0 };
-
-  const { minNotional } = exchangeService.getLotSize(symbol);
-  if (price > 0 && qty * price < minNotional) {
+  // Soft skip only when clearly unsellable; try when near the floor (estimate can be off).
+  if (price > 0 && estimated < minNotional * 0.9) {
     return { actions, soldQty: 0 };
   }
 
-  await exchangeService.placeMarginOrder({
-    symbol,
-    side: Side.SELL,
-    type: OrderType.MARKET,
-    quantity: qty,
-    sideEffectType: 'NO_SIDE_EFFECT',
-  });
+  try {
+    await exchangeService.placeMarginOrder({
+      symbol: sym,
+      side: Side.SELL,
+      type: OrderType.MARKET,
+      quantity: qty,
+      sideEffectType: 'NO_SIDE_EFFECT',
+    });
+  } catch (err) {
+    if (isUnsellableFilterError(err)) return { actions, soldQty: 0 };
+    throw err;
+  }
   actions.push('convert_base');
+  return { actions, soldQty: qty };
+}
+
+/**
+ * After settle transfers base to Spot, market-sell only that transferred amount
+ * (never the user's pre-existing Spot inventory of the same asset).
+ */
+export async function convertSpotBaseToUsdt(
+  userId: string,
+  symbol: string,
+  baseAsset: string,
+  maxQty: number,
+): Promise<{ actions: string[]; soldQty: number }> {
+  await withLiveMarginExchange(userId);
+  const actions: string[] = [];
+  const sym = symbol.toUpperCase();
+  const asset = baseAsset.toUpperCase();
+  if (asset === 'USDT' || !(maxQty > QTY_DUST)) return { actions, soldQty: 0 };
+
+  const balances = await exchangeService.getBalances();
+  const freeBase = Math.max(0, balances.find((b) => b.asset.toUpperCase() === asset)?.free ?? 0);
+  const target = Math.min(freeBase, maxQty);
+  if (target <= QTY_DUST) return { actions, soldQty: 0 };
+
+  const { qty, price, minNotional, estimated } = await sizeSellableBaseQty(sym, target);
+  if (!(qty > 0)) return { actions, soldQty: 0 };
+  if (price > 0 && estimated < minNotional * 0.9) {
+    return { actions, soldQty: 0 };
+  }
+
+  try {
+    await exchangeService.placeOrder({
+      symbol: sym,
+      side: Side.SELL,
+      type: OrderType.MARKET,
+      quantity: qty,
+    });
+  } catch (err) {
+    if (isUnsellableFilterError(err)) return { actions, soldQty: 0 };
+    throw err;
+  }
+  actions.push('convert_spot_base');
   return { actions, soldQty: qty };
 }
 
@@ -444,16 +508,33 @@ export async function settleMarginWallet(
   amounts: Record<string, number>;
   baseTransferAmount: number;
   soldQty: number;
+  convertSkipped?: string;
 }> {
-  const repay = await repayMarginWallet(userId, symbol);
-  const convert = await convertFreeBaseToUsdt(userId, symbol);
-  const xfer = await transferMarginToSpot(userId, symbol);
+  const sym = symbol.toUpperCase();
+  const repay = await repayMarginWallet(userId, sym);
+  const convertIso = await convertFreeBaseToUsdt(userId, sym);
+  const pairAfterConvert = await getPairOrThrow(sym);
+  const baseAsset = pairAfterConvert.base.asset;
+  const xfer = await transferMarginToSpot(userId, sym);
+  const transferredBase = xfer.amounts[baseAsset.toUpperCase()] ?? xfer.baseTransferAmount;
+  const convertSpot = await convertSpotBaseToUsdt(userId, sym, baseAsset, transferredBase);
+  const soldQty = convertIso.soldQty + convertSpot.soldQty;
+  const convertSkipped =
+    transferredBase > QTY_DUST && convertSpot.soldQty <= QTY_DUST
+      ? `${baseAsset} below Binance min notional to sell; left on Spot`
+      : undefined;
   return {
-    actions: [...repay.actions, ...convert.actions, ...xfer.actions],
+    actions: [
+      ...repay.actions,
+      ...convertIso.actions,
+      ...xfer.actions,
+      ...convertSpot.actions,
+    ],
     transferAmount: xfer.amount,
     amounts: xfer.amounts,
     baseTransferAmount: xfer.baseTransferAmount,
-    soldQty: convert.soldQty,
+    soldQty,
+    convertSkipped,
   };
 }
 

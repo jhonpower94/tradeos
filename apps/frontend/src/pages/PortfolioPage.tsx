@@ -152,8 +152,12 @@ export function PortfolioPage() {
   });
   const marginSettle = useMutation({
     mutationFn: (symbol: string) => portfolioApi.marginSettle(symbol),
-    onSuccess: () => {
-      setMarginActionError(null);
+    onSuccess: (data: {
+      convertSkipped?: string;
+      soldQty?: number;
+      baseTransferAmount?: number;
+    }) => {
+      setMarginActionError(data?.convertSkipped ? data.convertSkipped : null);
       void qc.invalidateQueries({ queryKey: ['margin-wallets'] });
       void qc.invalidateQueries({ queryKey: ['portfolio'] });
       void qc.invalidateQueries({ queryKey: ['positions'] });

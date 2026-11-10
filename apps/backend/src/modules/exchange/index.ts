@@ -420,10 +420,12 @@ export class ExchangeService {
   }
 
   getLotSize(symbol: string): { stepSize: number; minQty: number; minNotional: number } {
-    const info = this.symbolCache?.find((s) => s.symbol === symbol);
+    const sym = symbol.toUpperCase();
+    const info = this.symbolCache?.find((s) => s.symbol === sym);
     let stepSize = 0.00001;
     let minQty = 0.00001;
-    let minNotional = 10;
+    // Binance USDT pairs commonly use 5; avoid over-skipping converts with a high default.
+    let minNotional = 5;
     if (info) {
       for (const f of info.filters) {
         if (f.filterType === 'LOT_SIZE') {
@@ -431,7 +433,7 @@ export class ExchangeService {
           minQty = Number(f.minQty);
         }
         if (f.filterType === 'NOTIONAL' || f.filterType === 'MIN_NOTIONAL') {
-          minNotional = Number(f.minNotional ?? f.notional ?? 10);
+          minNotional = Number(f.minNotional ?? f.notional ?? 5);
         }
       }
     }
