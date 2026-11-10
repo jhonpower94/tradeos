@@ -45,7 +45,7 @@ import { PasswordField } from '../components/PasswordField';
 import { KeyValueList } from '../components/ResponsiveRecordList';
 import { InstallAppButton } from '../components/InstallAppButton';
 import { usePwaInstall } from '../hooks/usePwaInstall';
-import { formatCurrency, formatDateTime, formatNumber } from '../utils/format';
+import { formatDateTime, formatNumber } from '../utils/format';
 import { monoSx } from '../theme/theme';
 import { useAuthStore } from '../stores/authStore';
 
@@ -305,12 +305,6 @@ export function SettingsPage() {
     queryKey: ['paper-ledger'],
     queryFn: portfolioApi.ledger,
     enabled: isPaper && tab === 3,
-  });
-  const { data: portfolioSummary } = useQuery({
-    queryKey: ['portfolio'],
-    queryFn: portfolioApi.summary,
-    enabled: tab === 1,
-    refetchInterval: tab === 1 ? 15_000 : false,
   });
 
   useEffect(() => {
@@ -632,53 +626,15 @@ export function SettingsPage() {
         const maxDailyFrac = Number(data.risk?.maxDailyLoss ?? 0.05);
         const maxOpen = Number(data.risk?.maxOpenPositions ?? 5);
         const minNotional = Number(data.risk?.minNotionalPerTrade ?? 1000);
-        const equity = Number(portfolioSummary?.equity ?? 0);
-        const freeQuote = Number(portfolioSummary?.freeQuote ?? 0);
-        const openCount = Number(portfolioSummary?.openPositions ?? 0);
-        const remainingSlots = Math.max(0, maxOpen - openCount);
-        const slotTarget = remainingSlots > 0 ? freeQuote / remainingSlots : 0;
-        const estNotional =
-          remainingSlots > 0 ? Math.min(freeQuote, Math.max(slotTarget, 0)) : 0;
-        const canFundMin = minNotional <= 0 || estNotional + 1e-9 >= minNotional;
-        const typicalNotional =
-          remainingSlots <= 0
-            ? 0
-            : canFundMin && minNotional > 0
-              ? Math.max(estNotional, minNotional)
-              : estNotional;
-        const onePctMove = typicalNotional * 0.01;
-        const riskAtStopTarget = equity * maxRiskFrac;
 
         return (
           <Sheet variant="outlined" sx={panelSx}>
             {maxRiskFrac >= 0.2 && (
               <Alert color="warning" variant="soft" sx={{ mb: 1.5 }}>
                 Risk is very high (≥20% of equity at stop). Current setting:{' '}
-                {formatNumber(fractionToPercent(maxRiskFrac), 2)}% (
-                {formatCurrency(riskAtStopTarget)} on current equity).
+                {formatNumber(fractionToPercent(maxRiskFrac), 2)}%.
               </Alert>
             )}
-            <Alert color="neutral" variant="soft" sx={{ mb: 1.5 }}>
-              <Typography level="title-sm" sx={{ mb: 0.5 }}>
-                Live size preview
-              </Typography>
-              <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                Equity {formatCurrency(equity)} · Free USDT {formatCurrency(freeQuote)} · Open{' '}
-                {openCount}/{maxOpen} (remaining slots {remainingSlots})
-              </Typography>
-              <Typography level="body-sm" sx={{ color: 'text.secondary', mt: 0.25 }}>
-                Slot target ≈ {formatCurrency(slotTarget)}
-                {minNotional > 0 ? ` · Min notional floor ${formatCurrency(minNotional)}` : ''}
-                {!canFundMin && minNotional > 0
-                  ? ' · Slot below min — new entries may be blocked until you free USDT or lower min/slots'
-                  : ''}
-              </Typography>
-              <Typography level="body-sm" sx={{ mt: 0.5 }}>
-                Typical next trade ≈ {formatCurrency(typicalNotional)} notional · ~1% price move ≈{' '}
-                {formatCurrency(onePctMove)} uPnL (before fees). Target $ at stop ≈{' '}
-                {formatCurrency(riskAtStopTarget)}.
-              </Typography>
-            </Alert>
             <SettingsNumberField
               label="Max risk per trade (%)"
               value={fractionToPercent(maxRiskFrac)}
