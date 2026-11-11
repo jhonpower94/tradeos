@@ -1112,11 +1112,13 @@ export function SettingsPage() {
 
       {tab === 5 && (
         <Sheet variant="outlined" sx={panelSx}>
-          <Typography level="title-sm">Web Push (per-trade profit highs)</Typography>
+          <Typography level="title-sm">Web Push (per-trade uPnL highs &amp; lows)</Typography>
           <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
-            Works with the tab closed. Requires HTTPS or localhost, and VAPID keys (
+            Works with the tab closed after you enable notifications below (iPhone: install to Home
+            Screen first). Requires HTTPS or localhost and VAPID keys (
             <code>npm run setup:vapid</code> once). Alerts fire when an open trade&apos;s uPnL sets a
-            new high at least $1 above its previous peak.
+            new high or low at least $1 beyond its previous extreme. Without push enabled, you will
+            not get alerts while the app is closed.
           </Typography>
 
           {pwaInstall.showInstallCta && (

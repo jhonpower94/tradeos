@@ -643,6 +643,8 @@ export async function partialClosePosition(
   trade.qty = remaining;
   await trade.save();
 
+  const prevQty = position.qty;
+  const scale = remaining / Math.max(prevQty, 1e-12);
   position.qty = remaining;
   position.currentPrice = price;
   position.unrealizedPnl = calcNetPnl(
@@ -652,6 +654,9 @@ export async function partialClosePosition(
     remaining,
     feeRate,
   );
+  // Keep high/low alerts reachable after partial TP (old peak was for full size).
+  position.peakUnrealizedPnl = (position.peakUnrealizedPnl ?? 0) * scale;
+  position.troughUnrealizedPnl = (position.troughUnrealizedPnl ?? 0) * scale;
   await position.save();
 
   await createJournalFromTrade(trade, position, reason, {

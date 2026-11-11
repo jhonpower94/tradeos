@@ -48,6 +48,70 @@ import {
 } from '../src/modules/notifications/web-push.js';
 import { PushSubscription } from '../src/models/PushSubscription.js';
 
+import { shouldCommitProfitExtreme } from '../src/modules/notifications/index.js';
+
+describe('shouldCommitProfitExtreme', () => {
+  it('commits when push is not configured', () => {
+    expect(
+      shouldCommitProfitExtreme({
+        browserRecorded: false,
+        pushConfigured: false,
+        pushAttempted: 0,
+        pushSent: 0,
+        externalSent: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('commits when user has no push endpoints', () => {
+    expect(
+      shouldCommitProfitExtreme({
+        browserRecorded: false,
+        pushConfigured: true,
+        pushAttempted: 0,
+        pushSent: 0,
+        externalSent: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('does not commit when push was attempted but none sent', () => {
+    expect(
+      shouldCommitProfitExtreme({
+        browserRecorded: false,
+        pushConfigured: true,
+        pushAttempted: 2,
+        pushSent: 0,
+        externalSent: false,
+      }),
+    ).toBe(false);
+  });
+
+  it('commits when at least one push was sent', () => {
+    expect(
+      shouldCommitProfitExtreme({
+        browserRecorded: true,
+        pushConfigured: true,
+        pushAttempted: 2,
+        pushSent: 1,
+        externalSent: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('commits when an external channel delivered', () => {
+    expect(
+      shouldCommitProfitExtreme({
+        browserRecorded: false,
+        pushConfigured: true,
+        pushAttempted: 1,
+        pushSent: 0,
+        externalSent: true,
+      }),
+    ).toBe(true);
+  });
+});
+
 describe('shouldNotifyProfitHigh', () => {
   it('does not notify when upnl is not positive', () => {
     expect(shouldNotifyProfitHigh(0, 0).notify).toBe(false);

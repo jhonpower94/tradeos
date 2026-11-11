@@ -1,6 +1,6 @@
 import { Side } from '@trading-os/shared';
 import { exchangeService, type OrderResult } from '../exchange/index.js';
-import { getTickerPrice, setTickerPrice } from '../market-data/index.js';
+import { getTickerPrice, getTickerPriceAgeMs, setTickerPrice } from '../market-data/index.js';
 
 export function estimateExitFee(price: number, qty: number, feeRate: number): number {
   return price * qty * feeRate;
@@ -35,10 +35,15 @@ export function fillPriceFromOrder(order: Pick<OrderResult, 'executedQty' | 'cum
 export async function resolveMarkPrice(
   symbol: string,
   fallback?: number,
-  opts?: { allowRest?: boolean },
+  opts?: { allowRest?: boolean; maxAgeMs?: number },
 ): Promise<number | undefined> {
   const cached = getTickerPrice(symbol);
-  if (cached != null && cached > 0) return cached;
+  const age = getTickerPriceAgeMs(symbol);
+  const fresh =
+    cached != null &&
+    cached > 0 &&
+    (opts?.maxAgeMs == null || (age != null && age <= opts.maxAgeMs));
+  if (fresh) return cached;
 
   if (opts?.allowRest !== false) {
     try {
@@ -52,6 +57,7 @@ export async function resolveMarkPrice(
     }
   }
 
+  if (cached != null && cached > 0) return cached;
   if (fallback != null && fallback > 0) return fallback;
   return undefined;
 }

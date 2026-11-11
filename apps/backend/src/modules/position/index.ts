@@ -3,12 +3,15 @@ import { Position } from '../../models/Position.js';
 import { Trade } from '../../models/Trade.js';
 import { getTickerPrice } from '../market-data/index.js';
 import { closePosition, partialClosePosition } from '../trade/index.js';
-import { calcNetPnl } from '../trade/pricing.js';
+import { calcNetPnl, resolveMarkPrice } from '../trade/pricing.js';
 import { getRawSettings } from '../settings/index.js';
 import { AppError } from '../../utils/errors.js';
 import { config } from '../../config/index.js';
-import { notify } from '../notifications/index.js';
+import { notify, shouldCommitProfitExtreme } from '../notifications/index.js';
 import { shouldNotifyProfitHigh, shouldNotifyProfitLow } from './profit-high.js';
+
+/** Prefer fresh WS marks; REST fallback when cache is missing or older than this. */
+const MARK_PRICE_MAX_AGE_MS = 8_000;
 
 export function calcUnrealizedPnl(
   side: Side,
@@ -185,8 +188,12 @@ export async function markPositions(userId?: string) {
   const feeCache = new Map<string, number>();
 
   for (const p of positions) {
-    // Cache-first mark (WS); avoid REST storms in the hot loop
-    const price = getTickerPrice(p.symbol) ?? p.currentPrice;
+    // WS cache when fresh; REST if missing/stale so closed-app alerts are not skipped.
+    const price =
+      (await resolveMarkPrice(p.symbol, p.currentPrice, {
+        allowRest: true,
+        maxAgeMs: MARK_PRICE_MAX_AGE_MS,
+      })) ?? p.currentPrice;
     p.currentPrice = price;
 
     const uid = String(p.userId);
@@ -211,39 +218,53 @@ export async function markPositions(userId?: string) {
     const trough = p.troughUnrealizedPnl ?? 0;
     const high = shouldNotifyProfitHigh(upnl, peak);
     if (high.notify) {
-      p.peakUnrealizedPnl = high.newPeak;
       try {
-        await notify(uid, NotificationType.PROFIT_HIGH, {
-          title: `${p.symbol} new profit high`,
-          body: `uPnL ${upnl.toFixed(2)} (was ${peak.toFixed(2)})`,
-          payload: {
-            positionId: String(p._id),
-            tradeId: String(p.tradeId),
-            upnl,
-            peak,
+        const delivered = await notify(
+          uid,
+          NotificationType.PROFIT_HIGH,
+          {
+            title: `${p.symbol} new profit high`,
+            body: `uPnL ${upnl.toFixed(2)} (was ${peak.toFixed(2)})`,
+            payload: {
+              positionId: String(p._id),
+              tradeId: String(p.tradeId),
+              upnl,
+              peak,
+            },
           },
-        });
+          { requireReachableDevice: true },
+        );
+        if (shouldCommitProfitExtreme(delivered)) {
+          p.peakUnrealizedPnl = high.newPeak;
+        }
       } catch {
-        // don't block marking
+        // don't block marking; leave peak so next tick can retry
       }
     }
 
     const low = shouldNotifyProfitLow(upnl, trough);
     if (low.notify) {
-      p.troughUnrealizedPnl = low.newTrough;
       try {
-        await notify(uid, NotificationType.PROFIT_LOW, {
-          title: `${p.symbol} new uPnL low`,
-          body: `uPnL ${upnl.toFixed(2)} (was ${trough.toFixed(2)})`,
-          payload: {
-            positionId: String(p._id),
-            tradeId: String(p.tradeId),
-            upnl,
-            trough,
+        const delivered = await notify(
+          uid,
+          NotificationType.PROFIT_LOW,
+          {
+            title: `${p.symbol} new uPnL low`,
+            body: `uPnL ${upnl.toFixed(2)} (was ${trough.toFixed(2)})`,
+            payload: {
+              positionId: String(p._id),
+              tradeId: String(p.tradeId),
+              upnl,
+              trough,
+            },
           },
-        });
+          { requireReachableDevice: true },
+        );
+        if (shouldCommitProfitExtreme(delivered)) {
+          p.troughUnrealizedPnl = low.newTrough;
+        }
       } catch {
-        // don't block marking
+        // don't block marking; leave trough so next tick can retry
       }
     }
 

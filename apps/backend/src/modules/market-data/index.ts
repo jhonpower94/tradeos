@@ -80,13 +80,23 @@ export class MarketDataService {
 }
 
 const tickerPrices = new Map<string, number>();
+const tickerPriceAt = new Map<string, number>();
 
 export function setTickerPrice(symbol: string, price: number) {
-  tickerPrices.set(symbol, price);
+  const sym = symbol.toUpperCase();
+  tickerPrices.set(sym, price);
+  tickerPriceAt.set(sym, Date.now());
 }
 
 export function getTickerPrice(symbol: string): number | undefined {
-  return tickerPrices.get(symbol);
+  return tickerPrices.get(symbol.toUpperCase());
+}
+
+/** Age of cached ticker in ms, or null if missing. */
+export function getTickerPriceAgeMs(symbol: string): number | null {
+  const at = tickerPriceAt.get(symbol.toUpperCase());
+  if (at == null) return null;
+  return Date.now() - at;
 }
 
 export const marketDataService = new MarketDataService();
