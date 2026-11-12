@@ -9,6 +9,7 @@ import Select from '@mui/joy/Select';
 import Sheet from '@mui/joy/Sheet';
 import Typography from '@mui/joy/Typography';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import axios from 'axios';
 import { scannerApi } from '../api';
 import { useLiveStore } from '../stores/liveStore';
 import { RegimeChip } from '../components/RegimeChip';
@@ -50,12 +51,23 @@ function formatSizePreview(preview: SizePreview | undefined): string {
   return `${notional} · risk ~$${eff.toFixed(0)}`;
 }
 
+function errMsg(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    const body = err.response?.data as { message?: string } | undefined;
+    if (body?.message) return body.message;
+  }
+  if (err instanceof Error) return err.message;
+  return 'Rescan failed';
+}
+
 export function ScannerPage() {
   const [minConfidence, setMinConfidence] = useState(75);
   const [timeframe, setTimeframe] = useState('');
   const [side, setSide] = useState('');
   const [search, setSearch] = useState('');
   const [stage, setStage] = useState('');
+  const [rescanSymbol, setRescanSymbol] = useState('');
+  const [rescanInfo, setRescanInfo] = useState<string | null>(null);
   const live = useLiveStore((s) => s.opportunities) as unknown as Array<Record<string, unknown>>;
   const qc = useQueryClient();
 
@@ -82,6 +94,30 @@ export function ScannerPage() {
   const stop = useMutation({
     mutationFn: scannerApi.stop,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['scanner-status'] }),
+  });
+  const rescan = useMutation({
+    mutationFn: (symbol: string) => scannerApi.rescan(symbol),
+    onSuccess: (res: {
+      symbol?: string;
+      opportunities?: unknown[];
+      autoExecutedEligible?: boolean;
+    }) => {
+      const symbol = res.symbol ?? rescanSymbol;
+      const n = Array.isArray(res.opportunities) ? res.opportunities.length : 0;
+      setRescanInfo(
+        n > 0
+          ? `${symbol}: ${n} opportunit${n === 1 ? 'y' : 'ies'}${
+              res.autoExecutedEligible === false ? ' (open position — not auto-traded)' : ''
+            }`
+          : `${symbol}: No active strategies`,
+      );
+      void qc.invalidateQueries({ queryKey: ['opportunities'] });
+      void qc.invalidateQueries({ queryKey: ['signals'] });
+      void qc.invalidateQueries({ queryKey: ['scanner-status'] });
+    },
+    onError: (err) => {
+      setRescanInfo(errMsg(err));
+    },
   });
 
   const items = sortTriggeredThenNewest(
@@ -125,6 +161,56 @@ export function ScannerPage() {
           </>
         }
       />
+      <Sheet
+        variant="outlined"
+        sx={{
+          p: 2,
+          mb: 1.5,
+          display: 'grid',
+          gap: 1.5,
+          gridTemplateColumns: {
+            xs: 'minmax(0, 1fr)',
+            sm: 'minmax(0, 1fr) auto',
+          },
+          alignItems: 'end',
+          borderRadius: 'md',
+        }}
+      >
+        <FormControl sx={{ minWidth: 0 }}>
+          <FormLabel>Rescan pair</FormLabel>
+          <Input
+            value={rescanSymbol}
+            onChange={(e) => {
+              setRescanSymbol(e.target.value);
+              if (rescanInfo) setRescanInfo(null);
+              if (rescan.isError) rescan.reset();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && rescanSymbol.trim() && !rescan.isPending) {
+                rescan.mutate(rescanSymbol.trim());
+              }
+            }}
+            placeholder="BTCUSDT or gram"
+            sx={{ width: '100%', ...monoSx }}
+          />
+        </FormControl>
+        <Button
+          onClick={() => rescan.mutate(rescanSymbol.trim())}
+          disabled={!rescanSymbol.trim()}
+          loading={rescan.isPending}
+        >
+          Rescan
+        </Button>
+        {rescanInfo && (
+          <Typography
+            level="body-sm"
+            color={rescan.isError ? 'danger' : 'neutral'}
+            sx={{ gridColumn: '1 / -1' }}
+          >
+            {rescanInfo}
+          </Typography>
+        )}
+      </Sheet>
       <Sheet
         variant="outlined"
         sx={{

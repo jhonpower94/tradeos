@@ -43,6 +43,23 @@ import {
   hasOppositeTriggeredRelease,
 } from './symbol-suppression.js';
 import { intersectSymbols, selectHotSymbols } from './universe.js';
+import { AppError } from '../../utils/errors.js';
+
+/** Normalize user input to a Binance USDT symbol (e.g. gram → GRAMUSDT). */
+export function normalizeUsdtSymbol(raw: string): string {
+  let s = String(raw ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  if (!s) {
+    throw new AppError('INVALID_SYMBOL', 'Enter a symbol such as BTCUSDT or GRAM', 400);
+  }
+  if (!s.endsWith('USDT')) s = `${s}USDT`;
+  if (!/^[A-Z0-9]+USDT$/.test(s) || s === 'USDT') {
+    throw new AppError('INVALID_SYMBOL', `Invalid symbol: ${raw}`, 400);
+  }
+  return s;
+}
 
 export interface ScannerStatus {
   running: boolean;
@@ -280,6 +297,58 @@ class ScannerService {
       notifyAndAuto: false,
       bypassSuppression: true,
     });
+  }
+
+  /**
+   * Manual one-shot rescan from the UI. Works even when the background scanner is off.
+   * Persists opportunities; auto-executes only when no open position on the symbol.
+   */
+  async manualRescanSymbol(
+    userId: string,
+    rawSymbol: string,
+  ): Promise<{
+    symbol: string;
+    opportunities: Opportunity[];
+    autoExecutedEligible: boolean;
+  }> {
+    const symbol = normalizeUsdtSymbol(rawSymbol);
+    const settings = await getRawSettings(userId);
+
+    const deny = new Set(settings.scanner?.symbolsDenyList ?? []);
+    if (deny.has(symbol)) {
+      throw new AppError('DENIED_SYMBOL', `${symbol} is on your deny list`, 400);
+    }
+
+    const venue = settings.trading?.executionVenue ?? ExecutionVenue.MARGIN;
+    if (venue === ExecutionVenue.MARGIN) {
+      const creds = await getBinanceCredentials(userId);
+      if (creds) {
+        exchangeService.setCredentials(creds);
+        const isolated = await exchangeService.getIsolatedMarginUsdtSymbols();
+        if (isolated.length > 0 && !isolated.includes(symbol)) {
+          throw new AppError(
+            'NOT_ISOLATED_PAIR',
+            `${symbol} is not a Binance isolated-margin USDT pair`,
+            400,
+          );
+        }
+      }
+    }
+
+    const stillOpen = await Position.exists({
+      userId,
+      symbol,
+      status: PositionStatus.OPEN,
+    });
+    const autoExecutedEligible = !stillOpen;
+
+    const opportunities = await this.collectSymbolOpportunities(userId, symbol, settings, {
+      persist: true,
+      notifyAndAuto: autoExecutedEligible,
+      bypassSuppression: true,
+    });
+
+    return { symbol, opportunities, autoExecutedEligible };
   }
 
   private async runScanUserSymbol(userId: string, symbol: string): Promise<void> {

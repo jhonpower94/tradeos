@@ -352,6 +352,10 @@ export async function registerRoutes(app: FastifyInstance) {
       enabled: false,
     };
   });
+  app.post('/api/v1/scanner/rescan', { preHandler: auth }, async (req) => {
+    const { symbol } = (req.body ?? {}) as { symbol?: string };
+    return scannerService.manualRescanSymbol(getUserId(req), symbol ?? '');
+  });
 
   // Signals — default: newest active opportunities (same data as scanner)
   app.get('/api/v1/signals', { preHandler: auth }, async (req) => {

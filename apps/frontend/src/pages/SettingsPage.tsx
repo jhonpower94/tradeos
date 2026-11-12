@@ -673,6 +673,14 @@ export function SettingsPage() {
               onSave={(n) => saveSettings.mutate({ risk: { minRiskReward: n } })}
             />
             <SettingsNumberField
+              label="Max spread (bps)"
+              value={Number(data.risk?.maxSpreadBps ?? 20)}
+              min={1}
+              max={100}
+              onSave={(n) => saveSettings.mutate({ risk: { maxSpreadBps: n } })}
+              helperText="Reject entries (and skip scanner hot-set) when bid/ask width exceeds this. 20 ≈ 0.20%. Raise slightly (e.g. 25–30) for thinner alts."
+            />
+            <SettingsNumberField
               label="Min notional per trade (USDT)"
               value={minNotional}
               min={0}
