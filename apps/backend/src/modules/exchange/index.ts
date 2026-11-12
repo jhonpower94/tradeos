@@ -88,6 +88,20 @@ export interface OrderResult {
 
 type Credentials = { apiKey: string; apiSecret: string };
 
+/** Keep USDT isolated pairs that allow margin trading. */
+export function isolatedUsdtSymbolsFromPairs(
+  pairs: Array<{ symbol?: string; quote?: string; isMarginTrade?: boolean }>,
+): string[] {
+  const out: string[] = [];
+  for (const p of pairs) {
+    if (!p.symbol) continue;
+    if (p.quote !== 'USDT') continue;
+    if (p.isMarginTrade !== true) continue;
+    out.push(p.symbol);
+  }
+  return out;
+}
+
 export class ExchangeService {
   /** Stay under Binance IP REQUEST_WEIGHT (~6000/min) with headroom for UI/manual calls. */
   private limiter = new WeightWindowLimiter(config.binanceWeightLimitPerMin, 60_000);
@@ -96,7 +110,11 @@ export class ExchangeService {
   private symbolCache: SymbolInfo[] | null = null;
   private symbolCacheAt = 0;
   private tickers24hrCache: { at: number; data: TickerPrice[] } | null = null;
+  /** Isolated-margin USDT symbols (process cache). */
+  private isolatedUsdtSymbolsCache: { at: number; symbols: string[] } | null = null;
   private banUntilMs = 0;
+
+  static readonly ISOLATED_SYMBOLS_TTL_MS = 60 * 60 * 1000;
 
   constructor(restUrl = config.binanceRestUrl) {
     this.restUrl = restUrl.replace(/\/$/, '');
@@ -136,6 +154,7 @@ export class ExchangeService {
     signed = false,
     weight = 1,
     attempt = 0,
+    opts?: { apiKey?: boolean },
   ): Promise<T> {
     await this.waitIfBanned();
     await this.limiter.acquire(weight);
@@ -151,6 +170,9 @@ export class ExchangeService {
         .update(search.toString())
         .digest('hex');
       search.set('signature', sig);
+      headers['X-MBX-APIKEY'] = this.credentials.apiKey;
+    } else if (opts?.apiKey) {
+      if (!this.credentials) throw new AppError('NO_KEYS', 'Binance API keys not configured', 400);
       headers['X-MBX-APIKEY'] = this.credentials.apiKey;
     }
     const qs = search.toString();
@@ -201,7 +223,7 @@ export class ExchangeService {
             ? Math.min(Math.max(banUntil - Date.now(), 5_000), 60_000)
             : 10_000;
         await new Promise((r) => setTimeout(r, waitMs));
-        return this.request(method, path, params, signed, weight, attempt + 1);
+        return this.request(method, path, params, signed, weight, attempt + 1, opts);
       }
 
       const status = res.status >= 400 && res.status < 600 ? res.status : 502;
@@ -245,6 +267,59 @@ export class ExchangeService {
       )
       .map((s) => s.symbol)
       .filter((s) => !/(UP|DOWN|BULL|BEAR)USDT$/.test(s));
+  }
+
+  /**
+   * USDT symbols tradeable on Binance isolated margin.
+   * Cached ~1h. Requires API credentials. Returns [] if keys missing / fetch fails
+   * (caller should skip the margin universe filter that cycle rather than invent pairs).
+   */
+  async getIsolatedMarginUsdtSymbols(): Promise<string[]> {
+    const cached = this.isolatedUsdtSymbolsCache;
+    if (cached && Date.now() - cached.at < ExchangeService.ISOLATED_SYMBOLS_TTL_MS) {
+      return cached.symbols;
+    }
+    if (!this.credentials) return cached?.symbols ?? [];
+
+    type PairRow = {
+      symbol: string;
+      quote?: string;
+      isMarginTrade?: boolean;
+    };
+
+    let rows: PairRow[] = [];
+    try {
+      rows = await this.request<PairRow[]>(
+        'GET',
+        '/sapi/v1/margin/isolated/allPairs',
+        {},
+        false,
+        10,
+        0,
+        { apiKey: true },
+      );
+    } catch {
+      try {
+        rows = await this.request<PairRow[]>(
+          'GET',
+          '/sapi/v1/margin/isolated/allPairs',
+          {},
+          true,
+          10,
+        );
+      } catch {
+        return cached?.symbols ?? [];
+      }
+    }
+
+    const symbols = isolatedUsdtSymbolsFromPairs(rows);
+    this.isolatedUsdtSymbolsCache = { at: Date.now(), symbols };
+    return symbols;
+  }
+
+  /** Test helper: clear isolated-symbol cache. */
+  _clearIsolatedUsdtSymbolsCacheForTests(): void {
+    this.isolatedUsdtSymbolsCache = null;
   }
 
   async getCandles(symbol: string, interval: Timeframe | string, limit = 500): Promise<Candle[]> {

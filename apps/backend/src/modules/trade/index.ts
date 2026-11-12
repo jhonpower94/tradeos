@@ -307,6 +307,25 @@ export async function executeOpportunity(
     await assertCanUseLive(userId);
   }
   const executionVenue = settings.trading?.executionVenue ?? ExecutionVenue.MARGIN;
+
+  if (executionVenue === ExecutionVenue.MARGIN) {
+    const creds = await getBinanceCredentials(userId);
+    if (creds) {
+      exchangeService.setCredentials(creds);
+      const isolated = await exchangeService.getIsolatedMarginUsdtSymbols();
+      if (isolated.length > 0 && !isolated.includes(opportunity.symbol)) {
+        const reason = `${opportunity.symbol} is not a Binance isolated-margin USDT pair`;
+        if (signalId) {
+          await Signal.findByIdAndUpdate(signalId, {
+            status: SignalStatus.REJECTED,
+            rejectReason: reason,
+          });
+        }
+        throw new AppError('NOT_ISOLATED_PAIR', reason, 400);
+      }
+    }
+  }
+
   const { equity, freeQuote } = await estimateEquity(userId, mode, executionVenue);
 
   let spreadBps: number | undefined;

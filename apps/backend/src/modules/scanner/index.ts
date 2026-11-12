@@ -1,10 +1,17 @@
 import { Position } from '../../models/Position.js';
-import { MarketRegime, PositionStatus, Side, Timeframe, filterStrategiesForRegime } from '@trading-os/shared';
+import {
+  ExecutionVenue,
+  MarketRegime,
+  PositionStatus,
+  Side,
+  Timeframe,
+  filterStrategiesForRegime,
+} from '@trading-os/shared';
 import { gatewayBroadcast } from '../../websocket/gateway.js';
 import { notify } from '../notifications/index.js';
 import { NotificationType } from '@trading-os/shared';
 import { processAutoSignals } from '../trade/index.js';
-import { getRawSettings } from '../settings/index.js';
+import { getBinanceCredentials, getRawSettings } from '../settings/index.js';
 import { consensusToOpportunity, isWatching, listOpportunities, persistOpportunities, persistSymbolOpportunities } from '../ranking/index.js';
 import {
   buildConsensus,
@@ -35,6 +42,7 @@ import {
   getActiveSuppression,
   hasOppositeTriggeredRelease,
 } from './symbol-suppression.js';
+import { intersectSymbols, selectHotSymbols } from './universe.js';
 
 export interface ScannerStatus {
   running: boolean;
@@ -128,6 +136,22 @@ class ScannerService {
     let symbols = await exchangeService.getUsdtSymbols();
     symbols = symbols.filter((s) => !deny.has(s));
 
+    const venue = settings.trading?.executionVenue ?? ExecutionVenue.MARGIN;
+    if (venue === ExecutionVenue.MARGIN) {
+      try {
+        const creds = await getBinanceCredentials(userId);
+        if (creds) {
+          exchangeService.setCredentials(creds);
+          const isolated = await exchangeService.getIsolatedMarginUsdtSymbols();
+          if (isolated.length > 0) {
+            symbols = intersectSymbols(symbols, new Set(isolated));
+          }
+        }
+      } catch {
+        // Skip isolated filter this cycle rather than scanning invalid pairs.
+      }
+    }
+
     const openPos = await Position.find({ userId, status: PositionStatus.OPEN })
       .select('symbol')
       .lean();
@@ -161,21 +185,12 @@ class ScannerService {
       }
     };
 
-    const ordered = symbols
-      .filter((s) => !held.has(s))
-      .map((s) => {
-        const t = tickerBySymbol.get(s);
-        if (!t || t.volume24h == null || t.bid == null || t.ask == null || !t.price) {
-          return null;
-        }
-        const spreadBps = ((t.ask - t.bid) / t.price) * 10_000;
-        if (t.volume24h < minLiquidity || spreadBps > maxSpreadBps) return null;
-        return { symbol: s, volume24h: t.volume24h };
-      })
-      .filter((x): x is { symbol: string; volume24h: number } => x != null)
-      .sort((a, b) => b.volume24h - a.volume24h)
-      .slice(0, hotSize)
-      .map((x) => x.symbol);
+    const ordered = selectHotSymbols(symbols, tickerBySymbol, {
+      held,
+      minLiquidity,
+      maxSpreadBps,
+      hotSize,
+    });
 
     const opportunities: Opportunity[] = [];
     let scanned = 0;
@@ -258,6 +273,7 @@ class ScannerService {
 
     const deny = new Set(settings.scanner?.symbolsDenyList ?? []);
     if (deny.has(symbol)) return [];
+    if (!(await this.isSymbolEligibleForVenue(userId, symbol, settings))) return [];
 
     return this.collectSymbolOpportunities(userId, symbol, settings, {
       persist: true,
@@ -272,6 +288,7 @@ class ScannerService {
 
     const deny = new Set(settings.scanner?.symbolsDenyList ?? []);
     if (deny.has(symbol)) return;
+    if (!(await this.isSymbolEligibleForVenue(userId, symbol, settings))) return;
 
     const stillOpen = await Position.exists({
       userId,
@@ -284,6 +301,26 @@ class ScannerService {
       persist: true,
       notifyAndAuto: true,
     });
+  }
+
+  /** Spot venue: always eligible. Margin: must be on isolated USDT list when list is available. */
+  private async isSymbolEligibleForVenue(
+    userId: string,
+    symbol: string,
+    settings: Awaited<ReturnType<typeof getRawSettings>>,
+  ): Promise<boolean> {
+    const venue = settings.trading?.executionVenue ?? ExecutionVenue.MARGIN;
+    if (venue !== ExecutionVenue.MARGIN) return true;
+    try {
+      const creds = await getBinanceCredentials(userId);
+      if (!creds) return true;
+      exchangeService.setCredentials(creds);
+      const isolated = await exchangeService.getIsolatedMarginUsdtSymbols();
+      if (isolated.length === 0) return true;
+      return isolated.includes(symbol);
+    } catch {
+      return true;
+    }
   }
 
   private async collectSymbolOpportunities(
