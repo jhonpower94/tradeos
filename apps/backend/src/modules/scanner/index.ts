@@ -300,6 +300,33 @@ class ScannerService {
   }
 
   /**
+   * Symbols eligible for manual rescan (USDT spot, deny-list removed, isolated when margin).
+   */
+  async listEligibleRescanSymbols(userId: string): Promise<string[]> {
+    const settings = await getRawSettings(userId);
+    const deny = new Set(settings.scanner?.symbolsDenyList ?? []);
+    let symbols = (await exchangeService.getUsdtSymbols()).filter((s) => !deny.has(s));
+
+    const venue = settings.trading?.executionVenue ?? ExecutionVenue.MARGIN;
+    if (venue === ExecutionVenue.MARGIN) {
+      try {
+        const creds = await getBinanceCredentials(userId);
+        if (creds) {
+          exchangeService.setCredentials(creds);
+          const isolated = await exchangeService.getIsolatedMarginUsdtSymbols();
+          if (isolated.length > 0) {
+            symbols = intersectSymbols(symbols, new Set(isolated));
+          }
+        }
+      } catch {
+        // Keep spot USDT list if isolated fetch fails.
+      }
+    }
+
+    return [...symbols].sort((a, b) => a.localeCompare(b));
+  }
+
+  /**
    * Manual one-shot rescan from the UI. Works even when the background scanner is off.
    * Persists opportunities; auto-executes only when no open position on the symbol.
    */

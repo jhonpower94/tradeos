@@ -79,6 +79,7 @@ export const scannerApi = {
   status: () => api.get('/scanner/status').then((r) => r.data),
   start: () => api.post('/scanner/start').then((r) => r.data),
   stop: () => api.post('/scanner/stop').then((r) => r.data),
+  symbols: () => api.get('/scanner/symbols').then((r) => r.data),
   rescan: (symbol: string) => api.post('/scanner/rescan', { symbol }).then((r) => r.data),
 };
 

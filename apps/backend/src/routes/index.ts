@@ -352,6 +352,9 @@ export async function registerRoutes(app: FastifyInstance) {
       enabled: false,
     };
   });
+  app.get('/api/v1/scanner/symbols', { preHandler: auth }, async (req) => ({
+    symbols: await scannerService.listEligibleRescanSymbols(getUserId(req)),
+  }));
   app.post('/api/v1/scanner/rescan', { preHandler: auth }, async (req) => {
     const { symbol } = (req.body ?? {}) as { symbol?: string };
     return scannerService.manualRescanSymbol(getUserId(req), symbol ?? '');

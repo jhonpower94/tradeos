@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import Autocomplete from '@mui/joy/Autocomplete';
 import Box from '@mui/joy/Box';
 import Button from '@mui/joy/Button';
 import FormControl from '@mui/joy/FormControl';
+import FormHelperText from '@mui/joy/FormHelperText';
 import FormLabel from '@mui/joy/FormLabel';
 import Input from '@mui/joy/Input';
 import Option from '@mui/joy/Option';
@@ -22,6 +24,34 @@ import { formatDateTime, formatLocation, formatPrice, formatRelativeStrength, fo
 import { isWatchingRow, sortTriggeredThenNewest } from '../utils/sort';
 import { StatusChip } from '../components/StatusChip';
 import { monoSx } from '../theme/theme';
+
+/** Normalize typed pair input the same way the API does (gram → GRAMUSDT). */
+function normalizeUsdtSymbolInput(raw: string): string {
+  let s = String(raw ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  if (!s) return '';
+  if (!s.endsWith('USDT')) s = `${s}USDT`;
+  return s;
+}
+
+function filterSymbolOptions(symbols: string[], input: string, limit = 20): string[] {
+  const q = input.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!q) return symbols.slice(0, limit);
+  const withUsdt = q.endsWith('USDT') ? q : `${q}USDT`;
+  const matched = symbols.filter(
+    (s) => s.includes(q) || s === withUsdt || s.startsWith(q) || s.replace(/USDT$/, '').includes(q),
+  );
+  // Prefer exact / prefix hits first.
+  matched.sort((a, b) => {
+    const aExact = a === withUsdt || a === q ? 0 : a.startsWith(withUsdt) || a.startsWith(q) ? 1 : 2;
+    const bExact = b === withUsdt || b === q ? 0 : b.startsWith(withUsdt) || b.startsWith(q) ? 1 : 2;
+    if (aExact !== bExact) return aExact - bExact;
+    return a.localeCompare(b);
+  });
+  return matched.slice(0, limit);
+}
 
 type SizePreview = {
   ok?: boolean;
@@ -87,6 +117,25 @@ export function ScannerPage() {
     queryFn: scannerApi.status,
     refetchInterval: 5_000,
   });
+  const { data: symbolsData, isLoading: symbolsLoading } = useQuery({
+    queryKey: ['scanner-symbols'],
+    queryFn: scannerApi.symbols,
+    staleTime: 60 * 60 * 1000,
+  });
+  const eligibleSymbols = useMemo(
+    () => (Array.isArray(symbolsData?.symbols) ? (symbolsData.symbols as string[]) : []),
+    [symbolsData],
+  );
+  const symbolSet = useMemo(() => new Set(eligibleSymbols), [eligibleSymbols]);
+  const normalizedRescan = normalizeUsdtSymbolInput(rescanSymbol);
+  const rescanKnown = Boolean(normalizedRescan && symbolSet.has(normalizedRescan));
+  const rescanMatches = useMemo(
+    () => filterSymbolOptions(eligibleSymbols, rescanSymbol),
+    [eligibleSymbols, rescanSymbol],
+  );
+  const showNoMatchHint =
+    rescanSymbol.trim().length > 0 && !rescanKnown && rescanMatches.length === 0 && !symbolsLoading;
+
   const start = useMutation({
     mutationFn: scannerApi.start,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['scanner-status'] }),
@@ -102,7 +151,7 @@ export function ScannerPage() {
       opportunities?: unknown[];
       autoExecutedEligible?: boolean;
     }) => {
-      const symbol = res.symbol ?? rescanSymbol;
+      const symbol = res.symbol ?? normalizedRescan;
       const n = Array.isArray(res.opportunities) ? res.opportunities.length : 0;
       setRescanInfo(
         n > 0
@@ -119,6 +168,11 @@ export function ScannerPage() {
       setRescanInfo(errMsg(err));
     },
   });
+
+  const runRescan = () => {
+    if (!rescanKnown || rescan.isPending) return;
+    rescan.mutate(normalizedRescan);
+  };
 
   const items = sortTriggeredThenNewest(
     ((live.length ? live : (data?.items ?? [])) as Array<Record<string, unknown>>).filter(
@@ -178,27 +232,46 @@ export function ScannerPage() {
       >
         <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Rescan pair</FormLabel>
-          <Input
-            value={rescanSymbol}
-            onChange={(e) => {
-              setRescanSymbol(e.target.value);
+          <Autocomplete
+            freeSolo
+            options={eligibleSymbols}
+            filterOptions={(options, state) => filterSymbolOptions(options, state.inputValue)}
+            value={rescanSymbol || null}
+            inputValue={rescanSymbol}
+            onInputChange={(_, value) => {
+              setRescanSymbol(value);
+              if (rescanInfo) setRescanInfo(null);
+              if (rescan.isError) rescan.reset();
+            }}
+            onChange={(_, value) => {
+              const next = typeof value === 'string' ? value : value ?? '';
+              setRescanSymbol(next);
               if (rescanInfo) setRescanInfo(null);
               if (rescan.isError) rescan.reset();
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && rescanSymbol.trim() && !rescan.isPending) {
-                rescan.mutate(rescanSymbol.trim());
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                runRescan();
               }
             }}
             placeholder="BTCUSDT or gram"
-            sx={{ width: '100%', ...monoSx }}
+            loading={symbolsLoading}
+            slotProps={{
+              input: { sx: { ...monoSx } },
+              listbox: { sx: { ...monoSx, maxHeight: 280 } },
+            }}
+            sx={{ width: '100%' }}
+            noOptionsText="No matching pairs"
           />
+          {showNoMatchHint && (
+            <FormHelperText sx={{ color: 'danger.500' }}>No matching pairs</FormHelperText>
+          )}
+          {rescanSymbol.trim() && !rescanKnown && rescanMatches.length > 0 && (
+            <FormHelperText>Pick a pair from the list (or type the full symbol)</FormHelperText>
+          )}
         </FormControl>
-        <Button
-          onClick={() => rescan.mutate(rescanSymbol.trim())}
-          disabled={!rescanSymbol.trim()}
-          loading={rescan.isPending}
-        >
+        <Button onClick={runRescan} disabled={!rescanKnown} loading={rescan.isPending}>
           Rescan
         </Button>
         {rescanInfo && (
