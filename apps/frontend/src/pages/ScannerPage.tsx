@@ -12,7 +12,7 @@ import Sheet from '@mui/joy/Sheet';
 import Typography from '@mui/joy/Typography';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
-import { scannerApi } from '../api';
+import { scannerApi, settingsApi } from '../api';
 import { useLiveStore } from '../stores/liveStore';
 import { RegimeChip } from '../components/RegimeChip';
 import { SideChip } from '../components/SideChip';
@@ -90,8 +90,15 @@ function errMsg(err: unknown): string {
   return 'Rescan failed';
 }
 
+function clampConfidence(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(100, Math.max(0, n));
+}
+
 export function ScannerPage() {
-  const [minConfidence, setMinConfidence] = useState(75);
+  /** null = follow Settings until the user edits the display filter. */
+  const [minConfidenceOverride, setMinConfidenceOverride] = useState<number | null>(null);
+  const [minConfDraft, setMinConfDraft] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState('');
   const [side, setSide] = useState('');
   const [search, setSearch] = useState('');
@@ -101,11 +108,16 @@ export function ScannerPage() {
   const live = useLiveStore((s) => s.opportunities) as unknown as Array<Record<string, unknown>>;
   const qc = useQueryClient();
 
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
+  const settingsMinConfidence = clampConfidence(Number(settings?.scanner?.minConfidence ?? 75));
+  const minConfidence = minConfidenceOverride ?? settingsMinConfidence;
+
   const { data } = useQuery({
-    queryKey: ['opportunities', minConfidence, timeframe, side, search],
+    // Fetch the full active set; confidence is filtered client-side so the input
+    // responds immediately even when live WS data is preferred over query results.
+    queryKey: ['opportunities', 'scanner', timeframe, side, search],
     queryFn: () =>
       scannerApi.opportunities({
-        minConfidence,
         timeframe: timeframe || undefined,
         side: side || undefined,
         search: search || undefined,
@@ -177,7 +189,8 @@ export function ScannerPage() {
   const items = sortTriggeredThenNewest(
     ((live.length ? live : (data?.items ?? [])) as Array<Record<string, unknown>>).filter(
       (o: Record<string, unknown>) => {
-        if (!isWatchingRow(o) && Number(o.confidence) < minConfidence) return false;
+        const conf = Number(o.confidence);
+        if (Number.isFinite(conf) && conf < minConfidence) return false;
         if (timeframe && o.timeframe !== timeframe) return false;
         if (side && o.side !== side) return false;
         if (search && !String(o.symbol).toLowerCase().includes(search.toLowerCase())) return false;
@@ -303,10 +316,29 @@ export function ScannerPage() {
           <FormLabel>Min confidence</FormLabel>
           <Input
             type="number"
-            value={minConfidence}
-            onChange={(e) => setMinConfidence(Number(e.target.value))}
+            slotProps={{ input: { min: 0, max: 100, step: 1 } }}
+            value={minConfDraft ?? String(minConfidence)}
+            onChange={(e) => {
+              const raw = e.target.value;
+              setMinConfDraft(raw);
+              if (raw.trim() === '') return;
+              const n = Number(raw);
+              if (Number.isFinite(n)) setMinConfidenceOverride(clampConfidence(n));
+            }}
+            onBlur={() => {
+              if (minConfDraft != null && minConfDraft.trim() === '') {
+                setMinConfidenceOverride(settingsMinConfidence);
+              } else if (minConfDraft != null) {
+                const n = Number(minConfDraft);
+                setMinConfidenceOverride(
+                  Number.isFinite(n) ? clampConfidence(n) : settingsMinConfidence,
+                );
+              }
+              setMinConfDraft(null);
+            }}
             sx={{ width: '100%' }}
           />
+          <FormHelperText>List filter (defaults to Settings). Watching rows included.</FormHelperText>
         </FormControl>
         <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Timeframe</FormLabel>
