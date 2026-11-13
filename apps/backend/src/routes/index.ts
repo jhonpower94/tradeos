@@ -310,14 +310,22 @@ export async function registerRoutes(app: FastifyInstance) {
   // Scanner
   app.get('/api/v1/scanner/opportunities', { preHandler: auth }, async (req) => {
     const userId = getUserId(req);
+    const settings = await getRawSettings(userId);
     const q = req.query as {
       minConfidence?: string;
+      maxConfidence?: string;
       timeframe?: string;
       side?: Side;
       search?: string;
     };
     const items = await listOpportunities(userId, {
-      minConfidence: q.minConfidence ? Number(q.minConfidence) : undefined,
+      minConfidence: q.minConfidence
+        ? Number(q.minConfidence)
+        : (settings.scanner?.minConfidence ?? undefined),
+      maxConfidence: q.maxConfidence
+        ? Number(q.maxConfidence)
+        : (settings.scanner?.maxConfidence ?? undefined),
+      preferMidConfidence: settings.scanner?.preferMidConfidence !== false,
       timeframe: q.timeframe,
       side: q.side,
       search: q.search,
@@ -374,8 +382,13 @@ export async function registerRoutes(app: FastifyInstance) {
         .lean();
       return { items, view: 'history' };
     }
+    const settings = await getRawSettings(userId);
     const items = await listOpportunities(userId, {
-      minConfidence: q.minConfidence ? Number(q.minConfidence) : undefined,
+      minConfidence: q.minConfidence
+        ? Number(q.minConfidence)
+        : (settings.scanner?.minConfidence ?? undefined),
+      maxConfidence: settings.scanner?.maxConfidence ?? undefined,
+      preferMidConfidence: settings.scanner?.preferMidConfidence !== false,
     });
     const ctx = await sizePreviewContext(userId);
     const previewed = withSizePreview(

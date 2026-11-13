@@ -22,14 +22,22 @@ function estimateDuration(tf: string): string {
   return map[tf] ?? 'unknown';
 }
 
+export type RankOptions = {
+  minConfidence?: number;
+  maxConfidence?: number;
+  preferMidConfidence?: boolean;
+};
+
 export function consensusToOpportunity(
   symbol: string,
   timeframe: Timeframe,
   consensus: ConsensusResult,
   minScore = 75,
+  maxScore = 100,
 ): Opportunity | null {
   if (!consensus.side || consensus.veto) return null;
   if (consensus.score < minScore) return null;
+  if (consensus.score > maxScore) return null;
   if (
     consensus.entry == null ||
     consensus.stopLoss == null ||
@@ -56,10 +64,37 @@ export function consensusToOpportunity(
   };
 }
 
-/** Rank by confidence desc, then early-pack voter count, then symbol. */
-export function rankOpportunities(opps: Opportunity[]): Opportunity[] {
+function clampBand(minConfidence: number, maxConfidence: number): { lo: number; hi: number; mid: number } {
+  const lo = Math.min(minConfidence, maxConfidence);
+  const hi = Math.max(minConfidence, maxConfidence);
+  return { lo, hi, mid: (lo + hi) / 2 };
+}
+
+/**
+ * Rank triggered opportunities.
+ * - Default (preferMidConfidence): nearest midpoint of [min, max] first, then lower confidence,
+ *   then early-pack voters, then symbol.
+ * - Classic: confidence descending, then early-pack, then symbol.
+ */
+export function rankOpportunities(
+  opps: Opportunity[],
+  opts?: RankOptions,
+): Opportunity[] {
+  const minConfidence = opts?.minConfidence ?? 0;
+  const maxConfidence = opts?.maxConfidence ?? 100;
+  const preferMid = opts?.preferMidConfidence !== false;
+  const { mid } = clampBand(minConfidence, maxConfidence);
+
   const sorted = [...opps].sort((a, b) => {
-    if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+    if (preferMid) {
+      const da = Math.abs(a.confidence - mid);
+      const db = Math.abs(b.confidence - mid);
+      if (da !== db) return da - db;
+      // Prefer lower confidence within the same distance (earlier / less "confirmed").
+      if (a.confidence !== b.confidence) return a.confidence - b.confidence;
+    } else if (b.confidence !== a.confidence) {
+      return b.confidence - a.confidence;
+    }
     const earlyDiff =
       countEarlyPackVoters(b.strategyIds) - countEarlyPackVoters(a.strategyIds);
     if (earlyDiff !== 0) return earlyDiff;
@@ -121,14 +156,59 @@ export function sortTriggeredThenNewest<
   });
 }
 
+/**
+ * Triggered first, then mid-band preference (or classic confidence), then newest.
+ * Used for API/UI lists that mix watching + triggered.
+ */
+export function sortOpportunitiesForDisplay<
+  T extends {
+    createdAt?: Date | string;
+    stage?: string;
+    status?: string;
+    confidence?: number;
+  },
+>(items: T[], opts?: RankOptions): T[] {
+  const preferMid = opts?.preferMidConfidence !== false;
+  const minConfidence = opts?.minConfidence ?? 0;
+  const maxConfidence = opts?.maxConfidence ?? 100;
+  const { mid } = clampBand(minConfidence, maxConfidence);
+
+  return [...items].sort((a, b) => {
+    const aw = isWatching(a) ? 1 : 0;
+    const bw = isWatching(b) ? 1 : 0;
+    if (aw !== bw) return aw - bw;
+
+    const ca = Number(a.confidence);
+    const cb = Number(b.confidence);
+    if (Number.isFinite(ca) && Number.isFinite(cb)) {
+      if (preferMid) {
+        const da = Math.abs(ca - mid);
+        const db = Math.abs(cb - mid);
+        if (da !== db) return da - db;
+        if (ca !== cb) return ca - cb;
+      } else if (cb !== ca) {
+        return cb - ca;
+      }
+    }
+
+    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return tb - ta;
+  });
+}
+
 function persistStatus(o: Opportunity): SignalStatus {
   return o.stage === 'watching' ? SignalStatus.WATCHING : SignalStatus.RANKED;
 }
 
-async function upsertOpportunityDocs(userId: string, opps: Opportunity[]) {
+async function upsertOpportunityDocs(
+  userId: string,
+  opps: Opportunity[],
+  rankOpts?: RankOptions,
+) {
   const triggered = opps.filter((o) => o.stage !== 'watching');
   const watching = opps.filter((o) => o.stage === 'watching');
-  const ranked = [...rankOpportunities(triggered), ...watching];
+  const ranked = [...rankOpportunities(triggered, rankOpts), ...watching];
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const docs: Array<Opportunity & { createdAt?: Date; status?: string }> = [];
 
@@ -186,14 +266,32 @@ async function upsertOpportunityDocs(userId: string, opps: Opportunity[]) {
   return { ranked, docs };
 }
 
-export async function persistOpportunities(userId: string, opps: Opportunity[]) {
-  const { ranked, docs } = await upsertOpportunityDocs(userId, opps);
+function rankOptsFromSettings(settings?: {
+  scanner?: {
+    minConfidence?: number;
+    maxConfidence?: number;
+    preferMidConfidence?: boolean;
+  } | null;
+}): RankOptions {
+  return {
+    minConfidence: settings?.scanner?.minConfidence ?? 75,
+    maxConfidence: settings?.scanner?.maxConfidence ?? 100,
+    preferMidConfidence: settings?.scanner?.preferMidConfidence !== false,
+  };
+}
+
+export async function persistOpportunities(
+  userId: string,
+  opps: Opportunity[],
+  rankOpts?: RankOptions,
+) {
+  const { ranked, docs } = await upsertOpportunityDocs(userId, opps, rankOpts);
 
   await Signal.updateMany(leftoverActiveFilter(userId, ranked), {
     $set: { status: SignalStatus.EXPIRED },
   });
 
-  return sortTriggeredThenNewest(docs);
+  return sortOpportunitiesForDisplay(docs, rankOpts);
 }
 
 /** Upsert opps for one symbol and expire only that symbol's leftover ranked/watching rows. */
@@ -201,36 +299,57 @@ export async function persistSymbolOpportunities(
   userId: string,
   symbol: string,
   opps: Opportunity[],
+  rankOpts?: RankOptions,
 ) {
   const scoped = opps.filter((o) => o.symbol === symbol);
-  const { ranked, docs } = await upsertOpportunityDocs(userId, scoped);
+  const { ranked, docs } = await upsertOpportunityDocs(userId, scoped, rankOpts);
 
   await Signal.updateMany(leftoverActiveFilterForSymbol(userId, symbol, ranked), {
     $set: { status: SignalStatus.EXPIRED },
   });
 
-  return sortTriggeredThenNewest(docs);
+  return sortOpportunitiesForDisplay(docs, rankOpts);
 }
 
-export async function listOpportunities(userId: string, filters?: {
-  minConfidence?: number;
-  timeframe?: string;
-  side?: Side;
-  search?: string;
-}) {
+export async function listOpportunities(
+  userId: string,
+  filters?: {
+    minConfidence?: number;
+    maxConfidence?: number;
+    timeframe?: string;
+    side?: Side;
+    search?: string;
+    preferMidConfidence?: boolean;
+  },
+) {
   const q: Record<string, unknown> = {
     userId,
     status: { $in: [SignalStatus.RANKED, SignalStatus.WATCHING] },
     expiresAt: { $gt: new Date() },
   };
-  if (filters?.minConfidence != null) {
+  const minC = filters?.minConfidence;
+  const maxC = filters?.maxConfidence;
+  if (minC != null || maxC != null) {
+    const rankedConf: Record<string, number> = {};
+    if (minC != null) rankedConf.$gte = minC;
+    if (maxC != null && maxC < 100) rankedConf.$lte = maxC;
     q.$or = [
       { status: SignalStatus.WATCHING },
-      { status: SignalStatus.RANKED, confidence: { $gte: filters.minConfidence } },
+      {
+        status: SignalStatus.RANKED,
+        ...(Object.keys(rankedConf).length ? { confidence: rankedConf } : {}),
+      },
     ];
   }
   if (filters?.timeframe) q.timeframe = filters.timeframe;
   if (filters?.side) q.side = filters.side;
   if (filters?.search) q.symbol = new RegExp(filters.search, 'i');
-  return Signal.find(q).sort({ status: 1, createdAt: -1 }).limit(100).lean();
+  const docs = await Signal.find(q).limit(100).lean();
+  return sortOpportunitiesForDisplay(docs as Array<Record<string, unknown>>, {
+    minConfidence: minC ?? 0,
+    maxConfidence: maxC ?? 100,
+    preferMidConfidence: filters?.preferMidConfidence !== false,
+  });
 }
+
+export { rankOptsFromSettings };

@@ -66,6 +66,13 @@ export const scannerSettingsSchema = z.object({
     Timeframe.H4,
   ]),
   minConfidence: z.number().min(0).max(100).default(75),
+  /** Ceiling for triggered consensus (100 = no ceiling). */
+  maxConfidence: z.number().min(0).max(100).default(100),
+  /**
+   * When true, rank triggered opportunities nearest the midpoint of
+   * [minConfidence, maxConfidence] first (mid-band preference).
+   */
+  preferMidConfidence: z.boolean().default(true),
   minAlignedStrategies: z.number().int().min(1).max(STRATEGY_IDS.length).default(2),
   minAgreementRatio: z.number().min(0).max(1).default(0.6),
   symbolsDenyList: z.array(z.string()).default([]),

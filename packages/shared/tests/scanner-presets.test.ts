@@ -19,6 +19,8 @@ describe('applyScannerPreset', () => {
       entryStyle: 'confirmed',
       minAlignedStrategies: 2,
       minConfidence: 75,
+      maxConfidence: 100,
+      preferMidConfidence: true,
       minAgreementRatio: 0.6,
       htfVetoEnabled: true,
     });
@@ -37,6 +39,8 @@ describe('applyScannerPreset', () => {
       entryStyle: 'early',
       minAlignedStrategies: 1,
       minConfidence: 68,
+      maxConfidence: 100,
+      preferMidConfidence: true,
       minAgreementRatio: 0.55,
       htfVetoEnabled: true,
     });

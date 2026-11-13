@@ -49,6 +49,8 @@ const settingsSchema = new Schema(
         default: [Timeframe.M15, Timeframe.H1, Timeframe.H4],
       },
       minConfidence: { type: Number, default: 75 },
+      maxConfidence: { type: Number, default: 100 },
+      preferMidConfidence: { type: Boolean, default: true },
       minAlignedStrategies: { type: Number, default: 2 },
       minAgreementRatio: { type: Number, default: 0.6 },
       symbolsDenyList: { type: [String], default: [] },

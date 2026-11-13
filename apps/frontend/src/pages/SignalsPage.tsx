@@ -8,7 +8,7 @@ import Typography from '@mui/joy/Typography';
 import Close from '@mui/icons-material/Close';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
-import { signalsApi } from '../api';
+import { signalsApi, settingsApi } from '../api';
 import { CandleChart } from '../components/CandleChart';
 import { PageHeader } from '../components/PageHeader';
 import { SideChip } from '../components/SideChip';
@@ -17,7 +17,7 @@ import { EntryTimingChip } from '../components/EntryTimingChip';
 import { ConfidenceBar } from '../components/ConfidenceBar';
 import { ResponsiveRecordList } from '../components/ResponsiveRecordList';
 import { formatDateTime, formatLocation, formatPrice, formatRelativeStrength, formatRelativeTime } from '../utils/format';
-import { sortTriggeredThenNewest } from '../utils/sort';
+import { sortOpportunitiesForDisplay } from '../utils/sort';
 import { monoSx } from '../theme/theme';
 
 function mutationErrorMessage(err: unknown): string {
@@ -50,6 +50,7 @@ export function SignalsPage() {
     queryFn: () => signalsApi.list({ view }),
     refetchInterval: 10_000,
   });
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
   const approve = useMutation({
     mutationFn: (id: string) => signalsApi.approve(id),
     onSuccess: () => {
@@ -67,7 +68,11 @@ export function SignalsPage() {
     },
   });
 
-  const rows = sortTriggeredThenNewest((data?.items ?? []) as Array<Record<string, unknown>>);
+  const rows = sortOpportunitiesForDisplay((data?.items ?? []) as Array<Record<string, unknown>>, {
+    minConfidence: Number(settings?.scanner?.minConfidence ?? 75),
+    maxConfidence: Number(settings?.scanner?.maxConfidence ?? 100),
+    preferMidConfidence: settings?.scanner?.preferMidConfidence !== false,
+  });
 
   return (
     <Box>

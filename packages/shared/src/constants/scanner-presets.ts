@@ -67,6 +67,8 @@ export interface ScannerPresetPayload {
     entryStyle: ScannerEntryStyle;
     minAlignedStrategies: number;
     minConfidence: number;
+    maxConfidence: number;
+    preferMidConfidence: boolean;
     minAgreementRatio: number;
     htfVetoEnabled: true;
   };
@@ -92,6 +94,8 @@ export function applyScannerPreset(style: ScannerEntryStyle): ScannerPresetPaylo
         entryStyle: 'early',
         minAlignedStrategies: 1,
         minConfidence: 68,
+        maxConfidence: 100,
+        preferMidConfidence: true,
         minAgreementRatio: 0.55,
         htfVetoEnabled: true,
       },
@@ -103,6 +107,8 @@ export function applyScannerPreset(style: ScannerEntryStyle): ScannerPresetPaylo
       entryStyle: 'confirmed',
       minAlignedStrategies: 2,
       minConfidence: 75,
+      maxConfidence: 100,
+      preferMidConfidence: true,
       minAgreementRatio: 0.6,
       htfVetoEnabled: true,
     },

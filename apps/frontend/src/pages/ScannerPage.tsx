@@ -21,7 +21,7 @@ import { ConfidenceBar } from '../components/ConfidenceBar';
 import { PageHeader } from '../components/PageHeader';
 import { ResponsiveRecordList } from '../components/ResponsiveRecordList';
 import { formatDateTime, formatLocation, formatPrice, formatRelativeStrength, formatRelativeTime } from '../utils/format';
-import { isWatchingRow, sortTriggeredThenNewest } from '../utils/sort';
+import { isWatchingRow, sortOpportunitiesForDisplay } from '../utils/sort';
 import { StatusChip } from '../components/StatusChip';
 import { monoSx } from '../theme/theme';
 
@@ -98,7 +98,9 @@ function clampConfidence(n: number): number {
 export function ScannerPage() {
   /** null = follow Settings until the user edits the display filter. */
   const [minConfidenceOverride, setMinConfidenceOverride] = useState<number | null>(null);
+  const [maxConfidenceOverride, setMaxConfidenceOverride] = useState<number | null>(null);
   const [minConfDraft, setMinConfDraft] = useState<string | null>(null);
+  const [maxConfDraft, setMaxConfDraft] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState('');
   const [side, setSide] = useState('');
   const [search, setSearch] = useState('');
@@ -110,7 +112,10 @@ export function ScannerPage() {
 
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
   const settingsMinConfidence = clampConfidence(Number(settings?.scanner?.minConfidence ?? 75));
+  const settingsMaxConfidence = clampConfidence(Number(settings?.scanner?.maxConfidence ?? 100));
   const minConfidence = minConfidenceOverride ?? settingsMinConfidence;
+  const maxConfidence = maxConfidenceOverride ?? settingsMaxConfidence;
+  const preferMidConfidence = settings?.scanner?.preferMidConfidence !== false;
 
   const { data } = useQuery({
     // Fetch the full active set; confidence is filtered client-side so the input
@@ -186,11 +191,19 @@ export function ScannerPage() {
     rescan.mutate(normalizedRescan);
   };
 
-  const items = sortTriggeredThenNewest(
+  const items = sortOpportunitiesForDisplay(
     ((live.length ? live : (data?.items ?? [])) as Array<Record<string, unknown>>).filter(
       (o: Record<string, unknown>) => {
         const conf = Number(o.confidence);
         if (Number.isFinite(conf) && conf < minConfidence) return false;
+        // Max ceiling applies to triggered only; watching is always below min.
+        if (
+          Number.isFinite(conf) &&
+          !isWatchingRow(o) &&
+          conf > maxConfidence
+        ) {
+          return false;
+        }
         if (timeframe && o.timeframe !== timeframe) return false;
         if (side && o.side !== side) return false;
         if (search && !String(o.symbol).toLowerCase().includes(search.toLowerCase())) return false;
@@ -199,6 +212,7 @@ export function ScannerPage() {
         return true;
       },
     ),
+    { minConfidence, maxConfidence, preferMidConfidence },
   );
 
   return (
@@ -306,7 +320,7 @@ export function ScannerPage() {
           gap: 1.5,
           gridTemplateColumns: {
             xs: 'minmax(0, 1fr) minmax(0, 1fr)',
-            md: 'repeat(5, minmax(0, 1fr)) auto',
+            md: 'repeat(6, minmax(0, 1fr)) auto',
           },
           alignItems: 'end',
           borderRadius: 'md',
@@ -339,6 +353,34 @@ export function ScannerPage() {
             sx={{ width: '100%' }}
           />
           <FormHelperText>List filter (defaults to Settings). Watching rows included.</FormHelperText>
+        </FormControl>
+        <FormControl sx={{ minWidth: 0 }}>
+          <FormLabel>Max confidence</FormLabel>
+          <Input
+            type="number"
+            slotProps={{ input: { min: 0, max: 100, step: 1 } }}
+            value={maxConfDraft ?? String(maxConfidence)}
+            onChange={(e) => {
+              const raw = e.target.value;
+              setMaxConfDraft(raw);
+              if (raw.trim() === '') return;
+              const n = Number(raw);
+              if (Number.isFinite(n)) setMaxConfidenceOverride(clampConfidence(n));
+            }}
+            onBlur={() => {
+              if (maxConfDraft != null && maxConfDraft.trim() === '') {
+                setMaxConfidenceOverride(settingsMaxConfidence);
+              } else if (maxConfDraft != null) {
+                const n = Number(maxConfDraft);
+                setMaxConfidenceOverride(
+                  Number.isFinite(n) ? clampConfidence(n) : settingsMaxConfidence,
+                );
+              }
+              setMaxConfDraft(null);
+            }}
+            sx={{ width: '100%' }}
+          />
+          <FormHelperText>Triggered ceiling only (defaults to Settings).</FormHelperText>
         </FormControl>
         <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Timeframe</FormLabel>

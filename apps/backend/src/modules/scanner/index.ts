@@ -12,7 +12,14 @@ import { notify } from '../notifications/index.js';
 import { NotificationType } from '@trading-os/shared';
 import { processAutoSignals } from '../trade/index.js';
 import { getBinanceCredentials, getRawSettings } from '../settings/index.js';
-import { consensusToOpportunity, isWatching, listOpportunities, persistOpportunities, persistSymbolOpportunities } from '../ranking/index.js';
+import {
+  consensusToOpportunity,
+  isWatching,
+  listOpportunities,
+  persistOpportunities,
+  persistSymbolOpportunities,
+  rankOptsFromSettings,
+} from '../ranking/index.js';
 import {
   buildConsensus,
   detectHtfTrend,
@@ -240,7 +247,8 @@ class ScannerService {
     });
     await Promise.all(workers);
 
-    const items = await persistOpportunities(userId, opportunities);
+    const rankOpts = rankOptsFromSettings(settings);
+    const items = await persistOpportunities(userId, opportunities, rankOpts);
     this.status.lastScanAt = new Date();
     this.status.pairsScanned = scanned;
     this.status.opportunitiesFound = items.length;
@@ -477,8 +485,8 @@ class ScannerService {
         if (hasOppositeTriggeredRelease(opportunities, suppression.losingSide as Side)) {
           await clearSuppression(userId, symbol);
         } else {
-          await persistSymbolOpportunities(userId, symbol, []);
-          const allActive = await listOpportunities(userId);
+          await persistSymbolOpportunities(userId, symbol, [], rankOptsFromSettings(settings));
+          const allActive = await listOpportunities(userId, rankOptsFromSettings(settings));
           gatewayBroadcast(userId, 'opportunities', allActive);
           gatewayBroadcast(userId, 'scanner.status', this.getStatus());
           return [];
@@ -486,8 +494,9 @@ class ScannerService {
       }
     }
 
-    const items = await persistSymbolOpportunities(userId, symbol, opportunities);
-    const allActive = await listOpportunities(userId);
+    const rankOpts = rankOptsFromSettings(settings);
+    const items = await persistSymbolOpportunities(userId, symbol, opportunities, rankOpts);
+    const allActive = await listOpportunities(userId, rankOpts);
     gatewayBroadcast(userId, 'opportunities', allActive);
     gatewayBroadcast(userId, 'scanner.status', this.getStatus());
 
@@ -606,6 +615,7 @@ class ScannerService {
     }
 
     const minConf = settings.scanner?.minConfidence ?? 75;
+    const maxConf = settings.scanner?.maxConfidence ?? 100;
     const consensus = buildConsensus({
       strategies: strategyResults,
       patterns,
@@ -619,7 +629,7 @@ class ScannerService {
 
     const rs = ctx.relativeStrength;
 
-    const triggered = consensusToOpportunity(symbol, timeframe, consensus, minConf);
+    const triggered = consensusToOpportunity(symbol, timeframe, consensus, minConf, maxConf);
     if (triggered) {
       if (!relativeStrengthAligned(triggered.side, rs)) return null;
       return {

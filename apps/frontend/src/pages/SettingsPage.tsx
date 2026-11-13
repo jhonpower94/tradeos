@@ -1034,7 +1034,26 @@ export function SettingsPage() {
           <SettingsNumberField
             label="Min confidence"
             value={Number(data.scanner?.minConfidence ?? 75)}
+            min={0}
+            max={100}
             onSave={(n) => saveSettings.mutate({ scanner: { minConfidence: n } })}
+            helperText="Triggered floor. Watching stays below this."
+          />
+          <SettingsNumberField
+            label="Max confidence"
+            value={Number(data.scanner?.maxConfidence ?? 100)}
+            min={0}
+            max={100}
+            onSave={(n) => saveSettings.mutate({ scanner: { maxConfidence: n } })}
+            helperText="Triggered ceiling (e.g. 59 to keep mid-band only). 100 = no ceiling."
+          />
+          <SwitchRow
+            label="Prefer mid-band ranking"
+            checked={data.scanner?.preferMidConfidence !== false}
+            onChange={(checked) =>
+              saveSettings.mutate({ scanner: { preferMidConfidence: checked } })
+            }
+            hint="When on, rank nearest the midpoint of [min, max] confidence first (so 50–59 can surface ahead of 90+). When off, highest confidence first."
           />
           <SettingsNumberField
             label="Min aligned strategies"
