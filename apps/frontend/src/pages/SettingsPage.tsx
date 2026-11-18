@@ -679,7 +679,7 @@ export function SettingsPage() {
               max={5}
               step="0.1"
               onSave={(n) => saveSettings.mutate({ risk: { atrSlMultiplier: n } })}
-              helperText="Stop distance = this × ATR14 (floor 0.2% of entry). Lower (1.0–1.2) for tighter stops; 1.5 is the previous default."
+              helperText="Stop distance = this × ATR14 (floor 0.2% of entry). Risk checks allow this value (with slack). Lower to 0.5–1.2 for tighter stops; rescan after saving so new signals pick it up."
             />
             <SettingsNumberField
               label="Max spread (bps)"

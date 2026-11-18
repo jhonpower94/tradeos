@@ -353,6 +353,32 @@ describe('risk', () => {
     expect(result.reasons.some((r) => r.includes('ATR'))).toBe(true);
   });
 
+  it('accepts stop at configured atrSlMultiplier 0.5', async () => {
+    const result = await validateRisk({
+      userId: '000000000000000000000001',
+      equity: 10000,
+      freeQuote: 10000,
+      risk: { ...baseRisk, atrSlMultiplier: 0.5, atrSlMultiplierMin: 0.5 },
+      atr: 2,
+      opportunity: {
+        symbol: 'BTCUSDT',
+        timeframe: '1h' as never,
+        side: Side.BUY,
+        confidence: 80,
+        entry: 100,
+        stopLoss: 99, // 0.5 × ATR
+        takeProfit: 102,
+        riskReward: 2,
+        strategyIds: ['breakout'],
+        primaryStrategy: 'breakout',
+        evidence: [],
+        regime: MarketRegime.TRENDING_BULL,
+      },
+    });
+    expect(result.reasons.filter((r) => r.includes('ATR'))).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
   it('softPrecheck rejects entry drift over 2%', async () => {
     setTickerPrice('BTCUSDT', 110);
     const result = await softPrecheck(

@@ -267,8 +267,13 @@ export async function validateRisk(ctx: RiskContext): Promise<RiskValidationResu
 
   if (ctx.atr && ctx.atr > 0 && slDist > 0) {
     const atrMult = slDist / ctx.atr;
-    if (atrMult < risk.atrSlMultiplierMin) reasons.push('Stop loss too tight vs ATR');
-    if (atrMult > risk.atrSlMultiplierMax) reasons.push('Stop loss too wide vs ATR');
+    // Allow the configured stop multiple (plus slack for ATR drift / 0.2% entry floor).
+    const configured = risk.atrSlMultiplier ?? 1.5;
+    const floorMult = (o.entry * 0.002) / ctx.atr;
+    const lo = Math.min(risk.atrSlMultiplierMin, configured) * 0.85;
+    const hi = Math.max(risk.atrSlMultiplierMax, configured, floorMult) * 1.15;
+    if (atrMult < lo) reasons.push('Stop loss too tight vs ATR');
+    if (atrMult > hi) reasons.push('Stop loss too wide vs ATR');
   }
 
   const sized = previewRiskSize({
