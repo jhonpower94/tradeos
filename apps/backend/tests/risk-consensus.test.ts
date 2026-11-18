@@ -22,6 +22,7 @@ const baseRisk = {
   minRiskReward: 2,
   maxSpreadBps: 20,
   minLiquidityUsdt: 0,
+  atrSlMultiplier: 1.5,
   atrSlMultiplierMin: 0.5,
   atrSlMultiplierMax: 5,
   maxFreeNotionalPct: 1,

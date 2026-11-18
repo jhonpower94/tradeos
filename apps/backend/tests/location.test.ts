@@ -116,6 +116,25 @@ describe('watching vs triggered helpers', () => {
     expect(opp.entry).toBe(2000);
     expect(opp.primaryStrategy).toBe('support_bounce');
     expect(opp.relativeStrength).toBe(1.5);
+    // default 1.5 × ATR
+    expect(opp.stopLoss).toBeCloseTo(2000 - 1.5 * 20, 8);
+  });
+
+  it('uses atrSlMultiplier for watching stop distance', () => {
+    const opp = buildWatchingOpportunity({
+      symbol: 'ETHUSDT',
+      timeframe: Timeframe.H1,
+      side: Side.BUY,
+      nearby: [{ type: 'support', price: 2000, distanceAtr: 0.4 }],
+      atr: 20,
+      minRR: 2,
+      atrSlMultiplier: 1.0,
+      minConfidence: 75,
+      regime: MarketRegime.RANGING,
+      primaryStrategy: 'support_bounce',
+    });
+    expect(opp.stopLoss).toBeCloseTo(2000 - 20, 8);
+    expect(opp.takeProfit).toBeCloseTo(2000 + 40, 8);
   });
 
   it('maps watching side to bounce strategy ids', () => {

@@ -149,6 +149,8 @@ export function buildWatchingOpportunity(input: {
   nearby: LocationLevel[];
   atr: number;
   minRR: number;
+  /** Stop distance = this × ATR. Defaults to 1.5 (legacy hardcode). */
+  atrSlMultiplier?: number;
   minConfidence: number;
   regime: MarketRegime;
   primaryStrategy: StrategyId;
@@ -156,7 +158,8 @@ export function buildWatchingOpportunity(input: {
 }): Opportunity {
   const nearest = input.nearby[0]!;
   const entry = nearest.price;
-  const slDist = 1.5 * input.atr;
+  const atrMult = input.atrSlMultiplier ?? 1.5;
+  const slDist = Math.max(atrMult * input.atr, entry * 0.002);
   const stopLoss = input.side === Side.BUY ? entry - slDist : entry + slDist;
   const takeProfit =
     input.side === Side.BUY ? entry + slDist * input.minRR : entry - slDist * input.minRR;

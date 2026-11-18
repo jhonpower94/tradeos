@@ -673,6 +673,15 @@ export function SettingsPage() {
               onSave={(n) => saveSettings.mutate({ risk: { minRiskReward: n } })}
             />
             <SettingsNumberField
+              label="Stop ATR multiple"
+              value={Number(data.risk?.atrSlMultiplier ?? 1.5)}
+              min={0.5}
+              max={5}
+              step="0.1"
+              onSave={(n) => saveSettings.mutate({ risk: { atrSlMultiplier: n } })}
+              helperText="Stop distance = this × ATR14 (floor 0.2% of entry). Lower (1.0–1.2) for tighter stops; 1.5 is the previous default."
+            />
+            <SettingsNumberField
               label="Max spread (bps)"
               value={Number(data.risk?.maxSpreadBps ?? 20)}
               min={1}

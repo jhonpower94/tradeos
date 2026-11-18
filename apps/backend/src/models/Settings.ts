@@ -17,6 +17,7 @@ const settingsSchema = new Schema(
       minRiskReward: { type: Number, default: 2 },
       maxSpreadBps: { type: Number, default: 20 },
       minLiquidityUsdt: { type: Number, default: 1_000_000 },
+      atrSlMultiplier: { type: Number, default: 1.5 },
       atrSlMultiplierMin: { type: Number, default: 0.5 },
       atrSlMultiplierMax: { type: Number, default: 5 },
       maxFreeNotionalPct: { type: Number, default: 1 },

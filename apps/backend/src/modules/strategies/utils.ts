@@ -104,6 +104,43 @@ export function rescaleStrategyRiskReward(
   return { ...result, takeProfit, riskReward: minRR };
 }
 
+/**
+ * Rebuild stop + TP from entry using settings ATR multiple and min RR.
+ * Replaces hardcoded strategy 1.5× ATR when scanner applies user risk settings.
+ */
+export function applyAtrStopAndRr(
+  result: StrategyResult,
+  atr: number,
+  atrSlMultiplier: number,
+  minRR: number,
+): StrategyResult {
+  if (
+    result.decision === Decision.NO_TRADE ||
+    result.entry == null ||
+    !(atr > 0) ||
+    !(atrSlMultiplier > 0) ||
+    !(minRR > 0)
+  ) {
+    return result;
+  }
+  const entry = result.entry;
+  const riskDistance = Math.max(atr * atrSlMultiplier, entry * 0.002);
+  if (result.decision === Decision.BUY) {
+    return {
+      ...result,
+      stopLoss: entry - riskDistance,
+      takeProfit: entry + riskDistance * minRR,
+      riskReward: minRR,
+    };
+  }
+  return {
+    ...result,
+    stopLoss: entry + riskDistance,
+    takeProfit: entry - riskDistance * minRR,
+    riskReward: minRR,
+  };
+}
+
 export function findPattern(
   patterns: PatternHit[],
   type: PatternType,

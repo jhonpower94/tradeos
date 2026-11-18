@@ -25,6 +25,8 @@ export const riskSettingsSchema = z.object({
   minRiskReward: z.number().min(0.5).max(10).default(2),
   maxSpreadBps: z.number().min(1).max(100).default(20),
   minLiquidityUsdt: z.number().min(0).default(1_000_000),
+  /** Stop distance = this × ATR14 (floor 0.2% of entry). */
+  atrSlMultiplier: z.number().min(0.5).max(5).default(1.5),
   atrSlMultiplierMin: z.number().default(0.5),
   atrSlMultiplierMax: z.number().default(5),
   /** Legacy field kept so old clients can still PATCH it. Slot sizing is the notional cap. */
