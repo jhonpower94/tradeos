@@ -6,11 +6,14 @@ import {
   evidence,
   findPatterns,
   getAtr,
+  isAlreadyExtended,
   lastCandle,
+  measureImpulse,
   noTrade,
 } from '../utils.js';
 
 const ID = 'resistance_rejection' as const;
+const LOOKBACK = 40;
 
 export const resistanceRejectionStrategy: Strategy = {
   id: ID,
@@ -27,6 +30,16 @@ export const resistanceRejectionStrategy: Strategy = {
     }
 
     const atr = getAtr(indicators, last.close);
+    const impulse = measureImpulse(candles, LOOKBACK, atr);
+    if (
+      impulse &&
+      isAlreadyExtended('sell', last.close, impulse.high, atr)
+    ) {
+      return noTrade(ID, [
+        evidence('resistance', 'Already extended downtrend — skip resistance rejection'),
+      ]);
+    }
+
     const nearby = resistances
       .filter((r) => r.price != null && Math.abs(last.close - r.price) <= atr * 2.5)
       .sort((a, b) => Math.abs(last.close - a.price!) - Math.abs(last.close - b.price!))[0];

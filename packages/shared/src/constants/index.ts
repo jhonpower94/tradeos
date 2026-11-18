@@ -132,6 +132,7 @@ export const STRATEGY_IDS = [
   'support_bounce',
   'resistance_rejection',
   'resistance_rejection_v2',
+  'impulse_reversal',
   'break_of_structure',
   'change_of_character',
   'order_block',

@@ -157,3 +157,112 @@ export function isSupplyZoneReclaim(
   const notBroken = candle.close <= zoneHigh;
   return wickedInto && closedReclaimed && bearish && notBroken;
 }
+
+export type ImpulseDirection = 'up' | 'down' | 'flat';
+
+export interface ImpulseMeasure {
+  high: number;
+  low: number;
+  /** Absolute index in the full candle array. */
+  highIdx: number;
+  lowIdx: number;
+  /** (high − low) / mid × 100 */
+  rangePct: number;
+  /** (high − low) / atr */
+  rangeAtr: number;
+  /** `up` when the high is more recent than the low (rally then stall). */
+  direction: ImpulseDirection;
+}
+
+/** Lookback swing high/low and whether the impulse finished as a rally or selloff. */
+export function measureImpulse(
+  candles: Candle[],
+  lookback = 40,
+  atr?: number,
+): ImpulseMeasure | null {
+  if (candles.length < 5) return null;
+  const n = Math.min(lookback, candles.length);
+  const slice = candles.slice(-n);
+  const offset = candles.length - slice.length;
+  let high = -Infinity;
+  let low = Infinity;
+  let highIdx = offset;
+  let lowIdx = offset;
+  for (let i = 0; i < slice.length; i++) {
+    const c = slice[i]!;
+    if (c.high >= high) {
+      high = c.high;
+      highIdx = offset + i;
+    }
+    if (c.low <= low) {
+      low = c.low;
+      lowIdx = offset + i;
+    }
+  }
+  if (!(high > low) || !Number.isFinite(high) || !Number.isFinite(low)) return null;
+  const mid = (high + low) / 2;
+  const atrVal = atr != null && atr > 0 ? atr : mid * 0.01;
+  const range = high - low;
+  const direction: ImpulseDirection =
+    highIdx === lowIdx ? 'flat' : highIdx > lowIdx ? 'up' : 'down';
+  return {
+    high,
+    low,
+    highIdx,
+    lowIdx,
+    rangePct: (range / mid) * 100,
+    rangeAtr: range / atrVal,
+    direction,
+  };
+}
+
+/** True when swing range ≥ max(6% of price, 4 × ATR). */
+export function isLargeImpulse(impulse: ImpulseMeasure, atr: number, price: number): boolean {
+  const range = impulse.high - impulse.low;
+  return range >= Math.max(price * 0.06, atr * 4);
+}
+
+/**
+ * How far price has already traveled away from the impulse extreme.
+ * SELL uses distance below `high`; BUY uses distance above `low`.
+ */
+export function extensionFromExtreme(
+  side: 'buy' | 'sell',
+  close: number,
+  extreme: number,
+  atr: number,
+): { atrMult: number; pct: number } {
+  const safeAtr = atr > 0 ? atr : Math.abs(extreme) * 0.01 || 1;
+  const dist = side === 'sell' ? extreme - close : close - extreme;
+  return {
+    atrMult: dist / safeAtr,
+    pct: extreme !== 0 ? (dist / Math.abs(extreme)) * 100 : 0,
+  };
+}
+
+/** Already spent move away from the extreme (knife-catch / late fade). */
+export function isAlreadyExtended(
+  side: 'buy' | 'sell',
+  close: number,
+  extreme: number,
+  atr: number,
+  atrCap = 2.5,
+  pctCap = 5,
+): boolean {
+  const { atrMult, pct } = extensionFromExtreme(side, close, extreme, atr);
+  return atrMult > atrCap || pct > pctCap;
+}
+
+/** Still early enough after the impulse extreme to fade. */
+export function isStillNearExtreme(
+  side: 'buy' | 'sell',
+  close: number,
+  extreme: number,
+  atr: number,
+  atrCap = 1.5,
+  pctCap = 3,
+): boolean {
+  const { atrMult, pct } = extensionFromExtreme(side, close, extreme, atr);
+  if (atrMult <= 0) return true;
+  return atrMult <= atrCap && pct <= pctCap;
+}

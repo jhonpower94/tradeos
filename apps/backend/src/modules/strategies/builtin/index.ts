@@ -12,6 +12,7 @@ import { trendContinuationStrategy } from './trend-continuation.js';
 import { supportBounceStrategy } from './support-bounce.js';
 import { resistanceRejectionStrategy } from './resistance-rejection.js';
 import { resistanceRejectionV2 } from './resistance-rejection-v2.js';
+import { impulseReversalStrategy } from './impulse-reversal.js';
 import { breakOfStructureStrategy } from './break-of-structure.js';
 import { changeOfCharacterStrategy } from './change-of-character.js';
 import { orderBlockStrategy } from './order-block.js';
@@ -43,6 +44,7 @@ export {
   supportBounceStrategy,
   resistanceRejectionStrategy,
   resistanceRejectionV2,
+  impulseReversalStrategy,
   breakOfStructureStrategy,
   changeOfCharacterStrategy,
   orderBlockStrategy,
@@ -76,6 +78,7 @@ export const builtinStrategies: Strategy[] = [
   supportBounceStrategy,
   resistanceRejectionStrategy,
   resistanceRejectionV2,
+  impulseReversalStrategy,
   breakOfStructureStrategy,
   changeOfCharacterStrategy,
   orderBlockStrategy,

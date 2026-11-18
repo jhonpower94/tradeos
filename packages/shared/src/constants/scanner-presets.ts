@@ -15,6 +15,7 @@ export const EARLY_STRATEGY_PACK = [
   'inside_bar_nr7',
   'support_bounce',
   'resistance_rejection',
+  'impulse_reversal',
   'liquidity_sweep',
 ] as const satisfies readonly StrategyId[];
 

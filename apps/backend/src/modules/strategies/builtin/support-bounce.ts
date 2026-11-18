@@ -6,11 +6,14 @@ import {
   evidence,
   findPatterns,
   getAtr,
+  isAlreadyExtended,
   lastCandle,
+  measureImpulse,
   noTrade,
 } from '../utils.js';
 
 const ID = 'support_bounce' as const;
+const LOOKBACK = 40;
 
 export const supportBounceStrategy: Strategy = {
   id: ID,
@@ -27,6 +30,16 @@ export const supportBounceStrategy: Strategy = {
     }
 
     const atr = getAtr(indicators, last.close);
+    const impulse = measureImpulse(candles, LOOKBACK, atr);
+    if (
+      impulse &&
+      isAlreadyExtended('buy', last.close, impulse.low, atr)
+    ) {
+      return noTrade(ID, [
+        evidence('support', 'Already extended uptrend — skip support bounce'),
+      ]);
+    }
+
     const nearby = supports
       .filter((s) => s.price != null && Math.abs(last.close - s.price) <= atr * 2.5)
       .sort((a, b) => Math.abs(last.close - a.price!) - Math.abs(last.close - b.price!))[0];
