@@ -130,6 +130,7 @@ describe('strategy regime filter', () => {
     const ids = getCompatibleStrategyIds(MarketRegime.TRENDING_BULL);
     expect(ids).toContain('supertrend');
     expect(ids).toContain('ichimoku_trend');
+    expect(ids).toContain('impulse_reversal');
     expect(ids).not.toContain('vwap_reversion');
   });
 

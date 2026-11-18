@@ -110,11 +110,26 @@ export function computeRelativeStrength(
   return symbolPct - btcPct;
 }
 
-/** BUY needs a BTC leader; SELL needs a laggard. Missing RS does not veto. */
-export function relativeStrengthAligned(side: Side, rs: number | undefined): boolean {
+/**
+ * Relative-strength gate vs BTC.
+ * - Default (trend/continuation): BUY needs a leader (rs ≥ 0); SELL needs a laggard (rs ≤ 0).
+ * - Fade (`invert`): opposite — SELL after a rally wants a leader; BUY after a dump wants a laggard.
+ * Missing RS does not veto.
+ */
+export function relativeStrengthAligned(
+  side: Side,
+  rs: number | undefined,
+  opts?: { invert?: boolean },
+): boolean {
   if (rs == null || !Number.isFinite(rs)) return true;
-  if (side === Side.BUY) return rs >= 0;
-  return rs <= 0;
+  const invert = opts?.invert === true;
+  if (side === Side.BUY) return invert ? rs <= 0 : rs >= 0;
+  return invert ? rs >= 0 : rs <= 0;
+}
+
+/** Strategies whose thesis fades an extension (invert BTC RS gate). */
+export function isFadeRelativeStrengthStrategy(strategyIds: readonly string[]): boolean {
+  return strategyIds.includes('impulse_reversal');
 }
 
 export function previousDayLevels(candles: Candle[]): { high: number; low: number } | null {

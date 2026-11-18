@@ -38,6 +38,7 @@ import {
   buildWatchingOpportunity,
   computeRelativeStrength,
   findNearbyLocations,
+  isFadeRelativeStrengthStrategy,
   locationEvidence,
   previousDayLevels,
   relativeStrengthAligned,
@@ -632,7 +633,8 @@ class ScannerService {
 
     const triggered = consensusToOpportunity(symbol, timeframe, consensus, minConf, maxConf);
     if (triggered) {
-      if (!relativeStrengthAligned(triggered.side, rs)) return null;
+      const fadeRs = isFadeRelativeStrengthStrategy(triggered.strategyIds);
+      if (!relativeStrengthAligned(triggered.side, rs, { invert: fadeRs })) return null;
       return {
         ...triggered,
         locations: nearby,

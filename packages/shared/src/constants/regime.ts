@@ -45,7 +45,14 @@ export const STRATEGY_REGIME_COMPATIBILITY: Record<StrategyId, MarketRegime[]> =
   support_bounce: [MarketRegime.RANGING],
   resistance_rejection: [MarketRegime.RANGING, MarketRegime.TRENDING_BEAR],
   resistance_rejection_v2: [MarketRegime.RANGING, MarketRegime.TRENDING_BEAR],
-  impulse_reversal: [MarketRegime.RANGING, MarketRegime.VOLATILE],
+  // Fade at extremes: allow trending regimes so post-rally shorts / post-selloff longs can fire.
+  impulse_reversal: [
+    MarketRegime.RANGING,
+    MarketRegime.VOLATILE,
+    MarketRegime.TRENDING_BULL,
+    MarketRegime.TRENDING_BEAR,
+    MarketRegime.TRENDING_VOLATILE,
+  ],
   break_of_structure: [
     MarketRegime.TRENDING_BULL,
     MarketRegime.TRENDING_BEAR,

@@ -150,6 +150,8 @@ export function buildConsensus(input: ConsensusInput): ConsensusResult {
 
   let veto: string | undefined;
   const agreementRatio = aligned.length / Math.max(actionable.length, 1);
+  // Fade theses (e.g. impulse_reversal) intentionally trade against the trend / HTF.
+  const fadePrimary = primary.strategyId === 'impulse_reversal';
   if (aligned.length < minAligned || agreementRatio < minAgreementRatio) {
     veto = 'Insufficient strategy agreement';
     score = Math.min(score, 40);
@@ -158,18 +160,20 @@ export function buildConsensus(input: ConsensusInput): ConsensusResult {
       label: `Aligned ${aligned.length}/${actionable.length} (need ≥${minAligned}, ratio ≥${minAgreementRatio})`,
     });
   } else if (
-    (regime === MarketRegime.TRENDING_BEAR && side === Side.BUY) ||
-    (regime === MarketRegime.TRENDING_BULL && side === Side.SELL) ||
-    (regime === MarketRegime.TRENDING_VOLATILE &&
-      side === Side.BUY &&
-      regimeResult.minusDI > regimeResult.plusDI) ||
-    (regime === MarketRegime.TRENDING_VOLATILE &&
-      side === Side.SELL &&
-      regimeResult.plusDI > regimeResult.minusDI)
+    !fadePrimary &&
+    ((regime === MarketRegime.TRENDING_BEAR && side === Side.BUY) ||
+      (regime === MarketRegime.TRENDING_BULL && side === Side.SELL) ||
+      (regime === MarketRegime.TRENDING_VOLATILE &&
+        side === Side.BUY &&
+        regimeResult.minusDI > regimeResult.plusDI) ||
+      (regime === MarketRegime.TRENDING_VOLATILE &&
+        side === Side.SELL &&
+        regimeResult.plusDI > regimeResult.minusDI))
   ) {
     veto = 'Strong opposing market regime';
     score = Math.min(score, 40);
   } else if (
+    !fadePrimary &&
     htfVetoEnabled &&
     input.htfTrend != null &&
     ((side === Side.BUY && input.htfTrend === 'bear') ||
@@ -185,7 +189,9 @@ export function buildConsensus(input: ConsensusInput): ConsensusResult {
   } else if (htfVetoEnabled && input.htfTrend != null) {
     evidence.push({
       source: 'htf',
-      label: `HTF trend ${input.htfTrend} aligned`,
+      label: fadePrimary
+        ? `HTF trend ${input.htfTrend} (fade — no veto)`
+        : `HTF trend ${input.htfTrend} aligned`,
       weight: 0.2,
     });
   }

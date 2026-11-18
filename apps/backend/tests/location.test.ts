@@ -75,6 +75,12 @@ describe('relativeStrengthAligned', () => {
     expect(relativeStrengthAligned(Side.SELL, 2.4)).toBe(false);
   });
 
+  it('inverts RS for fade strategies (SELL wants a leader)', () => {
+    expect(relativeStrengthAligned(Side.SELL, 2.4, { invert: true })).toBe(true);
+    expect(relativeStrengthAligned(Side.BUY, -1.2, { invert: true })).toBe(true);
+    expect(relativeStrengthAligned(Side.SELL, -1.2, { invert: true })).toBe(false);
+  });
+
   it('does not veto when BTC RS is missing', () => {
     expect(relativeStrengthAligned(Side.BUY, undefined)).toBe(true);
     expect(relativeStrengthAligned(Side.SELL, undefined)).toBe(true);
