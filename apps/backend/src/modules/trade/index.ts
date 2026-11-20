@@ -261,9 +261,47 @@ async function placeLiveCloseOrder(input: {
   await exchangeService.getExchangeInfo();
   const pair = await isolatedPairSnapshot(input.symbol);
   const freeBase = pair?.base.free ?? 0;
+  const lockedBase = pair?.base.locked ?? 0;
+  const borrowedBase = (pair?.base.borrowed ?? 0) + (pair?.base.interest ?? 0);
+  const base = pair?.base.asset ?? input.symbol.replace(/USDT$/i, '');
   let qty = exchangeService.roundQty(input.symbol, Math.min(input.qty, freeBase));
   if (qty <= 0) {
-    const base = pair?.base.asset ?? input.symbol.replace(/USDT$/i, '');
+    // Exchange already flat (or only unsellable dust) but app still shows an open long.
+    if (lockedBase <= 1e-12 && borrowedBase <= 1e-12) {
+      let px = 0;
+      try {
+        const t = await exchangeService.getTicker(input.symbol);
+        px = t.bid && t.bid > 0 ? t.bid : t.price;
+      } catch {
+        /* */
+      }
+      if (!(px > 0)) {
+        throw new AppError(
+          'NO_MARK_PRICE',
+          `Cannot mark-close flat long ${input.symbol}: no live price (isolated ${base} free is 0).`,
+          503,
+        );
+      }
+      const markQty = Math.max(input.qty, 0);
+      return {
+        orderId: `already-flat-${Date.now()}`,
+        symbol: input.symbol,
+        status: 'FILLED',
+        side: Side.SELL,
+        type: OrderType.MARKET,
+        price: px,
+        executedQty: markQty,
+        cummulativeQuoteQty: markQty * px,
+      };
+    }
+    if (lockedBase > 1e-12) {
+      await throwInsufficientMarginOrder({
+        symbol: input.symbol,
+        side: Side.SELL,
+        qty: input.qty,
+        detail: `Cannot close long: ${base} is locked (${lockedBase}) in isolated — cancel open orders on Binance, then retry.`,
+      });
+    }
     await throwInsufficientMarginOrder({
       symbol: input.symbol,
       side: Side.SELL,
