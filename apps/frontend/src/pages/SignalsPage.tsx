@@ -62,8 +62,26 @@ export function SignalsPage() {
 
   const saveScanner = useMutation({
     mutationFn: (scanner: Record<string, unknown>) => settingsApi.update({ scanner }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['settings'] });
+    onMutate: async (scanner) => {
+      await qc.cancelQueries({ queryKey: ['settings'] });
+      const prev = qc.getQueryData<Record<string, unknown>>(['settings']);
+      if (prev && typeof prev === 'object') {
+        const prevScanner =
+          prev.scanner && typeof prev.scanner === 'object'
+            ? (prev.scanner as Record<string, unknown>)
+            : {};
+        qc.setQueryData(['settings'], {
+          ...prev,
+          scanner: { ...prevScanner, ...scanner },
+        });
+      }
+      return { prev };
+    },
+    onError: (_err, _scanner, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['settings'], ctx.prev);
+    },
+    onSuccess: (next) => {
+      qc.setQueryData(['settings'], next);
       void qc.invalidateQueries({ queryKey: ['signals'] });
       void qc.invalidateQueries({ queryKey: ['opportunities'] });
     },
@@ -156,7 +174,8 @@ export function SignalsPage() {
           <Select
             value={filters.viewTimeframe === 'ALL' ? 'ALL' : filters.viewTimeframe}
             onChange={(_, v) => {
-              const next = (v ?? 'ALL') as ViewTimeframe;
+              if (v == null) return;
+              const next = v as ViewTimeframe;
               if (next === filters.viewTimeframe) return;
               saveScanner.mutate({ viewTimeframe: next });
             }}
@@ -175,7 +194,8 @@ export function SignalsPage() {
           <Select
             value={filters.viewSide}
             onChange={(_, v) => {
-              const next = (v ?? 'ALL') as ViewSide;
+              if (v == null) return;
+              const next = v as ViewSide;
               if (next === filters.viewSide) return;
               saveScanner.mutate({ viewSide: next });
             }}
@@ -191,7 +211,8 @@ export function SignalsPage() {
           <Select
             value={filters.viewStage}
             onChange={(_, v) => {
-              const next = (v ?? 'ALL') as ViewStage;
+              if (v == null) return;
+              const next = v as ViewStage;
               if (next === filters.viewStage) return;
               saveScanner.mutate({ viewStage: next });
             }}

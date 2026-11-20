@@ -117,8 +117,27 @@ export function ScannerPage() {
 
   const saveScanner = useMutation({
     mutationFn: (scanner: Record<string, unknown>) => settingsApi.update({ scanner }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['settings'] });
+    onMutate: async (scanner) => {
+      await qc.cancelQueries({ queryKey: ['settings'] });
+      const prev = qc.getQueryData<Record<string, unknown>>(['settings']);
+      // Keep Select controlled value on the new choice until the server responds.
+      if (prev && typeof prev === 'object') {
+        const prevScanner =
+          prev.scanner && typeof prev.scanner === 'object'
+            ? (prev.scanner as Record<string, unknown>)
+            : {};
+        qc.setQueryData(['settings'], {
+          ...prev,
+          scanner: { ...prevScanner, ...scanner },
+        });
+      }
+      return { prev };
+    },
+    onError: (_err, _scanner, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['settings'], ctx.prev);
+    },
+    onSuccess: (next) => {
+      qc.setQueryData(['settings'], next);
       void qc.invalidateQueries({ queryKey: ['opportunities'] });
       void qc.invalidateQueries({ queryKey: ['signals'] });
     },
@@ -359,7 +378,9 @@ export function ScannerPage() {
           <Select
             value={view.viewTimeframe === 'ALL' ? 'ALL' : view.viewTimeframe}
             onChange={(_, v) => {
-              const next = (v ?? 'ALL') as ViewTimeframe;
+              // Joy fires null when the listbox closes without a new pick — ignore it.
+              if (v == null) return;
+              const next = v as ViewTimeframe;
               if (next === view.viewTimeframe) return;
               saveScanner.mutate({ viewTimeframe: next });
             }}
@@ -378,7 +399,8 @@ export function ScannerPage() {
           <Select
             value={view.viewSide}
             onChange={(_, v) => {
-              const next = (v ?? 'ALL') as ViewSide;
+              if (v == null) return;
+              const next = v as ViewSide;
               if (next === view.viewSide) return;
               saveScanner.mutate({ viewSide: next });
             }}
@@ -394,7 +416,8 @@ export function ScannerPage() {
           <Select
             value={view.viewStage}
             onChange={(_, v) => {
-              const next = (v ?? 'ALL') as ViewStage;
+              if (v == null) return;
+              const next = v as ViewStage;
               if (next === view.viewStage) return;
               saveScanner.mutate({ viewStage: next });
             }}

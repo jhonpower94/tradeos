@@ -1052,7 +1052,8 @@ export function SettingsPage() {
             <Select
               value={(data.scanner?.viewSide as string | undefined) ?? 'ALL'}
               onChange={(_, v) => {
-                const next = (v ?? 'ALL') as 'ALL' | 'BUY' | 'SELL';
+                if (v == null) return;
+                const next = v as 'ALL' | 'BUY' | 'SELL';
                 if (next === (data.scanner?.viewSide ?? 'ALL')) return;
                 saveSettings.mutate({ scanner: { viewSide: next } });
               }}
@@ -1067,7 +1068,8 @@ export function SettingsPage() {
             <Select
               value={(data.scanner?.viewStage as string | undefined) ?? 'ALL'}
               onChange={(_, v) => {
-                const next = (v ?? 'ALL') as 'ALL' | 'triggered' | 'watching';
+                if (v == null) return;
+                const next = v as 'ALL' | 'triggered' | 'watching';
                 if (next === (data.scanner?.viewStage ?? 'ALL')) return;
                 saveSettings.mutate({ scanner: { viewStage: next } });
               }}
@@ -1082,7 +1084,8 @@ export function SettingsPage() {
             <Select
               value={(data.scanner?.viewTimeframe as string | undefined) ?? 'ALL'}
               onChange={(_, v) => {
-                const next = (v ?? 'ALL') as string;
+                if (v == null) return;
+                const next = v as string;
                 if (next === (data.scanner?.viewTimeframe ?? 'ALL')) return;
                 saveSettings.mutate({ scanner: { viewTimeframe: next } });
               }}
