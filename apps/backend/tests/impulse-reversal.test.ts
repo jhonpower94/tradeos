@@ -94,11 +94,18 @@ describe('measureImpulse helpers', () => {
     expect(isAlreadyExtended('buy', 110, 100, 1)).toBe(true);
     expect(isAlreadyExtended('buy', 100.5, 100, 1)).toBe(false);
   });
+
+  it('close beyond the extreme is not still near (continuation)', () => {
+    expect(isStillNearExtreme('sell', 112, 111, 1)).toBe(false);
+    expect(isStillNearExtreme('buy', 99, 100, 1)).toBe(false);
+    expect(isStillNearExtreme('sell', 111, 111, 1)).toBe(true);
+    expect(isStillNearExtreme('buy', 100, 100, 1)).toBe(true);
+  });
 });
 
 describe('impulse_reversal', () => {
   it('SELLS after a large up-impulse with an early bearish rejection', () => {
-    // Prior ends ~111.4; signal tags slightly above then rejects (small ATR from smooth trend)
+    // Prior ends ~111.4; signal tags high then rejects back below (small ATR from smooth trend)
     const candles = rallyThen({
       open: 111.35,
       high: 111.55,
@@ -112,7 +119,34 @@ describe('impulse_reversal', () => {
     expect(res.stopLoss).toBeGreaterThan(res.entry!);
   });
 
-  it('does not BUY after a large down-impulse (SELL-only)', () => {
+  it('does not SELL when close stays above the rally high', () => {
+    // Tags a new high but closes above prior impulse high — continuation, not fade
+    const candles = rallyThen({
+      open: 111.6,
+      high: 111.9,
+      low: 111.45,
+      close: 111.7,
+    });
+    const res = evalImpulse(candles);
+    expect(res.decision).toBe(Decision.NO_TRADE);
+    expect(res.evidence.some((e) => /continuation|at\/above rally high/i.test(e.label))).toBe(
+      true,
+    );
+  });
+
+  it('does not SELL without tagging the rally high', () => {
+    const candles = rallyThen({
+      open: 111.3,
+      high: 111.4,
+      low: 111.0,
+      close: 111.1,
+    });
+    const res = evalImpulse(candles);
+    expect(res.decision).toBe(Decision.NO_TRADE);
+    expect(res.evidence.some((e) => /Did not tag rally high/i.test(e.label))).toBe(true);
+  });
+
+  it('BUYS after a large down-impulse with an early bullish rejection', () => {
     const candles = selloffThen({
       open: 100.55,
       high: 100.75,
@@ -120,8 +154,10 @@ describe('impulse_reversal', () => {
       close: 100.7,
     });
     const res = evalImpulse(candles);
-    expect(res.decision).toBe(Decision.NO_TRADE);
-    expect(res.evidence.some((e) => /SELL-only/i.test(e.label))).toBe(true);
+    expect(res.decision).toBe(Decision.BUY);
+    expect(res.confidence).toBeGreaterThan(50);
+    expect(res.entry).toBeDefined();
+    expect(res.stopLoss).toBeLessThan(res.entry!);
   });
 
   it('NO_TRADE when the rally already pulled back deeply', () => {

@@ -300,6 +300,8 @@ export function isStillNearExtreme(
   pctCap = 3,
 ): boolean {
   const { atrMult, pct } = extensionFromExtreme(side, close, extreme, atr);
-  if (atrMult <= 0) return true;
+  // Close beyond the extreme (above high for SELL / below low for BUY) is continuation, not a fade.
+  if (atrMult < 0) return false;
+  if (atrMult === 0) return true;
   return atrMult <= atrCap && pct <= pctCap;
 }
