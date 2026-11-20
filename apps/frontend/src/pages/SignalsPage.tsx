@@ -25,12 +25,15 @@ import { formatDateTime, formatLocation, formatPrice, formatRelativeStrength, fo
 import { isWatchingRow, sortOpportunitiesForDisplay } from '../utils/sort';
 import {
   matchesScannerViewFilters,
-  scannerViewFiltersFromSettings,
+  readStoredViewFilters,
+  resolveScannerViewFilters,
+  writeStoredViewFilters,
   type ViewSide,
   type ViewStage,
   type ViewTimeframe,
 } from '../utils/scannerViewFilters';
 import { monoSx } from '../theme/theme';
+import { useAuthStore } from '../stores/authStore';
 
 function mutationErrorMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {
@@ -57,12 +60,14 @@ export function SignalsPage() {
     return () => window.clearInterval(id);
   }, []);
 
+  const userId = useAuthStore((s) => s.user?.id);
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
-  const filters = scannerViewFiltersFromSettings(settings?.scanner);
+  const filters = resolveScannerViewFilters(settings?.scanner, readStoredViewFilters(userId));
 
   const saveScanner = useMutation({
     mutationFn: (scanner: Record<string, unknown>) => settingsApi.update({ scanner }),
     onMutate: async (scanner) => {
+      writeStoredViewFilters(scanner, userId);
       await qc.cancelQueries({ queryKey: ['settings'] });
       const prev = qc.getQueryData<Record<string, unknown>>(['settings']);
       if (prev && typeof prev === 'object') {
@@ -80,8 +85,16 @@ export function SignalsPage() {
     onError: (_err, _scanner, ctx) => {
       if (ctx?.prev) qc.setQueryData(['settings'], ctx.prev);
     },
-    onSuccess: (next) => {
-      qc.setQueryData(['settings'], next);
+    onSuccess: (next, scanner) => {
+      const nextScanner =
+        next?.scanner && typeof next.scanner === 'object'
+          ? (next.scanner as Record<string, unknown>)
+          : {};
+      qc.setQueryData(['settings'], {
+        ...next,
+        scanner: { ...nextScanner, ...scanner },
+      });
+      writeStoredViewFilters(scanner, userId);
       void qc.invalidateQueries({ queryKey: ['signals'] });
       void qc.invalidateQueries({ queryKey: ['opportunities'] });
     },

@@ -1,4 +1,9 @@
-import { STRATEGY_IDS, updateSettingsSchema, binanceSettingsSchema } from '@trading-os/shared';
+import {
+  STRATEGY_IDS,
+  updateSettingsSchema,
+  binanceSettingsSchema,
+  DEFAULT_SCANNER_SETTINGS,
+} from '@trading-os/shared';
 import { Settings } from '../../models/Settings.js';
 import { encrypt, decrypt } from '../../utils/crypto.js';
 import { AppError } from '../../utils/errors.js';
@@ -107,8 +112,16 @@ function sanitizeSettings(doc: InstanceType<typeof Settings>) {
     o.onboarding && typeof o.onboarding === 'object' && 'tradingPathChosen' in o.onboarding
       ? Boolean((o.onboarding as { tradingPathChosen?: boolean }).tradingPathChosen)
       : true;
+  const scannerRaw =
+    o.scanner && typeof o.scanner === 'object' ? (o.scanner as Record<string, unknown>) : {};
+  // Always surface view-filter keys (legacy docs omit them; defaults alone looked like a reset).
+  const scanner = {
+    ...DEFAULT_SCANNER_SETTINGS,
+    ...scannerRaw,
+  };
   return {
     ...o,
+    scanner,
     strategies: strategiesToPlain(o.strategies ?? doc.strategies),
     onboarding: {
       tradingPathChosen,

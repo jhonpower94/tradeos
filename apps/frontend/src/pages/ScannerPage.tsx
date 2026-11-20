@@ -24,13 +24,16 @@ import { formatDateTime, formatLocation, formatPrice, formatRelativeStrength, fo
 import { isWatchingRow, sortOpportunitiesForDisplay } from '../utils/sort';
 import {
   matchesScannerViewFilters,
-  scannerViewFiltersFromSettings,
+  readStoredViewFilters,
+  resolveScannerViewFilters,
+  writeStoredViewFilters,
   type ViewSide,
   type ViewStage,
   type ViewTimeframe,
 } from '../utils/scannerViewFilters';
 import { StatusChip } from '../components/StatusChip';
 import { monoSx } from '../theme/theme';
+import { useAuthStore } from '../stores/authStore';
 
 /** Normalize typed pair input the same way the API does (gram → GRAMUSDT). */
 function normalizeUsdtSymbolInput(raw: string): string {
@@ -110,14 +113,17 @@ export function ScannerPage() {
   const [rescanInfo, setRescanInfo] = useState<string | null>(null);
   const live = useLiveStore((s) => s.opportunities) as unknown as Array<Record<string, unknown>>;
   const qc = useQueryClient();
+  const userId = useAuthStore((s) => s.user?.id);
 
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
-  const view = scannerViewFiltersFromSettings(settings?.scanner);
+  const stored = readStoredViewFilters(userId);
+  const view = resolveScannerViewFilters(settings?.scanner, stored);
   const { minConfidence, maxConfidence, preferMidConfidence } = view;
 
   const saveScanner = useMutation({
     mutationFn: (scanner: Record<string, unknown>) => settingsApi.update({ scanner }),
     onMutate: async (scanner) => {
+      writeStoredViewFilters(scanner, userId);
       await qc.cancelQueries({ queryKey: ['settings'] });
       const prev = qc.getQueryData<Record<string, unknown>>(['settings']);
       // Keep Select controlled value on the new choice until the server responds.
@@ -136,8 +142,17 @@ export function ScannerPage() {
     onError: (_err, _scanner, ctx) => {
       if (ctx?.prev) qc.setQueryData(['settings'], ctx.prev);
     },
-    onSuccess: (next) => {
-      qc.setQueryData(['settings'], next);
+    onSuccess: (next, scanner) => {
+      // Merge patch over response so omitted server keys cannot wipe the UI back to ALL.
+      const nextScanner =
+        next?.scanner && typeof next.scanner === 'object'
+          ? (next.scanner as Record<string, unknown>)
+          : {};
+      qc.setQueryData(['settings'], {
+        ...next,
+        scanner: { ...nextScanner, ...scanner },
+      });
+      writeStoredViewFilters(scanner, userId);
       void qc.invalidateQueries({ queryKey: ['opportunities'] });
       void qc.invalidateQueries({ queryKey: ['signals'] });
     },

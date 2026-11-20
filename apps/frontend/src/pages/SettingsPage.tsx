@@ -48,6 +48,7 @@ import { usePwaInstall } from '../hooks/usePwaInstall';
 import { formatDateTime, formatNumber } from '../utils/format';
 import { monoSx } from '../theme/theme';
 import { useAuthStore } from '../stores/authStore';
+import { writeStoredViewFilters } from '../utils/scannerViewFilters';
 
 /** Settings store fractions (0.01 = 1%); UI edits percents. */
 function fractionToPercent(fraction: number): number {
@@ -351,9 +352,28 @@ export function SettingsPage() {
   });
   const saveSettings = useMutation({
     mutationFn: (body: unknown) => settingsApi.update(body),
-    onSuccess: (next) => {
+    onSuccess: (next, body) => {
       setMsg('Settings saved');
-      qc.setQueryData(['settings'], next);
+      const patch =
+        body && typeof body === 'object' && 'scanner' in body
+          ? ((body as { scanner?: Record<string, unknown> }).scanner ?? {})
+          : {};
+      const nextScanner =
+        next?.scanner && typeof next.scanner === 'object'
+          ? (next.scanner as Record<string, unknown>)
+          : {};
+      const mergedScanner = { ...nextScanner, ...patch };
+      qc.setQueryData(['settings'], { ...next, scanner: mergedScanner });
+      // Keep Scanner/Signals local store in sync when view filters change here.
+      if (
+        patch.viewSide != null ||
+        patch.viewStage != null ||
+        patch.viewTimeframe != null ||
+        patch.minConfidence != null ||
+        patch.maxConfidence != null
+      ) {
+        writeStoredViewFilters(mergedScanner, useAuthStore.getState().user?.id);
+      }
     },
     onError: (e: unknown) =>
       setMsg(
