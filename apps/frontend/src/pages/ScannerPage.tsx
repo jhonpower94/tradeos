@@ -24,16 +24,11 @@ import { formatDateTime, formatLocation, formatPrice, formatRelativeStrength, fo
 import { isWatchingRow, sortOpportunitiesForDisplay } from '../utils/sort';
 import {
   matchesScannerViewFilters,
-  readStoredViewFilters,
-  resolveScannerViewFilters,
-  writeStoredViewFilters,
-  type ViewSide,
-  type ViewStage,
-  type ViewTimeframe,
+  type ScannerViewFilters,
 } from '../utils/scannerViewFilters';
 import { StatusChip } from '../components/StatusChip';
 import { monoSx } from '../theme/theme';
-import { useAuthStore } from '../stores/authStore';
+import { useScannerViewStore } from '../stores/scannerViewStore';
 
 /** Normalize typed pair input the same way the API does (gram → GRAMUSDT). */
 function normalizeUsdtSymbolInput(raw: string): string {
@@ -113,55 +108,59 @@ export function ScannerPage() {
   const [rescanInfo, setRescanInfo] = useState<string | null>(null);
   const live = useLiveStore((s) => s.opportunities) as unknown as Array<Record<string, unknown>>;
   const qc = useQueryClient();
-  const userId = useAuthStore((s) => s.user?.id);
 
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
-  const stored = readStoredViewFilters(userId);
-  const view = resolveScannerViewFilters(settings?.scanner, stored);
-  const { minConfidence, maxConfidence, preferMidConfidence } = view;
+  const viewSide = useScannerViewStore((s) => s.viewSide);
+  const viewStage = useScannerViewStore((s) => s.viewStage);
+  const viewTimeframe = useScannerViewStore((s) => s.viewTimeframe);
+  const minConfOverride = useScannerViewStore((s) => s.minConfidence);
+  const maxConfOverride = useScannerViewStore((s) => s.maxConfidence);
+  const setView = useScannerViewStore((s) => s.setView);
+
+  const minConfidence = clampConfidence(
+    Number(minConfOverride ?? settings?.scanner?.minConfidence ?? 75),
+  );
+  const maxConfidence = clampConfidence(
+    Number(maxConfOverride ?? settings?.scanner?.maxConfidence ?? 100),
+  );
+  const preferMidConfidence = settings?.scanner?.preferMidConfidence !== false;
+  const view: ScannerViewFilters = {
+    minConfidence,
+    maxConfidence,
+    preferMidConfidence,
+    viewSide,
+    viewStage,
+    viewTimeframe,
+    side: viewSide === 'BUY' || viewSide === 'SELL' ? viewSide : undefined,
+    stage: viewStage === 'triggered' || viewStage === 'watching' ? viewStage : undefined,
+    timeframe: viewTimeframe !== 'ALL' ? String(viewTimeframe) : undefined,
+  };
 
   const saveScanner = useMutation({
     mutationFn: (scanner: Record<string, unknown>) => settingsApi.update({ scanner }),
-    onMutate: async (scanner) => {
-      writeStoredViewFilters(scanner, userId);
-      await qc.cancelQueries({ queryKey: ['settings'] });
-      const prev = qc.getQueryData<Record<string, unknown>>(['settings']);
-      // Keep Select controlled value on the new choice until the server responds.
-      if (prev && typeof prev === 'object') {
-        const prevScanner =
-          prev.scanner && typeof prev.scanner === 'object'
-            ? (prev.scanner as Record<string, unknown>)
-            : {};
-        qc.setQueryData(['settings'], {
-          ...prev,
-          scanner: { ...prevScanner, ...scanner },
-        });
-      }
-      return { prev };
-    },
-    onError: (_err, _scanner, ctx) => {
-      if (ctx?.prev) qc.setQueryData(['settings'], ctx.prev);
-    },
-    onSuccess: (next, scanner) => {
-      // Merge patch over response so omitted server keys cannot wipe the UI back to ALL.
-      const nextScanner =
-        next?.scanner && typeof next.scanner === 'object'
-          ? (next.scanner as Record<string, unknown>)
-          : {};
-      qc.setQueryData(['settings'], {
-        ...next,
-        scanner: { ...nextScanner, ...scanner },
-      });
-      writeStoredViewFilters(scanner, userId);
+    onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['opportunities'] });
       void qc.invalidateQueries({ queryKey: ['signals'] });
+      // Do not replace view UI from settings GET — store is the source of truth.
+      void qc.invalidateQueries({ queryKey: ['settings'] });
     },
   });
+
+  const applyView = (patch: Parameters<typeof setView>[0] & Record<string, unknown>) => {
+    setView(patch);
+    const scanner: Record<string, unknown> = {};
+    if (patch.viewSide != null) scanner.viewSide = patch.viewSide;
+    if (patch.viewStage != null) scanner.viewStage = patch.viewStage;
+    if (patch.viewTimeframe != null) scanner.viewTimeframe = patch.viewTimeframe;
+    if (typeof patch.minConfidence === 'number') scanner.minConfidence = patch.minConfidence;
+    if (typeof patch.maxConfidence === 'number') scanner.maxConfidence = patch.maxConfidence;
+    if (Object.keys(scanner).length) saveScanner.mutate(scanner);
+  };
 
   const { data } = useQuery({
     // Settings view filters apply server-side when query params are omitted.
     // Live WS rows are filtered client-side below.
-    queryKey: ['opportunities', 'scanner', search, view.viewSide, view.viewStage, view.viewTimeframe, minConfidence, maxConfidence],
+    queryKey: ['opportunities', 'scanner', search, viewSide, viewStage, viewTimeframe, minConfidence, maxConfidence],
     queryFn: () =>
       scannerApi.opportunities({
         search: search || undefined,
@@ -364,11 +363,11 @@ export function ScannerPage() {
               const n = Number(minConfDraft);
               const next = Number.isFinite(n) ? clampConfidence(n) : minConfidence;
               setMinConfDraft(null);
-              if (next !== minConfidence) saveScanner.mutate({ minConfidence: next });
+              if (next !== minConfidence) applyView({ minConfidence: next });
             }}
             sx={{ width: '100%' }}
           />
-          <FormHelperText>Saved to Settings. Watching rows included.</FormHelperText>
+          <FormHelperText>Remembers on this device. Watching rows included.</FormHelperText>
         </FormControl>
         <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Max confidence</FormLabel>
@@ -382,22 +381,20 @@ export function ScannerPage() {
               const n = Number(maxConfDraft);
               const next = Number.isFinite(n) ? clampConfidence(n) : maxConfidence;
               setMaxConfDraft(null);
-              if (next !== maxConfidence) saveScanner.mutate({ maxConfidence: next });
+              if (next !== maxConfidence) applyView({ maxConfidence: next });
             }}
             sx={{ width: '100%' }}
           />
-          <FormHelperText>Triggered ceiling — saved to Settings.</FormHelperText>
+          <FormHelperText>Triggered ceiling — remembers on this device.</FormHelperText>
         </FormControl>
         <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Timeframe</FormLabel>
           <Select
-            value={view.viewTimeframe === 'ALL' ? 'ALL' : view.viewTimeframe}
+            value={viewTimeframe === 'ALL' ? 'ALL' : viewTimeframe}
             onChange={(_, v) => {
-              // Joy fires null when the listbox closes without a new pick — ignore it.
               if (v == null) return;
-              const next = v as ViewTimeframe;
-              if (next === view.viewTimeframe) return;
-              saveScanner.mutate({ viewTimeframe: next });
+              if (v === viewTimeframe) return;
+              applyView({ viewTimeframe: v });
             }}
             sx={{ minWidth: 0, width: '100%' }}
           >
@@ -412,12 +409,11 @@ export function ScannerPage() {
         <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Side</FormLabel>
           <Select
-            value={view.viewSide}
+            value={viewSide}
             onChange={(_, v) => {
               if (v == null) return;
-              const next = v as ViewSide;
-              if (next === view.viewSide) return;
-              saveScanner.mutate({ viewSide: next });
+              if (v === viewSide) return;
+              applyView({ viewSide: v as 'ALL' | 'BUY' | 'SELL' });
             }}
             sx={{ minWidth: 0, width: '100%' }}
           >
@@ -429,12 +425,11 @@ export function ScannerPage() {
         <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Stage</FormLabel>
           <Select
-            value={view.viewStage}
+            value={viewStage}
             onChange={(_, v) => {
               if (v == null) return;
-              const next = v as ViewStage;
-              if (next === view.viewStage) return;
-              saveScanner.mutate({ viewStage: next });
+              if (v === viewStage) return;
+              applyView({ viewStage: v as 'ALL' | 'triggered' | 'watching' });
             }}
             sx={{ minWidth: 0, width: '100%' }}
           >

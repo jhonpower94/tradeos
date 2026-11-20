@@ -48,7 +48,7 @@ import { usePwaInstall } from '../hooks/usePwaInstall';
 import { formatDateTime, formatNumber } from '../utils/format';
 import { monoSx } from '../theme/theme';
 import { useAuthStore } from '../stores/authStore';
-import { writeStoredViewFilters } from '../utils/scannerViewFilters';
+import { useScannerViewStore } from '../stores/scannerViewStore';
 
 /** Settings store fractions (0.01 = 1%); UI edits percents. */
 function fractionToPercent(fraction: number): number {
@@ -300,6 +300,10 @@ export function SettingsPage() {
   const canUseLive = user?.role === 'admin' || Boolean(user?.subscription?.active);
   const qc = useQueryClient();
   const pwaInstall = usePwaInstall();
+  const viewSide = useScannerViewStore((s) => s.viewSide);
+  const viewStage = useScannerViewStore((s) => s.viewStage);
+  const viewTimeframe = useScannerViewStore((s) => s.viewTimeframe);
+  const setScannerView = useScannerViewStore((s) => s.setView);
   const { data } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
   const isPaper = (data?.trading?.mode ?? 'paper') === 'paper';
   const { data: ledger } = useQuery({
@@ -354,26 +358,33 @@ export function SettingsPage() {
     mutationFn: (body: unknown) => settingsApi.update(body),
     onSuccess: (next, body) => {
       setMsg('Settings saved');
+      qc.setQueryData(['settings'], next);
       const patch =
         body && typeof body === 'object' && 'scanner' in body
           ? ((body as { scanner?: Record<string, unknown> }).scanner ?? {})
           : {};
-      const nextScanner =
-        next?.scanner && typeof next.scanner === 'object'
-          ? (next.scanner as Record<string, unknown>)
-          : {};
-      const mergedScanner = { ...nextScanner, ...patch };
-      qc.setQueryData(['settings'], { ...next, scanner: mergedScanner });
-      // Keep Scanner/Signals local store in sync when view filters change here.
-      if (
-        patch.viewSide != null ||
-        patch.viewStage != null ||
-        patch.viewTimeframe != null ||
-        patch.minConfidence != null ||
-        patch.maxConfidence != null
-      ) {
-        writeStoredViewFilters(mergedScanner, useAuthStore.getState().user?.id);
+      // Keep Scanner/Signals view store in sync (UI source of truth for filters).
+      const viewPatch: {
+        viewSide?: 'ALL' | 'BUY' | 'SELL';
+        viewStage?: 'ALL' | 'triggered' | 'watching';
+        viewTimeframe?: string;
+        minConfidence?: number;
+        maxConfidence?: number;
+      } = {};
+      if (patch.viewSide === 'ALL' || patch.viewSide === 'BUY' || patch.viewSide === 'SELL') {
+        viewPatch.viewSide = patch.viewSide;
       }
+      if (
+        patch.viewStage === 'ALL' ||
+        patch.viewStage === 'triggered' ||
+        patch.viewStage === 'watching'
+      ) {
+        viewPatch.viewStage = patch.viewStage;
+      }
+      if (typeof patch.viewTimeframe === 'string') viewPatch.viewTimeframe = patch.viewTimeframe;
+      if (typeof patch.minConfidence === 'number') viewPatch.minConfidence = patch.minConfidence;
+      if (typeof patch.maxConfidence === 'number') viewPatch.maxConfidence = patch.maxConfidence;
+      if (Object.keys(viewPatch).length) useScannerViewStore.getState().setView(viewPatch);
     },
     onError: (e: unknown) =>
       setMsg(
@@ -1070,11 +1081,12 @@ export function SettingsPage() {
           <FormControl>
             <FormLabel>Side</FormLabel>
             <Select
-              value={(data.scanner?.viewSide as string | undefined) ?? 'ALL'}
+              value={viewSide}
               onChange={(_, v) => {
                 if (v == null) return;
                 const next = v as 'ALL' | 'BUY' | 'SELL';
-                if (next === (data.scanner?.viewSide ?? 'ALL')) return;
+                if (next === viewSide) return;
+                setScannerView({ viewSide: next });
                 saveSettings.mutate({ scanner: { viewSide: next } });
               }}
             >
@@ -1086,11 +1098,12 @@ export function SettingsPage() {
           <FormControl>
             <FormLabel>Stage</FormLabel>
             <Select
-              value={(data.scanner?.viewStage as string | undefined) ?? 'ALL'}
+              value={viewStage}
               onChange={(_, v) => {
                 if (v == null) return;
                 const next = v as 'ALL' | 'triggered' | 'watching';
-                if (next === (data.scanner?.viewStage ?? 'ALL')) return;
+                if (next === viewStage) return;
+                setScannerView({ viewStage: next });
                 saveSettings.mutate({ scanner: { viewStage: next } });
               }}
             >
@@ -1102,11 +1115,12 @@ export function SettingsPage() {
           <FormControl>
             <FormLabel>Display timeframe</FormLabel>
             <Select
-              value={(data.scanner?.viewTimeframe as string | undefined) ?? 'ALL'}
+              value={viewTimeframe}
               onChange={(_, v) => {
                 if (v == null) return;
                 const next = v as string;
-                if (next === (data.scanner?.viewTimeframe ?? 'ALL')) return;
+                if (next === viewTimeframe) return;
+                setScannerView({ viewTimeframe: next });
                 saveSettings.mutate({ scanner: { viewTimeframe: next } });
               }}
             >

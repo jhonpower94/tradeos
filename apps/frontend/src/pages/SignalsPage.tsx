@@ -23,17 +23,9 @@ import { ConfidenceBar } from '../components/ConfidenceBar';
 import { ResponsiveRecordList } from '../components/ResponsiveRecordList';
 import { formatDateTime, formatLocation, formatPrice, formatRelativeStrength, formatRelativeTime } from '../utils/format';
 import { isWatchingRow, sortOpportunitiesForDisplay } from '../utils/sort';
-import {
-  matchesScannerViewFilters,
-  readStoredViewFilters,
-  resolveScannerViewFilters,
-  writeStoredViewFilters,
-  type ViewSide,
-  type ViewStage,
-  type ViewTimeframe,
-} from '../utils/scannerViewFilters';
+import { matchesScannerViewFilters, type ScannerViewFilters } from '../utils/scannerViewFilters';
 import { monoSx } from '../theme/theme';
-import { useAuthStore } from '../stores/authStore';
+import { useScannerViewStore } from '../stores/scannerViewStore';
 
 function mutationErrorMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {
@@ -60,55 +52,55 @@ export function SignalsPage() {
     return () => window.clearInterval(id);
   }, []);
 
-  const userId = useAuthStore((s) => s.user?.id);
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
-  const filters = resolveScannerViewFilters(settings?.scanner, readStoredViewFilters(userId));
+  const viewSide = useScannerViewStore((s) => s.viewSide);
+  const viewStage = useScannerViewStore((s) => s.viewStage);
+  const viewTimeframe = useScannerViewStore((s) => s.viewTimeframe);
+  const minConfOverride = useScannerViewStore((s) => s.minConfidence);
+  const maxConfOverride = useScannerViewStore((s) => s.maxConfidence);
+  const setView = useScannerViewStore((s) => s.setView);
+
+  const minConfidence = Number(minConfOverride ?? settings?.scanner?.minConfidence ?? 75);
+  const maxConfidence = Number(maxConfOverride ?? settings?.scanner?.maxConfidence ?? 100);
+  const filters: ScannerViewFilters = {
+    minConfidence,
+    maxConfidence,
+    preferMidConfidence: settings?.scanner?.preferMidConfidence !== false,
+    viewSide,
+    viewStage,
+    viewTimeframe,
+    side: viewSide === 'BUY' || viewSide === 'SELL' ? viewSide : undefined,
+    stage: viewStage === 'triggered' || viewStage === 'watching' ? viewStage : undefined,
+    timeframe: viewTimeframe !== 'ALL' ? String(viewTimeframe) : undefined,
+  };
 
   const saveScanner = useMutation({
     mutationFn: (scanner: Record<string, unknown>) => settingsApi.update({ scanner }),
-    onMutate: async (scanner) => {
-      writeStoredViewFilters(scanner, userId);
-      await qc.cancelQueries({ queryKey: ['settings'] });
-      const prev = qc.getQueryData<Record<string, unknown>>(['settings']);
-      if (prev && typeof prev === 'object') {
-        const prevScanner =
-          prev.scanner && typeof prev.scanner === 'object'
-            ? (prev.scanner as Record<string, unknown>)
-            : {};
-        qc.setQueryData(['settings'], {
-          ...prev,
-          scanner: { ...prevScanner, ...scanner },
-        });
-      }
-      return { prev };
-    },
-    onError: (_err, _scanner, ctx) => {
-      if (ctx?.prev) qc.setQueryData(['settings'], ctx.prev);
-    },
-    onSuccess: (next, scanner) => {
-      const nextScanner =
-        next?.scanner && typeof next.scanner === 'object'
-          ? (next.scanner as Record<string, unknown>)
-          : {};
-      qc.setQueryData(['settings'], {
-        ...next,
-        scanner: { ...nextScanner, ...scanner },
-      });
-      writeStoredViewFilters(scanner, userId);
+    onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['signals'] });
       void qc.invalidateQueries({ queryKey: ['opportunities'] });
+      void qc.invalidateQueries({ queryKey: ['settings'] });
     },
   });
+
+  const applyView = (patch: Parameters<typeof setView>[0]) => {
+    setView(patch);
+    const scanner: Record<string, unknown> = {};
+    if (patch.viewSide != null) scanner.viewSide = patch.viewSide;
+    if (patch.viewStage != null) scanner.viewStage = patch.viewStage;
+    if (patch.viewTimeframe != null) scanner.viewTimeframe = patch.viewTimeframe;
+    if (Object.keys(scanner).length) saveScanner.mutate(scanner);
+  };
 
   const { data } = useQuery({
     queryKey: [
       'signals',
       listMode,
-      filters.viewSide,
-      filters.viewStage,
-      filters.viewTimeframe,
-      filters.minConfidence,
-      filters.maxConfidence,
+      viewSide,
+      viewStage,
+      viewTimeframe,
+      minConfidence,
+      maxConfidence,
     ],
     queryFn: () => signalsApi.list({ view: listMode }),
     refetchInterval: 10_000,
@@ -185,12 +177,11 @@ export function SignalsPage() {
         <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Timeframe</FormLabel>
           <Select
-            value={filters.viewTimeframe === 'ALL' ? 'ALL' : filters.viewTimeframe}
+            value={viewTimeframe === 'ALL' ? 'ALL' : viewTimeframe}
             onChange={(_, v) => {
               if (v == null) return;
-              const next = v as ViewTimeframe;
-              if (next === filters.viewTimeframe) return;
-              saveScanner.mutate({ viewTimeframe: next });
+              if (v === viewTimeframe) return;
+              applyView({ viewTimeframe: v });
             }}
             sx={{ width: '100%' }}
           >
@@ -205,12 +196,11 @@ export function SignalsPage() {
         <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Side</FormLabel>
           <Select
-            value={filters.viewSide}
+            value={viewSide}
             onChange={(_, v) => {
               if (v == null) return;
-              const next = v as ViewSide;
-              if (next === filters.viewSide) return;
-              saveScanner.mutate({ viewSide: next });
+              if (v === viewSide) return;
+              applyView({ viewSide: v as 'ALL' | 'BUY' | 'SELL' });
             }}
             sx={{ width: '100%' }}
           >
@@ -222,12 +212,11 @@ export function SignalsPage() {
         <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Stage</FormLabel>
           <Select
-            value={filters.viewStage}
+            value={viewStage}
             onChange={(_, v) => {
               if (v == null) return;
-              const next = v as ViewStage;
-              if (next === filters.viewStage) return;
-              saveScanner.mutate({ viewStage: next });
+              if (v === viewStage) return;
+              applyView({ viewStage: v as 'ALL' | 'triggered' | 'watching' });
             }}
             sx={{ width: '100%' }}
           >
