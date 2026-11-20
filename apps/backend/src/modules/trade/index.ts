@@ -113,7 +113,7 @@ async function placeMarginOrderGuarded(
     return await exchangeService.placeMarginOrder(params);
   } catch (err) {
     if (!isBinanceInsufficientBalance(err)) throw err;
-    await throwInsufficientMarginOrder({
+    return throwInsufficientMarginOrder({
       symbol: params.symbol,
       side: params.side,
       qty: params.quantity,
