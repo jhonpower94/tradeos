@@ -22,6 +22,13 @@ import { PageHeader } from '../components/PageHeader';
 import { ResponsiveRecordList } from '../components/ResponsiveRecordList';
 import { formatDateTime, formatLocation, formatPrice, formatRelativeStrength, formatRelativeTime } from '../utils/format';
 import { isWatchingRow, sortOpportunitiesForDisplay } from '../utils/sort';
+import {
+  matchesScannerViewFilters,
+  scannerViewFiltersFromSettings,
+  type ViewSide,
+  type ViewStage,
+  type ViewTimeframe,
+} from '../utils/scannerViewFilters';
 import { StatusChip } from '../components/StatusChip';
 import { monoSx } from '../theme/theme';
 
@@ -96,35 +103,33 @@ function clampConfidence(n: number): number {
 }
 
 export function ScannerPage() {
-  /** null = follow Settings until the user edits the display filter. */
-  const [minConfidenceOverride, setMinConfidenceOverride] = useState<number | null>(null);
-  const [maxConfidenceOverride, setMaxConfidenceOverride] = useState<number | null>(null);
   const [minConfDraft, setMinConfDraft] = useState<string | null>(null);
   const [maxConfDraft, setMaxConfDraft] = useState<string | null>(null);
-  const [timeframe, setTimeframe] = useState('');
-  const [side, setSide] = useState('');
   const [search, setSearch] = useState('');
-  const [stage, setStage] = useState('');
   const [rescanSymbol, setRescanSymbol] = useState('');
   const [rescanInfo, setRescanInfo] = useState<string | null>(null);
   const live = useLiveStore((s) => s.opportunities) as unknown as Array<Record<string, unknown>>;
   const qc = useQueryClient();
 
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
-  const settingsMinConfidence = clampConfidence(Number(settings?.scanner?.minConfidence ?? 75));
-  const settingsMaxConfidence = clampConfidence(Number(settings?.scanner?.maxConfidence ?? 100));
-  const minConfidence = minConfidenceOverride ?? settingsMinConfidence;
-  const maxConfidence = maxConfidenceOverride ?? settingsMaxConfidence;
-  const preferMidConfidence = settings?.scanner?.preferMidConfidence !== false;
+  const view = scannerViewFiltersFromSettings(settings?.scanner);
+  const { minConfidence, maxConfidence, preferMidConfidence } = view;
+
+  const saveScanner = useMutation({
+    mutationFn: (scanner: Record<string, unknown>) => settingsApi.update({ scanner }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['settings'] });
+      void qc.invalidateQueries({ queryKey: ['opportunities'] });
+      void qc.invalidateQueries({ queryKey: ['signals'] });
+    },
+  });
 
   const { data } = useQuery({
-    // Fetch the full active set; confidence is filtered client-side so the input
-    // responds immediately even when live WS data is preferred over query results.
-    queryKey: ['opportunities', 'scanner', timeframe, side, search],
+    // Settings view filters apply server-side when query params are omitted.
+    // Live WS rows are filtered client-side below.
+    queryKey: ['opportunities', 'scanner', search, view.viewSide, view.viewStage, view.viewTimeframe, minConfidence, maxConfidence],
     queryFn: () =>
       scannerApi.opportunities({
-        timeframe: timeframe || undefined,
-        side: side || undefined,
         search: search || undefined,
       }),
     refetchInterval: 15_000,
@@ -194,21 +199,8 @@ export function ScannerPage() {
   const items = sortOpportunitiesForDisplay(
     ((live.length ? live : (data?.items ?? [])) as Array<Record<string, unknown>>).filter(
       (o: Record<string, unknown>) => {
-        const conf = Number(o.confidence);
-        if (Number.isFinite(conf) && conf < minConfidence) return false;
-        // Max ceiling applies to triggered only; watching is always below min.
-        if (
-          Number.isFinite(conf) &&
-          !isWatchingRow(o) &&
-          conf > maxConfidence
-        ) {
-          return false;
-        }
-        if (timeframe && o.timeframe !== timeframe) return false;
-        if (side && o.side !== side) return false;
+        if (!matchesScannerViewFilters(o, view, { isWatching: isWatchingRow })) return false;
         if (search && !String(o.symbol).toLowerCase().includes(search.toLowerCase())) return false;
-        if (stage === 'triggered' && isWatchingRow(o)) return false;
-        if (stage === 'watching' && !isWatchingRow(o)) return false;
         return true;
       },
     ),
@@ -332,27 +324,17 @@ export function ScannerPage() {
             type="number"
             slotProps={{ input: { min: 0, max: 100, step: 1 } }}
             value={minConfDraft ?? String(minConfidence)}
-            onChange={(e) => {
-              const raw = e.target.value;
-              setMinConfDraft(raw);
-              if (raw.trim() === '') return;
-              const n = Number(raw);
-              if (Number.isFinite(n)) setMinConfidenceOverride(clampConfidence(n));
-            }}
+            onChange={(e) => setMinConfDraft(e.target.value)}
             onBlur={() => {
-              if (minConfDraft != null && minConfDraft.trim() === '') {
-                setMinConfidenceOverride(settingsMinConfidence);
-              } else if (minConfDraft != null) {
-                const n = Number(minConfDraft);
-                setMinConfidenceOverride(
-                  Number.isFinite(n) ? clampConfidence(n) : settingsMinConfidence,
-                );
-              }
+              if (minConfDraft == null) return;
+              const n = Number(minConfDraft);
+              const next = Number.isFinite(n) ? clampConfidence(n) : minConfidence;
               setMinConfDraft(null);
+              if (next !== minConfidence) saveScanner.mutate({ minConfidence: next });
             }}
             sx={{ width: '100%' }}
           />
-          <FormHelperText>List filter (defaults to Settings). Watching rows included.</FormHelperText>
+          <FormHelperText>Saved to Settings. Watching rows included.</FormHelperText>
         </FormControl>
         <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Max confidence</FormLabel>
@@ -360,36 +342,30 @@ export function ScannerPage() {
             type="number"
             slotProps={{ input: { min: 0, max: 100, step: 1 } }}
             value={maxConfDraft ?? String(maxConfidence)}
-            onChange={(e) => {
-              const raw = e.target.value;
-              setMaxConfDraft(raw);
-              if (raw.trim() === '') return;
-              const n = Number(raw);
-              if (Number.isFinite(n)) setMaxConfidenceOverride(clampConfidence(n));
-            }}
+            onChange={(e) => setMaxConfDraft(e.target.value)}
             onBlur={() => {
-              if (maxConfDraft != null && maxConfDraft.trim() === '') {
-                setMaxConfidenceOverride(settingsMaxConfidence);
-              } else if (maxConfDraft != null) {
-                const n = Number(maxConfDraft);
-                setMaxConfidenceOverride(
-                  Number.isFinite(n) ? clampConfidence(n) : settingsMaxConfidence,
-                );
-              }
+              if (maxConfDraft == null) return;
+              const n = Number(maxConfDraft);
+              const next = Number.isFinite(n) ? clampConfidence(n) : maxConfidence;
               setMaxConfDraft(null);
+              if (next !== maxConfidence) saveScanner.mutate({ maxConfidence: next });
             }}
             sx={{ width: '100%' }}
           />
-          <FormHelperText>Triggered ceiling only (defaults to Settings).</FormHelperText>
+          <FormHelperText>Triggered ceiling — saved to Settings.</FormHelperText>
         </FormControl>
         <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Timeframe</FormLabel>
           <Select
-            value={timeframe}
-            onChange={(_, v) => setTimeframe(v ?? '')}
+            value={view.viewTimeframe === 'ALL' ? 'ALL' : view.viewTimeframe}
+            onChange={(_, v) => {
+              const next = (v ?? 'ALL') as ViewTimeframe;
+              if (next === view.viewTimeframe) return;
+              saveScanner.mutate({ viewTimeframe: next });
+            }}
             sx={{ minWidth: 0, width: '100%' }}
           >
-            <Option value="">All</Option>
+            <Option value="ALL">All</Option>
             {['1m', '5m', '15m', '30m', '1h', '4h', '1d'].map((t) => (
               <Option key={t} value={t}>
                 {t}
@@ -400,11 +376,15 @@ export function ScannerPage() {
         <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Side</FormLabel>
           <Select
-            value={side}
-            onChange={(_, v) => setSide(v ?? '')}
+            value={view.viewSide}
+            onChange={(_, v) => {
+              const next = (v ?? 'ALL') as ViewSide;
+              if (next === view.viewSide) return;
+              saveScanner.mutate({ viewSide: next });
+            }}
             sx={{ minWidth: 0, width: '100%' }}
           >
-            <Option value="">All</Option>
+            <Option value="ALL">All</Option>
             <Option value="BUY">BUY</Option>
             <Option value="SELL">SELL</Option>
           </Select>
@@ -412,11 +392,15 @@ export function ScannerPage() {
         <FormControl sx={{ minWidth: 0 }}>
           <FormLabel>Stage</FormLabel>
           <Select
-            value={stage}
-            onChange={(_, v) => setStage(v ?? '')}
+            value={view.viewStage}
+            onChange={(_, v) => {
+              const next = (v ?? 'ALL') as ViewStage;
+              if (next === view.viewStage) return;
+              saveScanner.mutate({ viewStage: next });
+            }}
             sx={{ minWidth: 0, width: '100%' }}
           >
-            <Option value="">All</Option>
+            <Option value="ALL">All</Option>
             <Option value="triggered">Triggered</Option>
             <Option value="watching">Watching</Option>
           </Select>

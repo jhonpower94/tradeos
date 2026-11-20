@@ -1040,13 +1040,69 @@ export function SettingsPage() {
             </Select>
             <FormHelperText>Prefer one family (e.g. 1h + 4h). Mixed 15m + 4h often conflicts.</FormHelperText>
           </FormControl>
+          <Typography level="title-sm" sx={{ mt: 1 }}>
+            View filters
+          </Typography>
+          <Typography level="body-xs" sx={{ color: 'text.tertiary', mb: 0.5 }}>
+            Controls what Scanner and Signals list. Does not change which strategies run or which
+            timeframes are scanned.
+          </Typography>
+          <FormControl>
+            <FormLabel>Side</FormLabel>
+            <Select
+              value={(data.scanner?.viewSide as string | undefined) ?? 'ALL'}
+              onChange={(_, v) => {
+                const next = (v ?? 'ALL') as 'ALL' | 'BUY' | 'SELL';
+                if (next === (data.scanner?.viewSide ?? 'ALL')) return;
+                saveSettings.mutate({ scanner: { viewSide: next } });
+              }}
+            >
+              <Option value="ALL">All</Option>
+              <Option value="BUY">BUY</Option>
+              <Option value="SELL">SELL</Option>
+            </Select>
+          </FormControl>
+          <FormControl>
+            <FormLabel>Stage</FormLabel>
+            <Select
+              value={(data.scanner?.viewStage as string | undefined) ?? 'ALL'}
+              onChange={(_, v) => {
+                const next = (v ?? 'ALL') as 'ALL' | 'triggered' | 'watching';
+                if (next === (data.scanner?.viewStage ?? 'ALL')) return;
+                saveSettings.mutate({ scanner: { viewStage: next } });
+              }}
+            >
+              <Option value="ALL">All</Option>
+              <Option value="triggered">Triggered</Option>
+              <Option value="watching">Watching</Option>
+            </Select>
+          </FormControl>
+          <FormControl>
+            <FormLabel>Display timeframe</FormLabel>
+            <Select
+              value={(data.scanner?.viewTimeframe as string | undefined) ?? 'ALL'}
+              onChange={(_, v) => {
+                const next = (v ?? 'ALL') as string;
+                if (next === (data.scanner?.viewTimeframe ?? 'ALL')) return;
+                saveSettings.mutate({ scanner: { viewTimeframe: next } });
+              }}
+            >
+              <Option value="ALL">All</Option>
+              {TIMEFRAMES.map((t) => (
+                <Option key={t} value={t}>
+                  {t}
+                </Option>
+              ))}
+            </Select>
+            <FormHelperText>List filter only — separate from Scan timeframes above.</FormHelperText>
+          </FormControl>
           <SettingsNumberField
             label="Min confidence"
             value={Number(data.scanner?.minConfidence ?? 75)}
             min={0}
             max={100}
             onSave={(n) => saveSettings.mutate({ scanner: { minConfidence: n } })}
-            helperText="Triggered floor. Watching stays below this."
+            helperText="Triggered floor. Watching stays below this. Same control as Scanner."
           />
           <SettingsNumberField
             label="Max confidence"

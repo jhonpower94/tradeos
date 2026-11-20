@@ -318,28 +318,45 @@ export async function listOpportunities(
     maxConfidence?: number;
     timeframe?: string;
     side?: Side;
+    /** `triggered` | `watching` — omit for both. */
+    stage?: 'triggered' | 'watching';
     search?: string;
     preferMidConfidence?: boolean;
   },
 ) {
+  const stage = filters?.stage;
+  const statusFilter =
+    stage === 'watching'
+      ? [SignalStatus.WATCHING]
+      : stage === 'triggered'
+        ? [SignalStatus.RANKED]
+        : [SignalStatus.RANKED, SignalStatus.WATCHING];
+
   const q: Record<string, unknown> = {
     userId,
-    status: { $in: [SignalStatus.RANKED, SignalStatus.WATCHING] },
+    status: { $in: statusFilter },
     expiresAt: { $gt: new Date() },
   };
   const minC = filters?.minConfidence;
   const maxC = filters?.maxConfidence;
-  if (minC != null || maxC != null) {
+  // Confidence ceiling/floor applies to triggered (RANKED) only; watching stays visible.
+  if (stage !== 'watching' && (minC != null || maxC != null)) {
     const rankedConf: Record<string, number> = {};
     if (minC != null) rankedConf.$gte = minC;
     if (maxC != null && maxC < 100) rankedConf.$lte = maxC;
-    q.$or = [
-      { status: SignalStatus.WATCHING },
-      {
-        status: SignalStatus.RANKED,
-        ...(Object.keys(rankedConf).length ? { confidence: rankedConf } : {}),
-      },
-    ];
+    if (stage === 'triggered') {
+      if (Object.keys(rankedConf).length) q.confidence = rankedConf;
+    } else {
+      q.$or = [
+        { status: SignalStatus.WATCHING },
+        {
+          status: SignalStatus.RANKED,
+          ...(Object.keys(rankedConf).length ? { confidence: rankedConf } : {}),
+        },
+      ];
+      // status already constrained above; $or replaces the need for dual status when mixing
+      delete q.status;
+    }
   }
   if (filters?.timeframe) q.timeframe = filters.timeframe;
   if (filters?.side) q.side = filters.side;
@@ -353,3 +370,59 @@ export async function listOpportunities(
 }
 
 export { rankOptsFromSettings };
+
+/** Map scanner view* settings + optional query overrides into listOpportunities filters. */
+export function resolveOpportunityListFilters(
+  scanner: {
+    minConfidence?: number;
+    maxConfidence?: number;
+    preferMidConfidence?: boolean;
+    viewSide?: string;
+    viewStage?: string;
+    viewTimeframe?: string;
+  } | null | undefined,
+  query?: {
+    minConfidence?: number;
+    maxConfidence?: number;
+    timeframe?: string;
+    side?: Side | string;
+    stage?: string;
+    search?: string;
+  },
+): {
+  minConfidence?: number;
+  maxConfidence?: number;
+  preferMidConfidence?: boolean;
+  timeframe?: string;
+  side?: Side;
+  stage?: 'triggered' | 'watching';
+  search?: string;
+} {
+  const viewSide = scanner?.viewSide ?? 'ALL';
+  const viewStage = scanner?.viewStage ?? 'ALL';
+  const viewTimeframe = scanner?.viewTimeframe ?? 'ALL';
+
+  const sideRaw = query?.side || (viewSide !== 'ALL' ? viewSide : undefined);
+  const side =
+    sideRaw === Side.BUY || sideRaw === Side.SELL || sideRaw === 'BUY' || sideRaw === 'SELL'
+      ? (sideRaw as Side)
+      : undefined;
+
+  const stageRaw = query?.stage || (viewStage !== 'ALL' ? viewStage : undefined);
+  const stage =
+    stageRaw === 'triggered' || stageRaw === 'watching' ? stageRaw : undefined;
+
+  const timeframe =
+    query?.timeframe ||
+    (viewTimeframe && viewTimeframe !== 'ALL' ? viewTimeframe : undefined);
+
+  return {
+    minConfidence: query?.minConfidence ?? scanner?.minConfidence,
+    maxConfidence: query?.maxConfidence ?? scanner?.maxConfidence,
+    preferMidConfidence: scanner?.preferMidConfidence !== false,
+    timeframe,
+    side,
+    stage,
+    search: query?.search,
+  };
+}

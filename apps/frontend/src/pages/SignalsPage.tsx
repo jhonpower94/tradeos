@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react';
 import Alert from '@mui/joy/Alert';
 import Box from '@mui/joy/Box';
 import Button from '@mui/joy/Button';
+import FormControl from '@mui/joy/FormControl';
+import FormLabel from '@mui/joy/FormLabel';
 import IconButton from '@mui/joy/IconButton';
+import Option from '@mui/joy/Option';
+import Select from '@mui/joy/Select';
+import Sheet from '@mui/joy/Sheet';
 import ToggleButtonGroup from '@mui/joy/ToggleButtonGroup';
 import Typography from '@mui/joy/Typography';
 import Close from '@mui/icons-material/Close';
@@ -17,7 +22,14 @@ import { EntryTimingChip } from '../components/EntryTimingChip';
 import { ConfidenceBar } from '../components/ConfidenceBar';
 import { ResponsiveRecordList } from '../components/ResponsiveRecordList';
 import { formatDateTime, formatLocation, formatPrice, formatRelativeStrength, formatRelativeTime } from '../utils/format';
-import { sortOpportunitiesForDisplay } from '../utils/sort';
+import { isWatchingRow, sortOpportunitiesForDisplay } from '../utils/sort';
+import {
+  matchesScannerViewFilters,
+  scannerViewFiltersFromSettings,
+  type ViewSide,
+  type ViewStage,
+  type ViewTimeframe,
+} from '../utils/scannerViewFilters';
 import { monoSx } from '../theme/theme';
 
 function mutationErrorMessage(err: unknown): string {
@@ -35,7 +47,7 @@ function fmt(n: unknown, digits = 6): string {
 }
 
 export function SignalsPage() {
-  const [view, setView] = useState<'ranked' | 'history'>('ranked');
+  const [listMode, setListMode] = useState<'ranked' | 'history'>('ranked');
   const [chartSignalId, setChartSignalId] = useState<string | null>(null);
   const [, setNowTick] = useState(() => Date.now());
   const qc = useQueryClient();
@@ -45,12 +57,31 @@ export function SignalsPage() {
     return () => window.clearInterval(id);
   }, []);
 
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
+  const filters = scannerViewFiltersFromSettings(settings?.scanner);
+
+  const saveScanner = useMutation({
+    mutationFn: (scanner: Record<string, unknown>) => settingsApi.update({ scanner }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['settings'] });
+      void qc.invalidateQueries({ queryKey: ['signals'] });
+      void qc.invalidateQueries({ queryKey: ['opportunities'] });
+    },
+  });
+
   const { data } = useQuery({
-    queryKey: ['signals', view],
-    queryFn: () => signalsApi.list({ view }),
+    queryKey: [
+      'signals',
+      listMode,
+      filters.viewSide,
+      filters.viewStage,
+      filters.viewTimeframe,
+      filters.minConfidence,
+      filters.maxConfidence,
+    ],
+    queryFn: () => signalsApi.list({ view: listMode }),
     refetchInterval: 10_000,
   });
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
   const approve = useMutation({
     mutationFn: (id: string) => signalsApi.approve(id),
     onSuccess: () => {
@@ -68,28 +99,34 @@ export function SignalsPage() {
     },
   });
 
-  const rows = sortOpportunitiesForDisplay((data?.items ?? []) as Array<Record<string, unknown>>, {
-    minConfidence: Number(settings?.scanner?.minConfidence ?? 75),
-    maxConfidence: Number(settings?.scanner?.maxConfidence ?? 100),
-    preferMidConfidence: settings?.scanner?.preferMidConfidence !== false,
-  });
+  const rows = sortOpportunitiesForDisplay(
+    ((data?.items ?? []) as Array<Record<string, unknown>>).filter((o) =>
+      // History is unfiltered by the API; active lists also re-apply for live consistency.
+      matchesScannerViewFilters(o, filters, { isWatching: isWatchingRow }),
+    ),
+    {
+      minConfidence: filters.minConfidence,
+      maxConfidence: filters.maxConfidence,
+      preferMidConfidence: filters.preferMidConfidence,
+    },
+  );
 
   return (
     <Box>
       <PageHeader
         title="Signals"
         subtitle={
-          view === 'ranked'
+          listMode === 'ranked'
             ? 'Triggered is approve-now. Watching is at a level, waiting for confirmation.'
             : 'Past signals (executed, rejected, expired).'
         }
         actions={
           <ToggleButtonGroup
             size="sm"
-            value={view}
+            value={listMode}
             onChange={(_, v) => {
               if (v) {
-                setView(v);
+                setListMode(v);
                 setChartSignalId(null);
               }
             }}
@@ -99,6 +136,73 @@ export function SignalsPage() {
           </ToggleButtonGroup>
         }
       />
+      <Sheet
+        variant="outlined"
+        sx={{
+          p: 2,
+          mb: 2,
+          display: 'grid',
+          gap: 1.5,
+          gridTemplateColumns: {
+            xs: 'minmax(0, 1fr) minmax(0, 1fr)',
+            md: 'repeat(3, minmax(0, 1fr))',
+          },
+          alignItems: 'end',
+          borderRadius: 'md',
+        }}
+      >
+        <FormControl sx={{ minWidth: 0 }}>
+          <FormLabel>Timeframe</FormLabel>
+          <Select
+            value={filters.viewTimeframe === 'ALL' ? 'ALL' : filters.viewTimeframe}
+            onChange={(_, v) => {
+              const next = (v ?? 'ALL') as ViewTimeframe;
+              if (next === filters.viewTimeframe) return;
+              saveScanner.mutate({ viewTimeframe: next });
+            }}
+            sx={{ width: '100%' }}
+          >
+            <Option value="ALL">All</Option>
+            {['1m', '5m', '15m', '30m', '1h', '4h', '1d'].map((t) => (
+              <Option key={t} value={t}>
+                {t}
+              </Option>
+            ))}
+          </Select>
+        </FormControl>
+        <FormControl sx={{ minWidth: 0 }}>
+          <FormLabel>Side</FormLabel>
+          <Select
+            value={filters.viewSide}
+            onChange={(_, v) => {
+              const next = (v ?? 'ALL') as ViewSide;
+              if (next === filters.viewSide) return;
+              saveScanner.mutate({ viewSide: next });
+            }}
+            sx={{ width: '100%' }}
+          >
+            <Option value="ALL">All</Option>
+            <Option value="BUY">BUY</Option>
+            <Option value="SELL">SELL</Option>
+          </Select>
+        </FormControl>
+        <FormControl sx={{ minWidth: 0 }}>
+          <FormLabel>Stage</FormLabel>
+          <Select
+            value={filters.viewStage}
+            onChange={(_, v) => {
+              const next = (v ?? 'ALL') as ViewStage;
+              if (next === filters.viewStage) return;
+              saveScanner.mutate({ viewStage: next });
+            }}
+            sx={{ width: '100%' }}
+          >
+            <Option value="ALL">All</Option>
+            <Option value="triggered">Triggered</Option>
+            <Option value="watching">Watching</Option>
+          </Select>
+        </FormControl>
+      </Sheet>
       {approve.isError && (
         <Alert
           color="danger"
@@ -116,7 +220,7 @@ export function SignalsPage() {
         stretch
         rows={rows}
         getRowKey={(s) => String(s._id)}
-        emptyTitle={view === 'ranked' ? 'No active signals right now.' : 'No signal history yet.'}
+        emptyTitle={listMode === 'ranked' ? 'No active signals right now.' : 'No signal history yet.'}
         cardTitle={(s) => (
           <Typography level="title-md" sx={monoSx}>
             {String(s.symbol)}
@@ -150,7 +254,7 @@ export function SignalsPage() {
               >
                 Chart
               </Button>
-              {view === 'ranked' && (s.status === 'ranked' || s.status === 'watching') && (
+              {listMode === 'ranked' && (s.status === 'ranked' || s.status === 'watching') && (
                 <>
                   {s.status === 'ranked' && (
                     <Button
@@ -236,7 +340,7 @@ export function SignalsPage() {
                   >
                     Chart
                   </Button>
-                  {view === 'ranked' && (s.status === 'ranked' || s.status === 'watching') && (
+                  {listMode === 'ranked' && (s.status === 'ranked' || s.status === 'watching') && (
                     <>
                       {s.status === 'ranked' && (
                         <Button

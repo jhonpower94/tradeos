@@ -4,10 +4,17 @@ import {
   leftoverActiveFilter,
   leftoverActiveFilterForSymbol,
   rankOpportunities,
+  resolveOpportunityListFilters,
   sortOpportunitiesForDisplay,
   sortTriggeredThenNewest,
 } from '../src/modules/ranking/index.js';
-import { Side, Timeframe, type ConsensusResult, type Opportunity } from '@trading-os/shared';
+import {
+  DEFAULT_SCANNER_SETTINGS,
+  Side,
+  Timeframe,
+  type ConsensusResult,
+  type Opportunity,
+} from '@trading-os/shared';
 
 function opp(partial: Partial<Opportunity> & Pick<Opportunity, 'symbol' | 'confidence'>): Opportunity {
   return {
@@ -173,5 +180,47 @@ describe('sortTriggeredThenNewest', () => {
       { symbol: 'OLDTRIG', status: 'ranked', createdAt: new Date('2026-08-17T08:00:00Z') },
     ]);
     expect(ordered.map((o) => o.symbol)).toEqual(['NEWTRIG', 'OLDTRIG', 'OLDWATCH']);
+  });
+});
+
+describe('resolveOpportunityListFilters', () => {
+  it('defaults view filters to ALL and uses scanner confidence', () => {
+    expect(DEFAULT_SCANNER_SETTINGS.viewSide).toBe('ALL');
+    expect(DEFAULT_SCANNER_SETTINGS.viewStage).toBe('ALL');
+    expect(DEFAULT_SCANNER_SETTINGS.viewTimeframe).toBe('ALL');
+    const f = resolveOpportunityListFilters(DEFAULT_SCANNER_SETTINGS);
+    expect(f.side).toBeUndefined();
+    expect(f.stage).toBeUndefined();
+    expect(f.timeframe).toBeUndefined();
+    expect(f.minConfidence).toBe(DEFAULT_SCANNER_SETTINGS.minConfidence);
+    expect(f.maxConfidence).toBe(DEFAULT_SCANNER_SETTINGS.maxConfidence);
+  });
+
+  it('maps viewSide/viewStage/viewTimeframe into list filters', () => {
+    const f = resolveOpportunityListFilters({
+      ...DEFAULT_SCANNER_SETTINGS,
+      viewSide: 'SELL',
+      viewStage: 'triggered',
+      viewTimeframe: Timeframe.H1,
+    });
+    expect(f.side).toBe(Side.SELL);
+    expect(f.stage).toBe('triggered');
+    expect(f.timeframe).toBe('1h');
+  });
+
+  it('lets query params override settings view filters', () => {
+    const f = resolveOpportunityListFilters(
+      {
+        ...DEFAULT_SCANNER_SETTINGS,
+        viewSide: 'SELL',
+        viewStage: 'watching',
+        viewTimeframe: Timeframe.H4,
+      },
+      { side: Side.BUY, stage: 'triggered', timeframe: '15m', minConfidence: 40 },
+    );
+    expect(f.side).toBe(Side.BUY);
+    expect(f.stage).toBe('triggered');
+    expect(f.timeframe).toBe('15m');
+    expect(f.minConfidence).toBe(40);
   });
 });

@@ -52,6 +52,13 @@ const settingsSchema = new Schema(
       minConfidence: { type: Number, default: 75 },
       maxConfidence: { type: Number, default: 100 },
       preferMidConfidence: { type: Boolean, default: true },
+      viewSide: { type: String, enum: ['ALL', 'BUY', 'SELL'], default: 'ALL' },
+      viewStage: {
+        type: String,
+        enum: ['ALL', 'triggered', 'watching'],
+        default: 'ALL',
+      },
+      viewTimeframe: { type: String, default: 'ALL' },
       minAlignedStrategies: { type: Number, default: 2 },
       minAgreementRatio: { type: Number, default: 0.6 },
       symbolsDenyList: { type: [String], default: [] },

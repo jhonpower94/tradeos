@@ -75,6 +75,18 @@ export const scannerSettingsSchema = z.object({
    * [minConfidence, maxConfidence] first (mid-band preference).
    */
   preferMidConfidence: z.boolean().default(true),
+  /**
+   * Scanner/Signals list filter — not generation.
+   * ALL = show both sides.
+   */
+  viewSide: z.enum(['ALL', 'BUY', 'SELL']).default('ALL'),
+  /** Scanner/Signals list filter by stage. */
+  viewStage: z.enum(['ALL', 'triggered', 'watching']).default('ALL'),
+  /**
+   * Single-TF list filter for Scanner/Signals.
+   * Distinct from `timeframes` (which TFs the scanner evaluates).
+   */
+  viewTimeframe: z.union([z.literal('ALL'), z.nativeEnum(Timeframe)]).default('ALL'),
   minAlignedStrategies: z.number().int().min(1).max(STRATEGY_IDS.length).default(2),
   minAgreementRatio: z.number().min(0).max(1).default(0.6),
   symbolsDenyList: z.array(z.string()).default([]),

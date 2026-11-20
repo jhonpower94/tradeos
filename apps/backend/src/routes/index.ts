@@ -49,7 +49,7 @@ import { exchangeService } from '../modules/exchange/index.js';
 import { marketDataService } from '../modules/market-data/index.js';
 import { candlesQuerySchema, approveSignalSchema, createTradeSchema, copyTradeSchema, flipTradeSchema, updatePositionLevelsSchema, backtestRequestSchema } from '@trading-os/shared';
 import { scannerService } from '../modules/scanner/index.js';
-import { listOpportunities } from '../modules/ranking/index.js';
+import { listOpportunities, resolveOpportunityListFilters } from '../modules/ranking/index.js';
 import { Signal } from '../models/Signal.js';
 import {
   handleSignalApproval,
@@ -316,20 +316,20 @@ export async function registerRoutes(app: FastifyInstance) {
       maxConfidence?: string;
       timeframe?: string;
       side?: Side;
+      stage?: string;
       search?: string;
     };
-    const items = await listOpportunities(userId, {
-      minConfidence: q.minConfidence
-        ? Number(q.minConfidence)
-        : (settings.scanner?.minConfidence ?? undefined),
-      maxConfidence: q.maxConfidence
-        ? Number(q.maxConfidence)
-        : (settings.scanner?.maxConfidence ?? undefined),
-      preferMidConfidence: settings.scanner?.preferMidConfidence !== false,
-      timeframe: q.timeframe,
-      side: q.side,
-      search: q.search,
-    });
+    const items = await listOpportunities(
+      userId,
+      resolveOpportunityListFilters(settings.scanner, {
+        minConfidence: q.minConfidence ? Number(q.minConfidence) : undefined,
+        maxConfidence: q.maxConfidence ? Number(q.maxConfidence) : undefined,
+        timeframe: q.timeframe,
+        side: q.side,
+        stage: q.stage,
+        search: q.search,
+      }),
+    );
     const ctx = await sizePreviewContext(userId);
     return { items: withSizePreview(items as Array<Record<string, unknown> & { symbol: string }>, ctx) };
   });
@@ -371,7 +371,14 @@ export async function registerRoutes(app: FastifyInstance) {
   // Signals — default: newest active opportunities (same data as scanner)
   app.get('/api/v1/signals', { preHandler: auth }, async (req) => {
     const userId = getUserId(req);
-    const q = req.query as { view?: string; minConfidence?: string };
+    const q = req.query as {
+      view?: string;
+      minConfidence?: string;
+      maxConfidence?: string;
+      timeframe?: string;
+      side?: Side;
+      stage?: string;
+    };
     if (q.view === 'history') {
       const items = await Signal.find({
         userId,
@@ -383,13 +390,16 @@ export async function registerRoutes(app: FastifyInstance) {
       return { items, view: 'history' };
     }
     const settings = await getRawSettings(userId);
-    const items = await listOpportunities(userId, {
-      minConfidence: q.minConfidence
-        ? Number(q.minConfidence)
-        : (settings.scanner?.minConfidence ?? undefined),
-      maxConfidence: settings.scanner?.maxConfidence ?? undefined,
-      preferMidConfidence: settings.scanner?.preferMidConfidence !== false,
-    });
+    const items = await listOpportunities(
+      userId,
+      resolveOpportunityListFilters(settings.scanner, {
+        minConfidence: q.minConfidence ? Number(q.minConfidence) : undefined,
+        maxConfidence: q.maxConfidence ? Number(q.maxConfidence) : undefined,
+        timeframe: q.timeframe,
+        side: q.side,
+        stage: q.stage,
+      }),
+    );
     const ctx = await sizePreviewContext(userId);
     const previewed = withSizePreview(
       items as Array<Record<string, unknown> & { symbol: string }>,
