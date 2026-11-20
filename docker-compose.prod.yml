@@ -49,9 +49,9 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      # Prefer host Let's Encrypt when present; fall back to repo self-signed for local/dev hosts.
-      - ${LETSENCRYPT_DIR:-./letsencrypt}:/etc/letsencrypt:ro
-      - ${CERTBOT_WEBROOT:-./certbot-www}:/var/www/certbot:ro
+      # Production host certs (override with LETSENCRYPT_DIR=./letsencrypt for local/dev).
+      - ${LETSENCRYPT_DIR:-/etc/letsencrypt}:/etc/letsencrypt:ro
+      - ${CERTBOT_WEBROOT:-/var/www/certbot}:/var/www/certbot:ro
     depends_on:
       - api
     restart: unless-stopped
