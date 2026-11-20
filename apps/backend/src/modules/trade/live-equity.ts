@@ -34,29 +34,21 @@ function sumIsolatedQuoteNetUsdt(
   return n;
 }
 
-function sumIsolatedQuoteFreeUsdt(
-  pairs: Awaited<ReturnType<typeof exchangeService.getIsolatedMarginAccount>>,
-): number {
-  let n = 0;
-  for (const pair of pairs) {
-    if (pair.quote.asset === 'USDT') n += pair.quote.free;
-  }
-  return n;
-}
-
 /**
  * Live trading equity and paper-style risk budget for slot-based sizing.
  *
  * - **equity**: spot USDT (free+locked) + isolated quote net (USDT) + open uPnL (margin),
  *   or spot + uPnL (spot-only).
- * - **riskFreeQuote**: spendable free USDT (spot free + isolated free) minus deployed,
- *   then haircut for fees/slippage so orders don't size to 100% of the wallet.
+ * - **riskFreeQuote** (margin): Spot free USDT + free USDT on the *target* isolated pair
+ *   only (not other pairs — that cash cannot transfer automatically), minus deployed,
+ *   then haircut. Without `symbol`, sizes off Spot free only to avoid Binance -2010.
  *
  * Caller must set Binance credentials on `exchangeService` before calling.
  */
 export async function computeLiveEquityAndRiskBudget(
   userId: string,
   executionVenue: ExecutionVenue,
+  opts?: { symbol?: string },
 ): Promise<{ equity: number; riskFreeQuote: number }> {
   const open = await Position.find({ userId, status: PositionStatus.OPEN })
     .select('qty entryPrice unrealizedPnl')
@@ -78,10 +70,13 @@ export async function computeLiveEquityAndRiskBudget(
   try {
     const pairs = await exchangeService.getIsolatedMarginAccount();
     const isolatedNet = sumIsolatedQuoteNetUsdt(pairs);
-    const isolatedFree = sumIsolatedQuoteFreeUsdt(pairs);
     const stack = spotUsdt + isolatedNet;
     const equity = stack + unrealized;
-    const spendable = Math.max(0, spotFree + isolatedFree - deployed);
+    const sym = opts?.symbol?.toUpperCase();
+    const target = sym ? pairs.find((p) => p.symbol === sym) : undefined;
+    const pairFree = target?.quote.asset === 'USDT' ? target.quote.free : 0;
+    // Only Spot + this pair are usable for a new/isolated entry transfer path.
+    const spendable = Math.max(0, spotFree + pairFree - deployed);
     const riskFreeQuote = spendable * LIVE_RISK_QUOTE_HAIRCUT;
     return { equity, riskFreeQuote };
   } catch {

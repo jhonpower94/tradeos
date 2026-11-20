@@ -52,7 +52,7 @@ describe('computeLiveEquityAndRiskBudget', () => {
     ]);
   });
 
-  it('margin: equity uses stack + uPnL; riskFreeQuote uses free USDT minus deployed with haircut', async () => {
+  it('margin: equity uses full stack; riskFreeQuote uses Spot (+ target pair) only', async () => {
     const { Position } = await import('../src/models/Position.js');
     (Position.find as ReturnType<typeof vi.fn>).mockReturnValue({
       select: () => ({
@@ -72,8 +72,14 @@ describe('computeLiveEquityAndRiskBudget', () => {
     );
     // equity: spot 1000 + isolated net 2050 + uPnL 10
     expect(equity).toBeCloseTo(3050 + 10, 6);
-    // spendable free: spot free 1000 + iso free 2000 - deployed 1525, then haircut
-    expect(riskFreeQuote).toBeCloseTo((1000 + 2000 - 1525) * LIVE_RISK_QUOTE_HAIRCUT, 6);
+    // without symbol: Spot free only (floored at 0) — other pairs' USDT is not auto-transferred
+    expect(riskFreeQuote).toBe(0);
+
+    const withPair = await computeLiveEquityAndRiskBudget('u1' as never, ExecutionVenue.MARGIN, {
+      symbol: 'BTCUSDT',
+    });
+    // spot free 1000 + BTCUSDT iso free 2000 - deployed 1525
+    expect(withPair.riskFreeQuote).toBeCloseTo((1000 + 2000 - 1525) * LIVE_RISK_QUOTE_HAIRCUT, 6);
   });
 
   it('spot: sizes off free USDT (not locked) with haircut', async () => {

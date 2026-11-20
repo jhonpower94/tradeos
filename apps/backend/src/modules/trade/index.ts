@@ -351,6 +351,7 @@ export async function estimateEquity(
   userId: string,
   mode: TradingMode,
   executionVenue?: string,
+  opts?: { symbol?: string },
 ): Promise<{ equity: number; freeQuote: number }> {
   if (mode === TradingMode.LIVE) {
     try {
@@ -358,7 +359,9 @@ export async function estimateEquity(
       if (creds) {
         exchangeService.setCredentials(creds);
         const venue = (executionVenue as ExecutionVenue | undefined) ?? ExecutionVenue.MARGIN;
-        const { equity, riskFreeQuote } = await computeLiveEquityAndRiskBudget(userId, venue);
+        const { equity, riskFreeQuote } = await computeLiveEquityAndRiskBudget(userId, venue, {
+          symbol: opts?.symbol,
+        });
         return { equity, freeQuote: riskFreeQuote };
       }
     } catch {
@@ -401,7 +404,9 @@ export async function executeOpportunity(
     }
   }
 
-  const { equity, freeQuote } = await estimateEquity(userId, mode, executionVenue);
+  const { equity, freeQuote } = await estimateEquity(userId, mode, executionVenue, {
+    symbol: opportunity.symbol,
+  });
 
   let spreadBps: number | undefined;
   let volume24h: number | undefined;
