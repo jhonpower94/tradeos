@@ -1,7 +1,6 @@
 import { Decision } from '@trading-os/shared';
 import type { Strategy, StrategyContext } from '../types.js';
 import {
-  buildLongLevels,
   buildShortLevels,
   clamp,
   evidence,
@@ -20,7 +19,7 @@ export const impulseReversalStrategy: Strategy = {
   id: ID,
   name: 'Impulse Reversal',
   description:
-    'Fades the start of a reversal after a large opposing impulse — short near a rally high, long near a selloff low.',
+    'SELL-only: fades the start of a down move after a large up-impulse — short near a rally high.',
   evaluate(ctx: StrategyContext) {
     const { candles, indicators } = ctx;
     const last = lastCandle(candles);
@@ -44,7 +43,6 @@ export const impulseReversalStrategy: Strategy = {
 
     const body = Math.abs(last.close - last.open) || 1e-9;
     const upperWick = last.high - Math.max(last.open, last.close);
-    const lowerWick = Math.min(last.open, last.close) - last.low;
 
     // SELL: large up-impulse, still near high, bearish rejection
     if (impulse.direction === 'up') {
@@ -78,36 +76,9 @@ export const impulseReversalStrategy: Strategy = {
       };
     }
 
-    // BUY: large down-impulse, still near low, bullish rejection
+    // Down-impulse / BUY fade intentionally disabled — SELL-only strategy.
     if (impulse.direction === 'down') {
-      if (!isStillNearExtreme('buy', last.close, impulse.low, atr)) {
-        return noTrade(ID, [
-          evidence(ID, 'Already extended above selloff low — late for BUY fade'),
-        ]);
-      }
-      const bullishRejection = last.close > last.open && lowerWick > body * 0.4;
-      if (!bullishRejection) {
-        return noTrade(ID, [evidence(ID, 'No bullish rejection after down-impulse')]);
-      }
-      const levels = buildLongLevels(last.close, atr);
-      const confidence = clamp(
-        58 + impulse.rangeAtr * 2 + (lowerWick / body) * 5,
-        0,
-        92,
-      );
-      return {
-        strategyId: ID,
-        decision: Decision.BUY,
-        confidence: Math.round(confidence),
-        ...levels,
-        evidence: [
-          evidence(
-            ID,
-            `Early bullish fade after ${impulse.rangePct.toFixed(1)}% down-impulse near ${impulse.low.toFixed(4)}`,
-            1,
-          ),
-        ],
-      };
+      return noTrade(ID, [evidence(ID, 'BUY fade disabled — impulse_reversal is SELL-only')]);
     }
 
     return noTrade(ID, [evidence(ID, 'Flat impulse — no directional extreme')]);
