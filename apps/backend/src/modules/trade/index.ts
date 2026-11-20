@@ -67,6 +67,61 @@ function resolveTradeVenue(
   return executionVenue === ExecutionVenue.SPOT ? TradeVenue.SPOT : TradeVenue.MARGIN;
 }
 
+/** Market orders need headroom vs last/mid — thin buffers were causing Binance -2010. */
+const MARGIN_ENTRY_BUFFER = 1.05;
+const MARGIN_CLOSE_BUFFER = 1.05;
+
+function isBinanceInsufficientBalance(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /code.:\s*-2010|insufficient balance/i.test(msg);
+}
+
+async function isolatedPairSnapshot(symbol: string) {
+  const pairs = await exchangeService.getIsolatedMarginAccount(symbol);
+  return pairs.find((a) => a.symbol === symbol.toUpperCase());
+}
+
+async function spotUsdtFree(): Promise<number> {
+  const spot = await exchangeService.getBalances();
+  return spot.find((b) => b.asset === 'USDT')?.free ?? 0;
+}
+
+async function throwInsufficientMarginOrder(input: {
+  symbol: string;
+  side: string;
+  qty: number;
+  detail?: string;
+}): Promise<never> {
+  const pair = await isolatedPairSnapshot(input.symbol);
+  const base = pair?.base.asset ?? input.symbol.replace(/USDT$/i, '');
+  const freeIso = pair?.quote.asset === 'USDT' ? pair.quote.free : 0;
+  const freeBase = pair?.base.free ?? 0;
+  const borrowedBase = (pair?.base.borrowed ?? 0) + (pair?.base.interest ?? 0);
+  const spotFree = await spotUsdtFree();
+  throw new AppError(
+    'INSUFFICIENT_MARGIN',
+    `${input.detail ? `${input.detail} ` : ''}Binance needs free balance for ${input.side} ${input.qty} ${input.symbol}. Isolated ${input.symbol}: USDT free ${freeIso.toFixed(2)}, ${base} free ${freeBase}, ${base} borrowed ${borrowedBase}; Spot USDT free ${spotFree.toFixed(2)}. For BUY leave ~5% USDT headroom; for SELL you need free base (not only USDT).`,
+    400,
+    { freeIso, freeBase, borrowedBase, spotFree, side: input.side, qty: input.qty },
+  );
+}
+
+async function placeMarginOrderGuarded(
+  params: Parameters<typeof exchangeService.placeMarginOrder>[0],
+): Promise<Awaited<ReturnType<typeof exchangeService.placeMarginOrder>>> {
+  try {
+    return await exchangeService.placeMarginOrder(params);
+  } catch (err) {
+    if (!isBinanceInsufficientBalance(err)) throw err;
+    await throwInsufficientMarginOrder({
+      symbol: params.symbol,
+      side: params.side,
+      qty: params.quantity,
+      detail: 'Order rejected (-2010).',
+    });
+  }
+}
+
 async function ensureMarginCollateral(
   symbol: string,
   notionalUsdt: number,
@@ -76,20 +131,20 @@ async function ensureMarginCollateral(
   const pairs = await exchangeService.getIsolatedMarginAccount(symbol);
   const pair = pairs.find((a) => a.symbol === symbol.toUpperCase());
   const freeIso = pair?.quote.asset === 'USDT' ? pair.quote.free : 0;
-  const buffer = opts?.buffer ?? (opts?.purpose === 'close' ? 1.01 : 1.02);
+  const buffer =
+    opts?.buffer ?? (opts?.purpose === 'close' ? MARGIN_CLOSE_BUFFER : MARGIN_ENTRY_BUFFER);
   const target = notionalUsdt * buffer;
   const need = Math.max(0, target - freeIso);
   if (need > 0.5) {
-    const spot = await exchangeService.getBalances();
-    const usdt = spot.find((b) => b.asset === 'USDT')?.free ?? 0;
+    const usdt = await spotUsdtFree();
     if (usdt < need) {
       const shortfall = need - usdt;
       const total = freeIso + usdt;
       throw new AppError(
         'INSUFFICIENT_MARGIN',
         opts?.purpose === 'close'
-          ? `Cannot close ${symbol}: buyback ~${target.toFixed(2)} USDT, have ${freeIso.toFixed(2)} isolated + ${usdt.toFixed(2)} spot = ${total.toFixed(2)}. Shortfall ~${shortfall.toFixed(2)} USDT — deposit that to Spot, then retry Close.`
-          : `Need ~${need.toFixed(2)} more USDT in isolated ${symbol} (have ${freeIso.toFixed(2)} iso + ${usdt.toFixed(2)} spot). Deposit ~${shortfall.toFixed(2)} USDT to Spot or lower size.`,
+          ? `Cannot close ${symbol}: buyback ~${target.toFixed(2)} USDT, have ${freeIso.toFixed(2)} isolated + ${usdt.toFixed(2)} spot = ${total.toFixed(2)}. Shortfall ~${shortfall.toFixed(2)} USDT — move that to Spot (or this isolated pair), then retry Close.`
+          : `Need ~${need.toFixed(2)} more USDT in isolated ${symbol} (have ${freeIso.toFixed(2)} iso + ${usdt.toFixed(2)} spot). Move ~${shortfall.toFixed(2)} USDT to Spot/this pair or lower size (~5% headroom required).`,
         400,
       );
     }
@@ -125,13 +180,19 @@ async function placeLiveEntryOrder(input: {
   if (!(px > 0)) {
     try {
       const t = await exchangeService.getTicker(input.symbol);
-      px = t.price;
+      // BUY pays the ask; SELL collateral marked off bid/last.
+      px =
+        input.side === Side.BUY
+          ? (t.ask && t.ask > 0 ? t.ask : t.price)
+          : (t.bid && t.bid > 0 ? t.bid : t.price);
     } catch {
       px = 0;
     }
   }
   if (px > 0) {
-    const collateral = input.side === Side.BUY ? input.qty * px : input.qty * px * 0.5;
+    // Longs spend full quote; shorts need initial margin before AUTO_BORROW_REPAY.
+    const collateral =
+      input.side === Side.BUY ? input.qty * px : input.qty * px * 0.55;
     await ensureMarginCollateral(input.symbol, collateral);
   } else {
     await exchangeService.ensureIsolatedAccount(input.symbol);
@@ -139,7 +200,7 @@ async function placeLiveEntryOrder(input: {
 
   const sideEffect: MarginSideEffect =
     input.side === Side.SELL ? 'AUTO_BORROW_REPAY' : 'NO_SIDE_EFFECT';
-  const order = await exchangeService.placeMarginOrder({
+  const order = await placeMarginOrderGuarded({
     symbol: input.symbol,
     side: input.side,
     type: input.orderType,
@@ -173,7 +234,7 @@ async function placeLiveCloseOrder(input: {
     let px = 0;
     try {
       const t = await exchangeService.getTicker(input.symbol);
-      px = t.price;
+      px = t.ask && t.ask > 0 ? t.ask : t.price;
     } catch {
       /* */
     }
@@ -187,7 +248,7 @@ async function placeLiveCloseOrder(input: {
       }
       await ensureMarginCollateral(input.symbol, qty * px, { purpose: 'close' });
     }
-    return exchangeService.placeMarginOrder({
+    return placeMarginOrderGuarded({
       symbol: input.symbol,
       side: Side.BUY,
       type: OrderType.MARKET,
@@ -196,11 +257,25 @@ async function placeLiveCloseOrder(input: {
     });
   }
 
-  return exchangeService.placeMarginOrder({
+  // Closing a long = SELL free base. Fees taken in base can leave free < position qty → -2010.
+  await exchangeService.getExchangeInfo();
+  const pair = await isolatedPairSnapshot(input.symbol);
+  const freeBase = pair?.base.free ?? 0;
+  let qty = exchangeService.roundQty(input.symbol, Math.min(input.qty, freeBase));
+  if (qty <= 0) {
+    const base = pair?.base.asset ?? input.symbol.replace(/USDT$/i, '');
+    await throwInsufficientMarginOrder({
+      symbol: input.symbol,
+      side: Side.SELL,
+      qty: input.qty,
+      detail: `Cannot close long: need free ${base} in isolated (have ${freeBase}). USDT alone cannot close a long.`,
+    });
+  }
+  return placeMarginOrderGuarded({
     symbol: input.symbol,
     side: closeSide,
     type: OrderType.MARKET,
-    quantity: input.qty,
+    quantity: qty,
     sideEffectType: 'NO_SIDE_EFFECT',
   });
 }
