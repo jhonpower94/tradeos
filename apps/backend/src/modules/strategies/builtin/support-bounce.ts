@@ -32,6 +32,7 @@ export const supportBounceStrategy: Strategy = {
     const atr = getAtr(indicators, last.close);
     const impulse = measureImpulse(candles, LOOKBACK, atr);
     if (
+      ctx.antiExtensionEnabled !== false &&
       impulse &&
       isAlreadyExtended('buy', last.close, impulse.low, atr)
     ) {

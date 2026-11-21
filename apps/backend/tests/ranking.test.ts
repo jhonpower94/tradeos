@@ -188,6 +188,7 @@ describe('resolveOpportunityListFilters', () => {
     expect(DEFAULT_SCANNER_SETTINGS.viewSide).toBe('ALL');
     expect(DEFAULT_SCANNER_SETTINGS.viewStage).toBe('ALL');
     expect(DEFAULT_SCANNER_SETTINGS.viewTimeframe).toBe('ALL');
+    expect(DEFAULT_SCANNER_SETTINGS.antiExtensionEnabled).toBe(true);
     const f = resolveOpportunityListFilters(DEFAULT_SCANNER_SETTINGS);
     expect(f.side).toBeUndefined();
     expect(f.stage).toBeUndefined();

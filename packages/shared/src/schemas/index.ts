@@ -95,6 +95,11 @@ export const scannerSettingsSchema = z.object({
   /** Seconds to wait after each full scan cycle before the next. */
   scanIntervalSec: z.number().int().min(60).max(900).default(120),
   htfVetoEnabled: z.boolean().default(true),
+  /**
+   * When true, resistance_rejection / support_bounce skip setups already
+   * extended (>2.5 ATR or >5%) from the recent extreme (knife-catch filter).
+   */
+  antiExtensionEnabled: z.boolean().default(true),
   entryStyle: z.enum(['confirmed', 'early']).default('confirmed'),
   locationGateEnabled: z.boolean().default(true),
   locationProximityAtr: z.number().min(0.25).max(5).default(1.5),

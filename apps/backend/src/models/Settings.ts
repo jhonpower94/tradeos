@@ -66,6 +66,7 @@ const settingsSchema = new Schema(
       concurrency: { type: Number, default: 3 },
       scanIntervalSec: { type: Number, default: 120 },
       htfVetoEnabled: { type: Boolean, default: true },
+      antiExtensionEnabled: { type: Boolean, default: true },
       entryStyle: { type: String, enum: ['confirmed', 'early'], default: 'confirmed' },
       locationGateEnabled: { type: Boolean, default: true },
       locationProximityAtr: { type: Number, default: 1.5 },

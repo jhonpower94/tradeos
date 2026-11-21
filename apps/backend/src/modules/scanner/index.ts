@@ -591,8 +591,9 @@ class ScannerService {
 
     const minRR = settings.risk?.minRiskReward ?? 2;
     const atrSlMultiplier = settings.risk?.atrSlMultiplier ?? 1.5;
+    const antiExtensionEnabled = settings.scanner?.antiExtensionEnabled !== false;
     const strategyResults = runAllStrategies(
-      { symbol, timeframe, candles, indicators, patterns },
+      { symbol, timeframe, candles, indicators, patterns, antiExtensionEnabled },
       filteredMap,
     ).map((r) => applyAtrStopAndRr(r, atr, atrSlMultiplier, minRR));
 

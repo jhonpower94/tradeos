@@ -225,6 +225,16 @@ describe('RR/SB anti-extension filters', () => {
     });
     expect(res.decision).toBe(Decision.NO_TRADE);
     expect(res.evidence.some((e) => /extended/i.test(e.label))).toBe(true);
+
+    const whenOff = resistanceRejectionStrategy.evaluate({
+      symbol: 'TESTUSDT',
+      timeframe: '1h',
+      candles: out,
+      indicators,
+      patterns,
+      antiExtensionEnabled: false,
+    });
+    expect(whenOff.decision).toBe(Decision.SELL);
   });
 
   it('support_bounce skips BUY when already extended above lookback low', () => {
@@ -258,5 +268,15 @@ describe('RR/SB anti-extension filters', () => {
     });
     expect(res.decision).toBe(Decision.NO_TRADE);
     expect(res.evidence.some((e) => /extended/i.test(e.label))).toBe(true);
+
+    const whenOff = supportBounceStrategy.evaluate({
+      symbol: 'TESTUSDT',
+      timeframe: '1h',
+      candles: out,
+      indicators,
+      patterns,
+      antiExtensionEnabled: false,
+    });
+    expect(whenOff.decision).toBe(Decision.BUY);
   });
 });

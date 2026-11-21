@@ -32,6 +32,7 @@ export const resistanceRejectionStrategy: Strategy = {
     const atr = getAtr(indicators, last.close);
     const impulse = measureImpulse(candles, LOOKBACK, atr);
     if (
+      ctx.antiExtensionEnabled !== false &&
       impulse &&
       isAlreadyExtended('sell', last.close, impulse.high, atr)
     ) {

@@ -13,6 +13,8 @@ export interface StrategyContext {
   indicators: IndicatorSnapshot;
   patterns: PatternHit[];
   params?: Record<string, unknown>;
+  /** When false, skip isAlreadyExtended gates (RR / support bounce). Default true. */
+  antiExtensionEnabled?: boolean;
 }
 
 export interface Strategy {

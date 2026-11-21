@@ -1202,6 +1202,14 @@ export function SettingsPage() {
             hint="Block BUY when the parent timeframe EMA50/200 is bearish (and vice versa for SELL)."
           />
           <SwitchRow
+            label="Skip already-extended fades"
+            checked={data.scanner?.antiExtensionEnabled !== false}
+            onChange={(checked) =>
+              saveSettings.mutate({ scanner: { antiExtensionEnabled: checked } })
+            }
+            hint="When on, Resistance Rejection and Support Bounce skip setups already >2.5 ATR or >5% from the recent extreme (fewer late knife-catch fades). Turn off for pre–Nov 18 volume."
+          />
+          <SwitchRow
             label="Location gate"
             checked={data.scanner?.locationGateEnabled !== false}
             onChange={(checked) => saveSettings.mutate({ scanner: { locationGateEnabled: checked } })}
